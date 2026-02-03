@@ -1,4 +1,4 @@
-<a href="https://modrinth.com/mod/falling-wind">
+<a href="https://modrinth.com/mod/simple-blood">
   <img src="https://img.shields.io/badge/Available_on-Modrinth-1bd96a?style=for-the-badge&logo=modrinth&logoColor=white">
 </a>
 
