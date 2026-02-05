@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "id": "bloodmod",
+  "version": "${version}",
+  "name": "Simple Blood",
+  "description": "Adds simple and subtle blood particles.",
+  "authors": [
+    "Lythroo_"
+  ],
+  "contact": {
+    "homepage": "https://modrinth.com/mod/simple-blood",
+    "sources": "https://modrinth.com/mod/simple-blood"
+  },
+  "license": "GPL-3.0-only",
+  "icon": "assets/bloodmod/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "main": [
+      "com.bloodmod.BloodMod"
+    ],
+    "client": [
+      "com.bloodmod.BloodModClient"
+    ],
+    "modmenu": [
+      "com.bloodmod.BloodModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "bloodmod.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-api": "*",
+    "cloth-config": ">=15.0.0"
+  },
+  "suggests": {
+    "modmenu": "*"
+  }
+}
