@@ -9,7 +9,19 @@
 
 ![# Simple Blood](https://cdn.modrinth.com/data/cached_images/b6e93d6ab422e767e10e6a3e2207b244d603cd1e.png)
 
-**Enhanced blood particle effects for Minecraft**
+<br>
+
+<img src="https://img.shields.io/badge/Mod_Loader-Fabric-dbd0b4?style=for-the-badge" alt="Fabric">
+<img src="https://img.shields.io/badge/Environment-Client-9b59b6?style=for-the-badge" alt="Client">
+<img src="https://img.shields.io/github/issues/Lythroo/Simple-Blood?style=for-the-badge&logo=github" alt="Issues">
+
+<br>
+<br>
+<br>
+
+*Adds simple blood particles.*
+
+<br>
 
 When entities take damage, they bleed proportionally to the amount dealt. Weak hits create small, short splashes, while heavy hits result in dramatic blood bursts. Entities at low health slowly drip blood, and killing blows trigger larger death bursts.
 
@@ -19,7 +31,6 @@ When entities take damage, they bleed proportionally to the amount dealt. Weak h
 
 </div>
 
-<br>
 <br>
 
 <div align="center">
