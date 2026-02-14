@@ -1,3 +1,7 @@
+<a href="https://modrinth.com/mod/simple-blood">
+  <img src="https://img.shields.io/badge/Available_on-Modrinth-1bd96a?style=for-the-badge&logo=modrinth&logoColor=white">
+</a>
+
 # Simple Blood
 
 **Simple Blood** adds a bunch of particle effects to Minecraft. When entities take damage, they bleed proportionally to the damage dealt - weak hits produce small, brief splashes while heavy hits create dramatic blood bursts. Entities also drip blood when at low health, and larger death bursts occur when they're killed.
