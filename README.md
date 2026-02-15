@@ -7,8 +7,6 @@
 <br>
 <br>
 
-<div align="center">
-
 ![# Simple Blood](https://cdn.modrinth.com/data/cached_images/b6e93d6ab422e767e10e6a3e2207b244d603cd1e.png)
 
 <br>
