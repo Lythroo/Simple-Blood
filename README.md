@@ -13,6 +13,7 @@
 
 <img src="https://img.shields.io/badge/Mod_Loader-Fabric-dbd0b4?style=for-the-badge" alt="Fabric">
 <img src="https://img.shields.io/badge/Environment-Client-9b59b6?style=for-the-badge" alt="Client">
+<a href="https://modrinth.com/mod/modmenu"><img src="https://img.shields.io/badge/Config-Mod_Menu-1bd96a?style=for-the-badge" alt="Mod Menu"></a>
 <img src="https://img.shields.io/github/issues/Lythroo/Simple-Blood?style=for-the-badge&logo=github" alt="Issues">
 
 <br>
@@ -39,9 +40,12 @@ When entities take damage, they bleed proportionally to the amount dealt. Weak h
 
 </div>
 
-<br>
 
 <div align="center">
+
+```
+The gallery GIFs below are currently outdated. Updated previews will be added soon.
+```
 
 ### Blood Burst
 Damage-scaled particle effects that respond to hit intensity.
@@ -77,16 +81,14 @@ Blood disperses naturally in water environments.
 
 ## Configuration
 
-All effects are fully customizable through [Mod Menu](https://modrinth.com/mod/modmenu).
+> All effects are fully customizable through [Mod Menu](https://modrinth.com/mod/modmenu).
 
-> **Note:** The gallery GIFs above are currently outdated. Updated previews will be added soon.
 
-<br>
 <br>
 
 ## For Mod Developers
 
-Simple Blood provides an API to customize blood behavior for your mod's entities.
+> Simple Blood provides an API to customize blood behavior for your mod's entities.
 ```java
 import com.bloodmod.BloodModAPI;
 import net.minecraft.util.Identifier;
