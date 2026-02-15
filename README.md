@@ -94,14 +94,14 @@ Blood disperses naturally in water environments.
 
 ## Configuration
 
-All effects are fully customizable through [Mod Menu](https://modrinth.com/mod/modmenu).
+> All effects are fully customizable through [Mod Menu](https://modrinth.com/mod/modmenu).
 
 
 <br>
 
 ## For Mod Developers
 
-Simple Blood provides an API to customize blood behavior for your mod's entities.
+> Simple Blood provides an API to customize blood behavior for your mod's entities.
 ```java
 import com.bloodmod.BloodModAPI;
 import net.minecraft.util.Identifier;
