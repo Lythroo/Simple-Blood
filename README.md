@@ -7,6 +7,8 @@
 <br>
 <br>
 
+<div align="center">
+
 ![# Simple Blood](https://cdn.modrinth.com/data/cached_images/b6e93d6ab422e767e10e6a3e2207b244d603cd1e.png)
 
 <br>
@@ -49,21 +51,17 @@ When entities take damage, they bleed proportionally to the amount dealt. Weak h
 
 <div align="center">
 
-## Features
+# Features
 
 </div>
 
 
 <div align="center">
 
-```
-The gallery GIFs below are currently outdated. Updated previews will be added soon.
-```
 
-### Blood Burst
-Damage-scaled particle effects that respond to hit intensity.
+## Hit Burst + Death Burst + Bloodstains
 
-<img src="https://cdn.modrinth.com/data/cached_images/f606522c9f886ca6ec566d95c46b2bc0fd6017e1.gif" alt="Blood Burst">
+<img src="https://cdn.modrinth.com/data/cached_images/18a16cdf909aeaae4a1fb32cb7f8f13348393c78.jpeg">
 
 </div>
 
@@ -71,10 +69,21 @@ Damage-scaled particle effects that respond to hit intensity.
 
 <div align="center">
 
-### Blood Drips
-Low-health entities drip blood as a visual indicator of their condition.
+## Blood in different colors
 
-<img src="https://cdn.modrinth.com/data/cached_images/720c7e2f12125fca2cf18e166325236776a82ae6.gif" alt="Blood Drips">
+<img src="https://cdn.modrinth.com/data/cached_images/f382b83d8f1519a3a21035fbe1cccbf661bc7c3c.jpeg" alt="Blood in different colors">
+
+</div>
+
+
+<div align="center">
+
+<br>
+
+## Iron Golem Debris Particles
+
+<img src="https://cdn.modrinth.com/data/cached_images/d0ee53f95871a68dd71d8cf4401afa4c78b8aef3.jpeg"
+alt="Iron Golem Debris Particles">
 
 </div>
 
@@ -82,10 +91,29 @@ Low-health entities drip blood as a visual indicator of their condition.
 
 <div align="center">
 
-### Underwater Blood Clouds
-Blood disperses naturally in water environments.
+## Underwater Blood Fog
 
-<img src="https://cdn.modrinth.com/data/cached_images/d00651f88689ca7888662f4d68c9474edb35e124.gif" alt="Underwater Blood Clouds">
+<img src="https://cdn.modrinth.com/data/cached_images/05f1a86df455742e12eca492555aec44b716477e_0.webp" alt="Underwater Blood Fog">
+
+</div>
+
+<br>
+
+<div align="center">
+  
+## Everything's configurable
+
+<img src="https://cdn.modrinth.com/data/cached_images/3639cffeb21d96f24c3a5d6706cd9b1dabe973f6.jpeg" alt="Everything's Configurable">
+
+<br>
+
+<br>
+
+
+```
+...and many more featues!
+```
+
 
 </div>
 
