@@ -111,7 +111,7 @@ alt="Iron Golem Debris Particles">
 
 
 ```
-...and many more featues!
+...and many more features!
 ```
 
 
