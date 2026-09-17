@@ -1,3 +1,5 @@
+Updated mod will be here soon
+
 <div align="center">
 
 <a href="https://modrinth.com/mod/simple-blood">
