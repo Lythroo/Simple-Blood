@@ -1,0 +1,10 @@
+.gradle/
+build/
+versions/*/build/
+versions/*/run/
+run/
+.idea/
+*.iml
+dist/
+upload/
+modrinth_token.txt

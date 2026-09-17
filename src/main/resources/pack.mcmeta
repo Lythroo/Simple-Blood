@@ -1,0 +1,7 @@
+{
+  "pack": {
+    "description": "Simple Blood",
+    "pack_format": 15,
+    "supported_formats": [15, 64]
+  }
+}

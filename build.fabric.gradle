@@ -1,0 +1,67 @@
+// Fabric buildscript for UNOBFUSCATED Minecraft (26.x+).
+// Uses the plain fabric-loom plugin with no mappings (the game ships named).
+plugins {
+    id 'net.fabricmc.fabric-loom'
+}
+
+def mcVersion = project.property('deps.minecraft')
+def javaVersion = (project.property('java_version') as String).toInteger()
+
+// -Pstudio builds the filming aid variant: same mod plus /bloodstudio, marked by a resource.
+def studio = project.hasProperty('studio')
+version = "${project.property('mod_version')}+${mcVersion}" + (studio ? '-studio' : '')
+group = 'com.bloodmod'
+
+base { archivesName = 'simpleblood-fabric' }
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    withSourcesJar()
+}
+
+loom {
+    runs {
+        named('client') {
+            client()
+            ideConfigGenerated = true
+            runDir = 'run'
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.terraformersmc.com/releases/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${mcVersion}"
+    implementation "net.fabricmc:fabric-loader:${project.property('deps.fabric_loader')}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.property('deps.fabric_api')}"
+
+    // Mod Menu: Fabric-only, compile-only, never bundled.
+    def modmenu = project.findProperty('deps.modmenu')
+    if (modmenu && modmenu != 'none') {
+        def mmDep = "com.terraformersmc:modmenu:${modmenu}"
+        compileOnly mmDep
+        localRuntime mmDep
+    }
+}
+
+processResources {
+    if (!studio) exclude 'bloodmod_studio.txt' // release jars never wake the studio
+    exclude 'META-INF/neoforge.mods.toml' // keep this a Fabric-only jar
+    inputs.property 'version', project.version
+    inputs.property 'mixinCompat', project.property('mixin_compat')
+    inputs.property 'minecraftRange', mcVersion
+    filesMatching(['fabric.mod.json', 'bloodmod.mixins.json']) {
+        expand version: project.version,
+                mixinCompat: project.property('mixin_compat'),
+                minecraft_range: mcVersion // exact game version → correct Modrinth detection
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = javaVersion
+    it.options.encoding = 'UTF-8'
+}

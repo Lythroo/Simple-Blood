@@ -1,0 +1,81 @@
+// Fabric buildscript for OBFUSCATED Minecraft (1.21.x).
+// Uses fabric-loom-remap with official Mojang mappings, and remapped mod deps.
+plugins {
+    id 'net.fabricmc.fabric-loom-remap'
+}
+
+def mcVersion = project.property('deps.minecraft')
+def javaVersion = (project.property('java_version') as String).toInteger()
+
+// -Pstudio builds the filming aid variant: same mod plus /bloodstudio, marked by a resource.
+def studio = project.hasProperty('studio')
+version = "${project.property('mod_version')}+${mcVersion}" + (studio ? '-studio' : '')
+group = 'com.bloodmod'
+
+base { archivesName = 'simpleblood-fabric' }
+
+stonecutter {
+    // All 1.21.x use the older Fabric API class name for particle providers.
+    replacements.string(true) {
+        replace 'ParticleProviderRegistry', 'ParticleFactoryRegistry'
+    }
+    // Only 1.21.1 predates the ResourceLocation -> Identifier rename (1.21.11+).
+    replacements.string(stonecutter.current.version == '1.21.1') {
+        replace 'Identifier', 'ResourceLocation'
+    }
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    withSourcesJar()
+}
+
+loom {
+    runs {
+        named('client') {
+            client()
+            ideConfigGenerated = true
+            runDir = 'run'
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.terraformersmc.com/releases/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${mcVersion}"
+    mappings loom.layered {
+        officialMojangMappings()
+    }
+    modImplementation "net.fabricmc:fabric-loader:${project.property('deps.fabric_loader')}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.property('deps.fabric_api')}"
+
+    // Mod Menu: Fabric-only, compile-only, never bundled.
+    def modmenu = project.findProperty('deps.modmenu')
+    if (modmenu && modmenu != 'none') {
+        def mmDep = "com.terraformersmc:modmenu:${modmenu}"
+        modCompileOnly mmDep
+        modLocalRuntime mmDep
+    }
+}
+
+processResources {
+    if (!studio) exclude 'bloodmod_studio.txt' // release jars never wake the studio
+    exclude 'META-INF/neoforge.mods.toml' // keep this a Fabric-only jar
+    inputs.property 'version', project.version
+    inputs.property 'mixinCompat', project.property('mixin_compat')
+    inputs.property 'minecraftRange', mcVersion
+    filesMatching(['fabric.mod.json', 'bloodmod.mixins.json']) {
+        expand version: project.version,
+                mixinCompat: project.property('mixin_compat'),
+                minecraft_range: mcVersion // exact game version → correct Modrinth detection
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = javaVersion
+    it.options.encoding = 'UTF-8'
+}

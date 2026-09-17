@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.bloodmod.mixin",
+  "compatibilityLevel": "${mixinCompat}",
+  "client": [
+    "LivingEntityMixin",
+    "ClientPacketListenerMixin",
+    "PlayerMixin",
+    "SpriteContentsAccessor",
+    "GuiRenderStateAccessor",
+    "ScreenInvoker"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

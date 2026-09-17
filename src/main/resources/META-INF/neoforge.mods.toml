@@ -1,0 +1,29 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "All Rights Reserved"
+issueTrackerURL = "https://github.com/Lythroo/Simple-Blood/issues"
+
+[[mods]]
+modId = "bloodmod"
+version = "${version}"
+displayName = "Simple Blood"
+${logo_lines}
+description = "Adds simple blood particles."
+authors = "Lythroo_"
+
+[[mixins]]
+config = "bloodmod.mixins.json"
+
+[[dependencies.bloodmod]]
+modId = "neoforge"
+type = "required"
+versionRange = "[1,)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.bloodmod]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_range}"
+ordering = "NONE"
+side = "CLIENT"

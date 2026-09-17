@@ -1,0 +1,73 @@
+plugins {
+    id 'net.neoforged.moddev'
+}
+
+def mcVersion = project.property('deps.minecraft')
+def javaVersion = (project.property('java_version') as String).toInteger()
+
+// -Pstudio builds the filming aid variant: same mod plus /bloodstudio, marked by a resource.
+def studio = project.hasProperty('studio')
+version = "${project.property('mod_version')}+${mcVersion}" + (studio ? '-studio' : '')
+group = 'com.bloodmod'
+
+base { archivesName = 'simpleblood-neoforge' }
+
+// Only 1.21.1 predates the ResourceLocation -> Identifier rename (1.21.11+).
+stonecutter {
+    replacements.string(stonecutter.current.version == '1.21.1') {
+        replace 'Identifier', 'ResourceLocation'
+    }
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    withSourcesJar()
+}
+
+neoForge {
+    version = project.property('deps.neoforge')
+
+    runs {
+        register('client') {
+            client()
+            gameDirectory = file('run')
+        }
+    }
+
+    mods {
+        register('bloodmod') {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+}
+
+processResources {
+    if (!studio) exclude 'bloodmod_studio.txt' // release jars never wake the studio
+    exclude 'fabric.mod.json' // keep this a NeoForge-only jar
+    def minecraftRange = "[${mcVersion}]" // Maven exact range → correct Modrinth detection
+    inputs.property 'version', project.version
+    inputs.property 'mixinCompat', project.property('mixin_compat')
+    inputs.property 'minecraftRange', minecraftRange
+    // NeoForge 26.3 retired `logoFile` in favour of `iconFile` (square) / `bannerFile`; older loaders only know `logoFile`.
+    def newLogoKeys = stonecutter.eval(stonecutter.current.version, '>=26.3')
+    def logoLines = newLogoKeys ? 'iconFile = "assets/bloodmod/icon.png"' : 'logoFile = "assets/bloodmod/icon.png"' + '\n' + 'logoBlur = false'
+    inputs.property 'logoLines', logoLines
+    filesMatching(['META-INF/neoforge.mods.toml', 'bloodmod.mixins.json']) {
+        expand version: project.version,
+                mixinCompat: project.property('mixin_compat'),
+                minecraft_range: minecraftRange,
+                logo_lines: logoLines
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = javaVersion
+    it.options.encoding = 'UTF-8'
+}
