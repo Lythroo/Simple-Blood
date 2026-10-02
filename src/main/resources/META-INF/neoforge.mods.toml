@@ -4,7 +4,7 @@ license = "All Rights Reserved"
 issueTrackerURL = "https://github.com/Lythroo/Simple-Blood/issues"
 
 [[mods]]
-modId = "bloodmod"
+modId = "simpleblood"
 version = "${version}"
 displayName = "Simple Blood"
 ${logo_lines}
@@ -12,16 +12,16 @@ description = "Adds simple blood particles."
 authors = "Lythroo_"
 
 [[mixins]]
-config = "bloodmod.mixins.json"
+config = "simpleblood.mixins.json"
 
-[[dependencies.bloodmod]]
+[[dependencies.simpleblood]]
 modId = "neoforge"
 type = "required"
 versionRange = "[1,)"
 ordering = "NONE"
 side = "CLIENT"
 
-[[dependencies.bloodmod]]
+[[dependencies.simpleblood]]
 modId = "minecraft"
 type = "required"
 versionRange = "${minecraft_range}"

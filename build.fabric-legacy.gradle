@@ -10,7 +10,7 @@ def javaVersion = (project.property('java_version') as String).toInteger()
 // -Pstudio builds the filming aid variant: same mod plus /bloodstudio, marked by a resource.
 def studio = project.hasProperty('studio')
 version = "${project.property('mod_version')}+${mcVersion}" + (studio ? '-studio' : '')
-group = 'com.bloodmod'
+group = 'com.simpleblood'
 
 base { archivesName = 'simpleblood-fabric' }
 
@@ -63,12 +63,12 @@ dependencies {
 }
 
 processResources {
-    if (!studio) exclude 'bloodmod_studio.txt' // release jars never wake the studio
+    if (!studio) exclude 'simpleblood_studio.txt' // release jars never wake the studio
     exclude 'META-INF/neoforge.mods.toml' // keep this a Fabric-only jar
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
     inputs.property 'minecraftRange', mcVersion
-    filesMatching(['fabric.mod.json', 'bloodmod.mixins.json']) {
+    filesMatching(['fabric.mod.json', 'simpleblood.mixins.json']) {
         expand version: project.version,
                 mixinCompat: project.property('mixin_compat'),
                 minecraft_range: mcVersion // exact game version → correct Modrinth detection

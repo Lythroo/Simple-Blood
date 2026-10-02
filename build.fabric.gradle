@@ -10,7 +10,7 @@ def javaVersion = (project.property('java_version') as String).toInteger()
 // -Pstudio builds the filming aid variant: same mod plus /bloodstudio, marked by a resource.
 def studio = project.hasProperty('studio')
 version = "${project.property('mod_version')}+${mcVersion}" + (studio ? '-studio' : '')
-group = 'com.bloodmod'
+group = 'com.simpleblood'
 
 base { archivesName = 'simpleblood-fabric' }
 
@@ -32,6 +32,10 @@ loom {
 repositories {
     mavenCentral()
     maven { url = 'https://maven.terraformersmc.com/releases/' }
+    exclusiveContent {
+        forRepository { maven { url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
 }
 
 dependencies {
@@ -46,15 +50,32 @@ dependencies {
         compileOnly mmDep
         localRuntime mmDep
     }
+
+    // Iris (+ Sodium, which it needs), to look at the blood under shaders: run in the dev
+    // client only, never compiled against or bundled. Set per version in gradle.properties
+    // ("none" switches it off).
+    def iris = project.findProperty('deps.iris')
+    def sodium = project.findProperty('deps.sodium')
+    if (iris && iris != 'none' && sodium && sodium != 'none') {
+        localRuntime "maven.modrinth:iris:${iris}"
+        localRuntime "maven.modrinth:sodium:${sodium}"
+    }
+
+    // Physics Mod, to try the ragdoll blood: run in the dev client only, never bundled. The
+    // integration touches it by reflection alone, so nothing is compiled against it.
+    def physicsmod = project.findProperty('deps.physicsmod')
+    if (physicsmod && physicsmod != 'none') {
+        localRuntime "maven.modrinth:physicsmod:${physicsmod}"
+    }
 }
 
 processResources {
-    if (!studio) exclude 'bloodmod_studio.txt' // release jars never wake the studio
+    if (!studio) exclude 'simpleblood_studio.txt' // release jars never wake the studio
     exclude 'META-INF/neoforge.mods.toml' // keep this a Fabric-only jar
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
     inputs.property 'minecraftRange', mcVersion
-    filesMatching(['fabric.mod.json', 'bloodmod.mixins.json']) {
+    filesMatching(['fabric.mod.json', 'simpleblood.mixins.json']) {
         expand version: project.version,
                 mixinCompat: project.property('mixin_compat'),
                 minecraft_range: mcVersion // exact game version → correct Modrinth detection

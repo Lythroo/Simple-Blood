@@ -7,7 +7,11 @@ Adds simple blood particles to Minecraft. Pixel art, client side only, works on 
 - Footprints through fresh blood.
 - Directional hits: swords sweep, axes splash, maces crater, arrows punch through.
 - Every mob its own blood, modded mobs too. Clouds underwater, rain washes it away.
-- Settings screen with live previews and presets. Blood button on the title screen or `/bloodmod`.
+- Mobs without blood shed what they are made of: bone dust and chips, metal flakes, wood
+  splinters, embers, glowing sparks, gusts. Glow squid ink glows.
+- Sounds for hits, drops, drips and footsteps, in the voice of what was hit.
+- Physics Mod ragdolls bleed, smear and stain where they land.
+- Settings screen with live previews and presets. Blood button on the title screen or `/simpleblood`.
 
 Fabric and NeoForge, Minecraft 1.21.1 to 26.3.
 
@@ -28,13 +32,13 @@ listed in `versions/<version>-<loader>/gradle.properties`.
 ## For mod developers
 
 Other mods can set colour, kind and behaviour of their mobs' blood and trigger effects
-through `com.bloodmod.BloodModAPI`. See [FOR_MOD_DEVELOPERS.md](FOR_MOD_DEVELOPERS.md).
+through `com.simpleblood.SimpleBloodAPI`. See [FOR_MOD_DEVELOPERS.md](FOR_MOD_DEVELOPERS.md).
 
 ## Errors
 
 If something in the mod fails, that part turns itself off and the game keeps running. A chat
 message offers "Copy error"; please post it at
-https://github.com/Lythroo/Simple-Blood/issues. `/bloodmod reset` turns the part back on.
+https://github.com/Lythroo/Simple-Blood/issues. `/simpleblood reset` turns the part back on.
 
 ## License
 

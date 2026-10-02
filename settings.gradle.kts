@@ -13,7 +13,7 @@ plugins {
     id("dev.kikugie.stonecutter") version "0.9.2"
 }
 
-extra["mod.id"] = "bloodmod"
+extra["mod.id"] = "simpleblood"
 
 stonecutter {
     create(rootProject) {
