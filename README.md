@@ -1,6 +1,6 @@
 # Simple Blood
 
-1.0.2 soon
+1.0.2 soon on Curseforge and Modrinth
 
 Adds simple blood particles to Minecraft. Pixel art, client side only, works on any server.
 
