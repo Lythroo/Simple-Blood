@@ -11,18 +11,30 @@ client-only mod, so there is nothing to call on the server.
 
 ### What is new in 1.0.2
 
-- **Renamed.** The package is now `com.simpleblood` and the API class `SimpleBloodAPI`
-  (was `com.bloodmod.BloodModAPI`); the mod ID is `simpleblood`. Change your imports and,
-  if you declare a dependency, the mod ID. The API itself is unchanged.
-- **New blood kinds**: `BONE` (puffs of bone dust and spinning bone chips), `METAL`
-  (tumbling flakes that glint and clink), `WOOD` (splinters, plus drops of resin in the
-  entity's colour that pool like blood), `SPIRIT` (glowing sparks that float away) and
-  `WIND` (little gusts). Apart from wood's resin, none paints blocks or clouds up in
-  water. Vanilla skeletons, golems, the creaking, allays, vexes and breezes use them.
-- **`setGlows(true)`**: the blood glows in the dark (drops, clouds in water, fresh
-  puddles, which lose the glow as they dry). The glow squid's does by default.
-- **`EMBER` throws embers now**: they flicker, cool from white-hot to ash and hiss out in
-  water, instead of being glowing drops.
+- Package renamed to `com.simpleblood`.
+- API class is now `SimpleBloodAPI`.
+- Mod ID is now `simpleblood`.
+- The API itself is unchanged.
+- New kinds: `BONE`, `METAL`, `WOOD`, `SPIRIT`, `WIND`.
+- `EMBER` now throws embers that cool.
+- New `setGlows(true)`: blood glows in the dark.
+
+### Depending on Simple Blood
+
+Simple Blood is optional for your mod: check it is loaded before you call the API.
+
+```java
+// Fabric
+if (FabricLoader.getInstance().isModLoaded("simpleblood")) MyBloodSetup.register();
+// NeoForge
+if (ModList.get().isLoaded("simpleblood")) MyBloodSetup.register();
+```
+
+Keep the calls in a class of their own (`MyBloodSetup` above), so nothing loads
+`SimpleBloodAPI` when Simple Blood is not installed. To compile against it, use the
+jar for your loader and Minecraft version, e.g. through the Modrinth Maven with that
+file's version ID from its Modrinth page: `compileOnly "maven.modrinth:simple-blood:<id>"`
+(`modCompileOnly` for Fabric on 1.21.x).
 
 ### What is new in 1.0.0
 
@@ -72,8 +84,18 @@ SimpleBloodAPI.registerEntityBlood(YourEntities.CUSTOM_MOB, new SimpleBloodAPI.B
 - `setCanDripAtLowHealth(boolean)`: set `false` for constructs/undead.
 - `setTransformToStains(boolean)`: blood sticks to blocks (puddles, runs, stains) and
   clouds up in water. `false`: it stays as drops that fade where they land.
-- `setBloodKind(BloodKind)`: `LIQUID` (default), `DEBRIS`, `EMBER`, `POWDER`, `BONE`,
-  `METAL`, `WOOD`, `SPIRIT` or `WIND`; see above.
+- `setBloodKind(BloodKind)`: what comes out (default `LIQUID`):
+  - `LIQUID`: blood. Pools, runs down walls, clouds up in water.
+  - `DEBRIS`: dry bits that come to rest.
+  - `EMBER`: embers that cool to ash, hiss out in water.
+  - `POWDER`: snow. Flat piles that melt.
+  - `BONE`: bone dust and spinning chips.
+  - `METAL`: tumbling flakes that glint and clink.
+  - `WOOD`: splinters, plus resin drops (in your colour) that pool.
+  - `SPIRIT`: glowing sparks that float away.
+  - `WIND`: little gusts.
+- `setGlows(boolean)`: drops, clouds in water and fresh puddles glow in the dark; puddles
+  lose the glow as they dry (1.0.2).
 - `setLeavesFootprints(boolean)`: feet pick up fresh blood and leave a trail (default
   yes while the Footprints setting is on).
 
@@ -101,19 +123,24 @@ SimpleBloodAPI.registerEntityBlood(YourEntities.CUSTOM_MOB, new SimpleBloodAPI.B
 SimpleBloodAPI.registerEntityBlood("yourmod:rainbow_slime", new SimpleBloodAPI.BloodSettings()
         .setColorProvider(e -> ((RainbowSlime) e).getTintRGB()));
 
-// A sap-bleeding treant: brown, no drip, no puddles:
+// A treant: wood splinters, and amber sap that pools like blood:
 SimpleBloodAPI.registerEntityBlood("yourmod:treant", new SimpleBloodAPI.BloodSettings()
-        .setColor(0x5B3A1A)
-        .setCanDripAtLowHealth(false)
-        .setTransformToStains(false));
+        .setColor(0xC98A2E)
+        .setBloodKind(BloodKind.WOOD)
+        .setCanDripAtLowHealth(false));
 
-// A clockwork knight: grey iron flakes that never pool, and no footprints:
+// A clockwork knight: grey metal flakes, and no footprints:
 SimpleBloodAPI.registerEntityBlood("yourmod:clockwork_knight", new SimpleBloodAPI.BloodSettings()
-        .setColor(0x9A9A9A)
-        .setBloodKind(BloodKind.DEBRIS)
+        .setColor(0xB4B4B4)
+        .setBloodKind(BloodKind.METAL)
         .setLeavesFootprints(false));
 
-// A magma beast: glowing embers that fizzle out in water:
+// A cave jelly: blue blood that glows in the dark:
+SimpleBloodAPI.registerEntityBlood("yourmod:cave_jelly", new SimpleBloodAPI.BloodSettings()
+        .setColor(0x3FA9F5)
+        .setGlows(true));
+
+// A magma beast: embers that cool to ash and hiss out in water:
 SimpleBloodAPI.registerEntityBlood("yourmod:magma_beast", new SimpleBloodAPI.BloodSettings()
         .setColor(0xFF6A00)
         .setBloodKind(BloodKind.EMBER));
@@ -155,7 +182,8 @@ SimpleBloodAPI.spawnDeath(entity);
 
 // Blood on the first block face along a line, as if a drop had landed there. It spreads,
 // runs down sides and dries like any puddle. pixels: about 1-3 for a drop, 3-6 for a
-// splash (at 16 px per block edge). Honours the player's "Puddles" settings.
+// splash (at 16 px per block edge). Honours the player's "Puddles" settings. Painted
+// blood does not glow, whatever the entity's setGlows.
 SimpleBloodAPI.paint(level, eyePos, eyePos.add(look.scale(4)), 0x8B0000, 12);
 
 SimpleBloodAPI.surfaceBloodCount();   // block faces holding blood right now
