@@ -43,6 +43,7 @@ public final class SimpleBloodClient {
     public static void clientTick(Minecraft client) {
         Guard.tick(client);
         Guard.run(Guard.Part.OTHER, "the Blood button or /simpleblood", () -> com.simpleblood.gui.ConfigAccess.tick(client));
+        Guard.run(Guard.Part.OTHER, "reading your blood colour from your skin", SkinColours::tickOwn);
         if (config != null) {
             if (Guard.ok(Guard.Part.SURFACES)) {
                 Guard.run(Guard.Part.SURFACES, "blood on blocks moving and drying", () -> com.simpleblood.surface.BloodSurfaces.tick(client));
@@ -62,9 +63,6 @@ public final class SimpleBloodClient {
         }
         Guard.run(Guard.Part.SURFACES, "footprints", () -> com.simpleblood.surface.Footprints.tick(client));
         Guard.run(Guard.Part.HITS, "Physics Mod ragdolls bleeding", () -> com.simpleblood.compat.PhysicsModRagdolls.tick(client.level));
-        if (com.simpleblood.studio.Studio.enabled()) {
-            Guard.run(Guard.Part.OTHER, "the studio emitters", () -> com.simpleblood.studio.Studio.tick(client));
-        }
 
         Iterator<ClientBloodBurstTask> it = activeBursts.iterator();
         while (it.hasNext()) {

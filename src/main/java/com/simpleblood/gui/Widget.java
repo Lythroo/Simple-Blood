@@ -12,9 +12,11 @@ public abstract class Widget {
         String previewName();
         boolean previewActive();
         java.util.EnumSet<com.simpleblood.surface.PreviewScene.Aspect> previewAspects();
+        default com.simpleblood.SimpleBloodConfig previewConfig() { return null; }
     }
 
     public int x, y, w, h;
+    public Widget parent;
     public boolean visible = true;
     public boolean enabled = true;
     public List<String> tooltip;
@@ -29,9 +31,31 @@ public abstract class Widget {
         return visible && mx >= x && my >= y && mx < x + w && my < y + h;
     }
 
+    private static Widget hoverTop;
+    private static boolean hoverTracked;
+
+    public static void hoverTop(Widget top) {
+        hoverTop = top;
+        hoverTracked = true;
+    }
+
+    public static void stopHoverTracking() {
+        hoverTop = null;
+        hoverTracked = false;
+    }
+
+    public boolean hot(double mx, double my) {
+        if (!contains(mx, my)) return false;
+        if (!hoverTracked) return true;
+        for (Widget t = hoverTop; t != null; t = t.parent) {
+            if (t == this) return true;
+        }
+        return false;
+    }
+
     public void render(Gfx g, int mx, int my, float dt) {
         if (!visible) return;
-        boolean over = enabled && contains(mx, my);
+        boolean over = enabled && hot(mx, my);
         hover = Anim.approach(hover, over ? 1f : 0f, dt * 14f);
         draw(g, mx, my, dt);
     }
@@ -60,6 +84,7 @@ public abstract class Widget {
 
         public <T extends Widget> T add(T child) {
             children.add(child);
+            child.parent = this;
             return child;
         }
 

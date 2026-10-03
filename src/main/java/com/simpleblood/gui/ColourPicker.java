@@ -22,14 +22,21 @@ public final class ColourPicker extends Widget.Container {
     private boolean dragGrid, dragHue;
     private float open;
 
+    private final String note;
+
     public ColourPicker(int rgb, IntConsumer apply, Runnable close) {
+        this(rgb, apply, close, null);
+    }
+
+    public ColourPicker(int rgb, IntConsumer apply, Runnable close, String note) {
+        this.note = note;
         this.original = rgb & 0xFFFFFF;
         this.apply = apply;
         this.close = close;
         float[] hsv = toHsv(rgb);
         hue = hsv[0]; sat = hsv[1]; val = hsv[2];
         w = 224;
-        h = 166;
+        h = note == null ? 166 : 196;
         hex.maxLength = 7;
         hex.set(String.format("#%06X", original));
         hex.onChange = s -> {
@@ -110,6 +117,14 @@ public final class ColourPicker extends Widget.Container {
             boolean over = mx >= sx && mx < sx + 9 && my >= sy && my < sy + 9;
             g.fill(sx, sy, sx + 9, sy + 9, Gfx.alpha(over ? 0xFFFFFFFF : 0xFF000000, a));
             g.fill(sx + 1, sy + 1, sx + 8, sy + 8, Gfx.alpha(0xFF000000 | PRESETS[i], a));
+        }
+        if (note != null) {
+            int ny = gridY + GRID + 6;
+            g.fill(x + 10, ny - 2, x + 11, ny + 20, Gfx.alpha(Widgets.Notice.WARN, a));
+            java.util.List<String> lines = g.wrap(note, w - 26);
+            for (int i = 0; i < Math.min(2, lines.size()); i++) {
+                g.text(lines.get(i), x + 16, ny + i * 10, Gfx.alpha(Widgets.TEXT_DIM, a));
+            }
         }
         super.draw(g, mx, my, dt);
     }

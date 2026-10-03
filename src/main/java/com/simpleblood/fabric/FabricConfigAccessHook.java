@@ -14,9 +14,6 @@ final class FabricConfigAccessHook {
 
     static void register() {
         ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> ConfigAccess.screenInitialised(screen));
-        ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> {
-            if (com.simpleblood.studio.Studio.enabled()) dispatcher.register(com.simpleblood.studio.Studio.<FabricClientCommandSource>command());
-        });
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) -> dispatcher.register(
                 LiteralArgumentBuilder.<FabricClientCommandSource>literal("simpleblood")
                         .executes(ctx -> { ConfigAccess.requestOpen(); return 1; })

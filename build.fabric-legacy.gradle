@@ -7,9 +7,7 @@ plugins {
 def mcVersion = project.property('deps.minecraft')
 def javaVersion = (project.property('java_version') as String).toInteger()
 
-// -Pstudio builds the filming aid variant: same mod plus /bloodstudio, marked by a resource.
-def studio = project.hasProperty('studio')
-version = "${project.property('mod_version')}+${mcVersion}" + (studio ? '-studio' : '')
+version = "${project.property('mod_version')}+${mcVersion}"
 group = 'com.simpleblood'
 
 base { archivesName = 'simpleblood-fabric' }
@@ -63,7 +61,6 @@ dependencies {
 }
 
 processResources {
-    if (!studio) exclude 'simpleblood_studio.txt' // release jars never wake the studio
     exclude 'META-INF/neoforge.mods.toml' // keep this a Fabric-only jar
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')

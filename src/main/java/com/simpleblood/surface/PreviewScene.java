@@ -188,7 +188,14 @@ public final class PreviewScene {
         synchronized (LIVE) { LIVE.remove(this); }
     }
 
+    private SimpleBloodConfig override;
+
+    public void config(SimpleBloodConfig config) {
+        override = config;
+    }
+
     private SimpleBloodConfig cfg() {
+        if (override != null) return override;
         SimpleBloodConfig c = SimpleBloodClient.getConfig();
         return c == null ? new SimpleBloodConfig() : c;
     }

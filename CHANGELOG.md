@@ -48,6 +48,16 @@
 - Blood runs down banners and signs.
 - Blood shows through glass and ice ([#4](https://github.com/Lythroo/Simple-Blood/issues/4)).
 
+### Players ([#7](https://github.com/Lythroo/Simple-Blood/issues/7))
+- Skins can carry your blood colour.
+- Others with Simple Blood see it.
+- One click uploads it as your skin.
+- Or save the skin file yourself.
+- New instances read it from your skin.
+- Take it back out anytime.
+- Settings show what colour others see.
+- Toggle: General, "Colours from skins".
+
 ### Settings
 - Option to hide the menu button ([#5](https://github.com/Lythroo/Simple-Blood/issues/5)).
 
@@ -61,6 +71,7 @@
 - Banner blood no longer clips.
 - No more black specks at corners.
 - No constant splashing next to water.
+- Covered buttons no longer light up.
 
 ### Renamed: bloodmod is now simpleblood
 - Command is now `/simpleblood`.

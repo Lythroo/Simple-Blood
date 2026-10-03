@@ -176,6 +176,8 @@ public class SimpleBloodConfig {
         public boolean playerBleed = true;
         public int clientPlayerBloodColor = 0x660303;
         public int otherPlayersBloodColor = 0x660303;
+        public boolean colourFromSkins = true;
+        public int skinColourAdopted = -1;
 
         public BloodColor.Color getClientPlayerColor() {
             float r = ((clientPlayerBloodColor >> 16) & 0xFF) / 255.0f;

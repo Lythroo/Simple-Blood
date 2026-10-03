@@ -93,7 +93,12 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     @Override
     public void openPicker(int current, IntConsumer apply) {
-        picker = new ColourPicker(current, apply, () -> picker = null);
+        openPicker(current, apply, null);
+    }
+
+    @Override
+    public void openPicker(int current, IntConsumer apply, String note) {
+        picker = new ColourPicker(current, apply, () -> picker = null, note);
         picker.layout(width, height);
     }
 
@@ -220,6 +225,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     @Override
     public void removed() {
+        Widget.stopHoverTracking();
         cleanup("closing the settings screen", () -> {
             for (SceneView v : scenes.values()) v.dispose();
             scenes.clear();
@@ -288,6 +294,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         java.util.function.IntSupplier colour = previewRow.previewColour();
         view.colour(colour != null ? colour : () -> config().player.clientPlayerBloodColor);
         view.show(previewRow.previewAspects());
+        view.config(previewRow.previewConfig());
         if (fresh) view.trigger();
 
         if (!name.isEmpty()) g.textClipped(name, ix + 2, iy + 2, iw - 4, Gfx.alpha(Widgets.TEXT, a));
@@ -390,6 +397,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         int slide = Math.round((1f - ease) * 10f);
         list.x += slide;
         header.x += slide;
+        Widget.hoverTop(picker != null ? picker.hovered(mx, my) : root.hovered(mx, my));
         tabs.render(g, mx, my, dt);
         header.render(g, mx, my, dt);
         list.render(g, mx, my, dt);
@@ -586,7 +594,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         protected void draw(Gfx g, int mx, int my, float dt) {
             boolean on = selected.getAsBoolean();
             sel = Anim.approach(sel, on ? 1f : 0f, dt * 14f);
-            boolean over = contains(mx, my);
+            boolean over = hot(mx, my);
             g.button(x, y, w, h, true, over || on);
             if (sel > 0.01f) {
                 int barH = Math.round((h - 6) * sel);

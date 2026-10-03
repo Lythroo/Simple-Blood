@@ -14,9 +14,6 @@ final class NeoForgeConfigAccessHook {
 
     static void register() {
         NeoForge.EVENT_BUS.addListener((ScreenEvent.Init.Post e) -> ConfigAccess.screenInitialised(e.getScreen()));
-        NeoForge.EVENT_BUS.addListener((RegisterClientCommandsEvent e) -> {
-            if (com.simpleblood.studio.Studio.enabled()) e.getDispatcher().register(com.simpleblood.studio.Studio.<net.minecraft.commands.CommandSourceStack>command());
-        });
         NeoForge.EVENT_BUS.addListener((RegisterClientCommandsEvent e) -> e.getDispatcher().register(
                 Commands.literal("simpleblood")
                         .executes(ctx -> { ConfigAccess.requestOpen(); return 1; })

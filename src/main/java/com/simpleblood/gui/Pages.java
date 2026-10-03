@@ -2,6 +2,7 @@ package com.simpleblood.gui;
 
 import com.simpleblood.SimpleBlood;
 import com.simpleblood.SimpleBloodConfig;
+import com.simpleblood.SkinColours;
 import com.simpleblood.surface.BloodSurfaces;
 import com.simpleblood.surface.PreviewScene;
 
@@ -19,6 +20,7 @@ public final class Pages {
 
     public interface Host {
         void openPicker(int current, IntConsumer apply);
+        void openPicker(int current, IntConsumer apply, String note);
         SimpleBloodConfig config();
         void rebuildPage();
         void refreshList();
@@ -70,10 +72,16 @@ public final class Pages {
         private IntSupplier kindColour;
         private java.util.EnumSet<PreviewScene.Aspect> aspects = java.util.EnumSet.allOf(PreviewScene.Aspect.class);
 
+        private SimpleBloodConfig previewConfig;
+
         public void preview(PreviewScene.Kind kind, IntSupplier colour) {
             this.kind = kind;
             this.kindColour = colour;
             this.aspects = java.util.EnumSet.allOf(PreviewScene.Aspect.class);
+        }
+
+        public void previewWith(SimpleBloodConfig config) {
+            this.previewConfig = config;
         }
 
         public void preview(PreviewScene.Kind kind, IntSupplier colour, PreviewScene.Aspect first, PreviewScene.Aspect... rest) {
@@ -102,6 +110,14 @@ public final class Pages {
             cursor = l.y + 13;
         }
 
+        public void wide(Widget w) {
+            w.x = 8;
+            w.y = cursor + 3;
+            w.w = rowW - 16;
+            panel.add(w);
+            cursor = w.y + w.h + 5;
+        }
+
         public void widget(Widget w, int height) {
             w.x = 8;
             w.y = cursor;
@@ -116,6 +132,7 @@ public final class Pages {
                 r.previewColour = kindColour;
                 r.previewText = tip;
                 r.previewAspects = aspects;
+                r.previewConfig = previewConfig;
             } else if (tip != null && !tip.isEmpty()) {
                 r.tooltip = List.of(tip);
             }
@@ -146,8 +163,12 @@ public final class Pages {
         }
 
         public void colour(String name, String tip, IntSupplier get, IntConsumer set, int def) {
+            colour(name, tip, null, get, set, def);
+        }
+
+        public void colour(String name, String tip, String pickerNote, IntSupplier get, IntConsumer set, int def) {
             Widgets.Swatch s = new Widgets.Swatch(get, null);
-            s.onClick = () -> host.openPicker(get.getAsInt(), set);
+            s.onClick = () -> host.openPicker(get.getAsInt(), set, pickerNote);
             s.w = Math.min(110, controlW);
             row(name, tip, s, () -> (get.getAsInt() & 0xFFFFFF) == (def & 0xFFFFFF), () -> set.accept(def));
         }
@@ -194,13 +215,92 @@ public final class Pages {
             b.bool("Ragdolls bleed", "Physics Mod ragdolls keep bleeding, splash where they land and smear the ground.",
                     () -> c.general.physicsModRagdolls, v -> c.general.physicsModRagdolls = v, d.general.physicsModRagdolls);
         }
-        b.colour("Your blood", "Your colour. The previews use it too.", () -> c.player.clientPlayerBloodColor, v -> c.player.clientPlayerBloodColor = v, d.player.clientPlayerBloodColor);
-        b.colour("Other players", "Everyone else.", () -> c.player.otherPlayersBloodColor, v -> c.player.otherPlayersBloodColor = v, d.player.otherPlayersBloodColor);
+
+        b.heading("Your blood colour");
+        b.preview(PreviewScene.Kind.HIT, playerColour(c));
+        b.colour("Your blood", "The colour you bleed on your screen. Other players only see it once it is in your skin: see Upload below.",
+                "Only you see this colour. To show it to other players, press Upload under it afterwards.",
+                () -> c.player.clientPlayerBloodColor, v -> c.player.clientPlayerBloodColor = v, d.player.clientPlayerBloodColor);
+        b.wide(new Widgets.Notice(() -> ownColourText(c), () -> ownColourTone(c), SkinColours::ownColour));
+        b.preview(null, null);
+        b.action("Show it to other players", "Puts your colour in a corner of your skin nobody sees and makes that your Minecraft skin, like changing it on minecraft.net. "
+                        + "Everyone with Simple Blood then sees you bleed your colour. Asks first.",
+                "Upload", () -> confirmUpload(b));
+        b.action("Or do it yourself", "Saves that skin as a file and opens its folder. Upload it on minecraft.net or in the launcher.",
+                "Save file", () -> SkinColours.putInOwnSkin(c.player.clientPlayerBloodColor, false, result -> skinDone(b, result)));
+        b.action("Take it out of your skin", "Clears the hidden corner again and makes that your Minecraft skin. Others go back to their own colour for you. Asks first.",
+                "Remove", () -> confirmRemove(b));
+
+        b.heading("Other players");
+        b.preview(PreviewScene.Kind.HIT, () -> c.player.otherPlayersBloodColor);
+        b.colour("Other players", "What other players bleed on your screen, when their skin carries no colour of its own.",
+                () -> c.player.otherPlayersBloodColor, v -> c.player.otherPlayersBloodColor = v, d.player.otherPlayersBloodColor);
+        b.preview(null, null);
+        b.bool("Colours from skins", "Players who put their colour in their skin (with Simple Blood) bleed that colour. Off: everyone bleeds the colour above.",
+                () -> c.player.colourFromSkins, v -> c.player.colourFromSkins = v, d.player.colourFromSkins);
         if (TestEffects.inWorld()) {
             b.heading("Try it");
             b.action("Drip on what you are looking at", "Aim at a block and hit the button. The game keeps running behind this screen.", "Drip", TestEffects::drops);
             b.action("Big splat away from you", "Aim at a block and hit the button.", "Spray", TestEffects::burst);
             b.action("Mop it all up", "Every puddle, stain and footprint, gone.", "Clear", () -> { TestEffects.clearBlood(); b.host.toast("All clean"); });
+        }
+    }
+
+    private static String ownColourText(SimpleBloodConfig c) {
+        int carried = SkinColours.ownColour();
+        int mine = c.player.clientPlayerBloodColor & 0xFFFFFF;
+        if (carried == SkinColours.READING) return "Checking your skin...";
+        if (carried == mine) {
+            return SkinColours.justUploaded()
+                    ? "Uploaded. Players with Simple Blood see this colour once they rejoin."
+                    : "Other players see this colour too. It is in your skin.";
+        }
+        if (carried == SkinColours.NONE && SkinColours.justUploaded()) {
+            return "Taken out of your skin. Players see their own colour for you once they rejoin.";
+        }
+        if (carried == SkinColours.NONE) {
+            return "Only you see this colour. Others see whatever they picked for other players. Press Upload below to share yours.";
+        }
+        return String.format("Other players still see the colour in your skin, #%06X (left). Press Upload below to send the new one.", carried);
+    }
+
+    private static int ownColourTone(SimpleBloodConfig c) {
+        int carried = SkinColours.ownColour();
+        if (carried == SkinColours.READING) return Widgets.Notice.QUIET;
+        return carried == (c.player.clientPlayerBloodColor & 0xFFFFFF) ? Widgets.Notice.GOOD : Widgets.Notice.WARN;
+    }
+
+    private static void confirmUpload(Builder b) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        net.minecraft.client.gui.screens.Screen back = Screens.current(mc);
+        Screens.open(mc, new net.minecraft.client.gui.screens.ConfirmScreen(yes -> {
+            Screens.open(mc, back);
+            if (yes) SkinColours.putInOwnSkin(b.cfg.player.clientPlayerBloodColor, true, result -> skinDone(b, result));
+        }, net.minecraft.network.chat.Component.literal("Change your Minecraft skin?"),
+                net.minecraft.network.chat.Component.literal("This uploads your current skin with your blood colour in a hidden corner and makes it your skin, "
+                        + "like changing it on minecraft.net. It looks the same. A copy is also saved in the simpleblood folder.")));
+    }
+
+    private static void confirmRemove(Builder b) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        net.minecraft.client.gui.screens.Screen back = Screens.current(mc);
+        Screens.open(mc, new net.minecraft.client.gui.screens.ConfirmScreen(yes -> {
+            Screens.open(mc, back);
+            if (yes) SkinColours.putInOwnSkin(SkinColours.NONE, true, result -> skinDone(b, result));
+        }, net.minecraft.network.chat.Component.literal("Take your blood colour out of your skin?"),
+                net.minecraft.network.chat.Component.literal("This clears the hidden corner of your current skin and makes that your skin, "
+                        + "like changing it on minecraft.net. It looks the same. A copy is also saved in the simpleblood folder.")));
+    }
+
+    private static void skinDone(Builder b, SkinColours.Result result) {
+        switch (result) {
+            case SAVED -> { SkinColours.showSavedSkin(); b.host.toast("Saved. Now upload it as your skin."); }
+            case UPLOADED -> b.host.toast("Uploaded. Others see it after rejoining.");
+            case NO_COLOUR -> b.host.toast("Your skin has no colour in it");
+            case ALREADY_THERE -> b.host.toast("Your skin already has this colour");
+            case NOT_LOGGED_IN -> b.host.toast("Not logged in to a Minecraft account");
+            case TOO_SOON -> b.host.toast("Too many tries. Wait a minute.");
+            case FAILED -> b.host.toast("Could not change your skin");
         }
     }
 
@@ -500,7 +600,12 @@ public final class Pages {
 
     private static void presets(Builder b) {
         b.preview(PreviewScene.Kind.HIT, playerColour(b.cfg));
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        String current = gson.toJson(b.cfg);
         for (Presets.Preset p : Presets.ALL) {
+            SimpleBloodConfig look = gson.fromJson(current, SimpleBloodConfig.class);
+            p.apply().accept(look);
+            b.previewWith(look);
             b.action(p.name(), p.description(), "Apply", () -> {
                 p.apply().accept(b.cfg);
                 BloodSurfaces.clear();
@@ -508,6 +613,7 @@ public final class Pages {
                 b.host.rebuildPage();
             });
         }
+        b.previewWith(null);
         b.preview(null, null);
         b.heading("Start over");
         b.action("Everything back to how it came", "All settings, plus mob colours and kinds.", "Reset all", () -> {

@@ -42,6 +42,40 @@ public final class Widgets {
         }
     }
 
+    public static class Notice extends Widget {
+        public static final int GOOD = 0xFF5BBF5B, WARN = 0xFFE0A030, QUIET = 0xFF808080;
+        private final Supplier<String> text;
+        private final IntSupplier tone;
+        private final IntSupplier swatch;
+
+        public Notice(Supplier<String> text, IntSupplier tone, IntSupplier swatch) {
+            this.text = text;
+            this.tone = tone;
+            this.swatch = swatch;
+            this.h = 38;
+        }
+
+        @Override
+        protected void draw(Gfx g, int mx, int my, float dt) {
+            int t = tone.getAsInt();
+            g.fill(x, y, x + w, y + h, 0x40000000);
+            g.fill(x, y, x + 2, y + h, t);
+            int tx = x + 8;
+            int sw = swatch.getAsInt();
+            if (sw >= 0) {
+                g.fill(tx, y + (h - 16) / 2, tx + 16, y + (h + 16) / 2, 0xFF000000);
+                g.fill(tx + 1, y + (h - 16) / 2 + 1, tx + 15, y + (h + 16) / 2 - 1, 0xFF000000 | sw);
+                tx += 22;
+            }
+            java.util.List<String> lines = g.wrap(text.get(), x + w - 6 - tx);
+            int n = Math.min(3, lines.size());
+            int ty = y + (h - n * 10) / 2 + 1;
+            for (int i = 0; i < n; i++) {
+                g.text(lines.get(i), tx, ty + i * 10, i == 0 ? TEXT : TEXT_DIM);
+            }
+        }
+    }
+
     public static class Heading extends Widget {
         public final String text;
 
@@ -69,7 +103,7 @@ public final class Widgets {
 
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
-            boolean over = enabled && contains(mx, my);
+            boolean over = enabled && hot(mx, my);
             int lift = over ? -1 : 0;
             g.button(x, y + lift, w, h, enabled, over);
             if (accent) g.fill(x + 2, y + lift + h - 3, x + w - 2, y + lift + h - 2, Gfx.alpha(ACCENT, 0.6f + 0.4f * hover));
@@ -103,7 +137,7 @@ public final class Widgets {
             boolean on = get.get();
             if (knob < 0) knob = on ? 1 : 0;
             knob = Anim.approach(knob, on ? 1f : 0f, dt * 18f);
-            boolean over = enabled && contains(mx, my);
+            boolean over = enabled && hot(mx, my);
             g.button(x, y, w, h, enabled, over);
             int slotX = x + 5, slotY = y + 6, slotW = 20, slotH = 8;
             g.fill(slotX, slotY, slotX + slotW, slotY + slotH, 0xFF1C1C1C);
@@ -140,7 +174,7 @@ public final class Widgets {
 
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
-            g.checkbox(x, y, 17, get.get(), enabled && contains(mx, my));
+            g.checkbox(x, y, 17, get.get(), enabled && hot(mx, my));
         }
 
         @Override
@@ -183,7 +217,7 @@ public final class Widgets {
             float target = frac(v);
             if (Float.isNaN(shown) || dragging) shown = target;
             else shown = Anim.approach(shown, target, dt * 16f);
-            boolean over = enabled && contains(mx, my);
+            boolean over = enabled && hot(mx, my);
             g.sliderTrack(x, y, w, h, over || dragging);
             int handleX = x + Math.round((w - 8) * shown);
             g.fill(x + 1, y + h - 4, handleX + 4, y + h - 2, Gfx.alpha(ACCENT, 0.35f + 0.25f * hover));
@@ -259,7 +293,7 @@ public final class Widgets {
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
             flash = Anim.approach(flash, 0f, dt * 8f);
-            boolean over = enabled && contains(mx, my);
+            boolean over = enabled && hot(mx, my);
             g.button(x, y, w, h, enabled, over);
             if (flash > 0.01f) g.fill(x + 2, y + 2, x + w - 2, y + h - 2, Gfx.alpha(0xFFFFFFFF, 0.25f * flash));
             String s = labels[index()];
@@ -307,7 +341,7 @@ public final class Widgets {
 
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
-            g.textField(x, y, w, h, focused || (enabled && contains(mx, my)));
+            g.textField(x, y, w, h, focused || (enabled && hot(mx, my)));
             int tx = x + 4, ty = y + (h - 8) / 2;
             int inner = w - 8;
             if (value.isEmpty() && !focused) {
@@ -405,7 +439,7 @@ public final class Widgets {
 
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
-            boolean over = enabled && contains(mx, my);
+            boolean over = enabled && hot(mx, my);
             g.button(x, y, w, h, enabled, over);
             int rgb = get.getAsInt() & 0xFFFFFF;
             g.fill(x + 4, y + 4, x + 20, y + h - 4, 0xFF000000);
@@ -441,6 +475,8 @@ public final class Widgets {
         @Override public String previewText() { return previewText; }
         @Override public String previewName() { return name; }
         @Override public boolean previewActive() { return control instanceof Slider s && s.dragging; }
+        public com.simpleblood.SimpleBloodConfig previewConfig;
+        @Override public com.simpleblood.SimpleBloodConfig previewConfig() { return previewConfig; }
         public java.util.EnumSet<com.simpleblood.surface.PreviewScene.Aspect> previewAspects = java.util.EnumSet.allOf(com.simpleblood.surface.PreviewScene.Aspect.class);
         @Override public java.util.EnumSet<com.simpleblood.surface.PreviewScene.Aspect> previewAspects() { return previewAspects; }
 
@@ -469,7 +505,7 @@ public final class Widgets {
 
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
-            boolean over = contains(mx, my);
+            boolean over = hot(mx, my);
             int bg = even ? 0x12FFFFFF : 0x00000000;
             g.fill(x, y, x + w, y + h, bg);
             if (hover > 0.01f) g.fill(x, y, x + w, y + h, Gfx.alpha(0xFFFFFFFF, 0.06f * hover));

@@ -33,6 +33,8 @@ public final class SceneView {
 
     public void colour(IntSupplier colour) { this.colour = colour; }
 
+    public void config(com.simpleblood.SimpleBloodConfig config) { scene.config(config); }
+
     public void show(java.util.EnumSet<PreviewScene.Aspect> aspects) { scene.show(aspects); }
 
     public void trigger() { scene.trigger(); }

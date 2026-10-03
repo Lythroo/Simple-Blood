@@ -43,9 +43,12 @@ public final class BloodColor {
         if (entityType.equals("player") && config != null) {
             Minecraft client = Minecraft.getInstance();
             if (client.player != null) {
-                boolean self = entity.getUUID().equals(client.player.getUUID());
-                return addColorVariation(self
-                        ? config.player.getClientPlayerColor()
+                if (entity.getUUID().equals(client.player.getUUID())) {
+                    return addColorVariation(config.player.getClientPlayerColor());
+                }
+                int carried = config.player.colourFromSkins ? SkinColours.colourOf(entity) : SkinColours.NONE;
+                return addColorVariation(carried != SkinColours.NONE
+                        ? new Color(carried)
                         : config.player.getOtherPlayersColor());
             }
         }
