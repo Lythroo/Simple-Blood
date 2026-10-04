@@ -31,7 +31,7 @@ listed in `versions/<version>-<loader>/gradle.properties`.
 ## For mod developers
 
 Other mods can set colour, kind and behaviour of their mobs' blood and trigger effects
-through `com.simpleblood.SimpleBloodAPI`. See [FOR_MOD_DEVELOPERS.md](FOR_MOD_DEVELOPERS.md).
+through `com.simpleblood.SimpleBloodAPI`. Start with the [developer docs](docs/README.md).
 
 ## Errors
 
