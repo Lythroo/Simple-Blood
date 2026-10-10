@@ -1,0 +1,30 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "All Rights Reserved"
+issueTrackerURL = "https://github.com/Lythroo/Simple-Blood/issues"
+
+[[mods]]
+modId = "simpleblood"
+version = "${version}"
+displayName = "Simple Blood"
+logoFile = "assets/simpleblood/icon.png"
+logoBlur = false
+description = "Adds simple blood particles."
+authors = "Lythroo_"
+# Client only: a server never needs it, and a client with it still joins any server.
+displayTest = "IGNORE_ALL_VERSION"
+
+# NeoForge 1.20.1 still calls itself "forge", so this matches both loaders.
+[[dependencies.simpleblood]]
+modId = "forge"
+mandatory = true
+versionRange = "[47,)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.simpleblood]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${minecraft_range}"
+ordering = "NONE"
+side = "CLIENT"

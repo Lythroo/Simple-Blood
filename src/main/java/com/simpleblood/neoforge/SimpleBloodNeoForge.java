@@ -1,4 +1,4 @@
-//? if neoforge {
+//? if neoforge && >1.20.1 {
 /*package com.simpleblood.neoforge;
 
 import com.simpleblood.SimpleBlood;
@@ -52,6 +52,7 @@ public class SimpleBloodNeoForge {
         event.registerSpriteSet(BloodParticles.BONE_CHIP, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.BONE));
         event.registerSpriteSet(BloodParticles.METAL_FLAKE, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.METAL));
         event.registerSpriteSet(BloodParticles.WOOD_SPLINTER, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.WOOD));
+        event.registerSpriteSet(BloodParticles.GIBLET, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.LIQUID));
         event.registerSpriteSet(BloodParticles.BONE_DUST, sprites -> new com.simpleblood.particle.PuffParticle.Factory(sprites, false));
         event.registerSpriteSet(BloodParticles.WIND_PUFF, sprites -> new com.simpleblood.particle.PuffParticle.Factory(sprites, true));
         event.registerSpriteSet(BloodParticles.SPIRIT_SPARK, com.simpleblood.particle.SparkParticle.Factory::new);
@@ -60,6 +61,78 @@ public class SimpleBloodNeoForge {
 
     private void onClientTick(ClientTickEvent.Post event) {
         SimpleBloodClient.clientTick(Minecraft.getInstance());
+    }
+
+}
+*///?}
+
+//? if neoforge && 1.20.1 {
+/*package com.simpleblood.neoforge;
+
+import com.simpleblood.SimpleBlood;
+import com.simpleblood.SimpleBloodClient;
+import com.simpleblood.BloodParticles;
+import com.simpleblood.particle.BloodFogParticle;
+import com.simpleblood.particle.BloodParticle;
+import net.minecraft.client.Minecraft;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.ConfigScreenHandler;
+import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
+
+@Mod("simpleblood")
+public class SimpleBloodNeoForge {
+
+    public SimpleBloodNeoForge() {
+        if (FMLEnvironment.dist != Dist.CLIENT) return;
+        SimpleBlood.LOGGER.info("Simple Blood (NeoForge) initializing...");
+        IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+
+        BloodParticles.REGISTRY.register(modBus);
+
+        modBus.addListener(this::onClientSetup);
+        modBus.addListener(this::onRegisterParticleProviders);
+        MinecraftForge.EVENT_BUS.addListener(this::onClientTick);
+        NeoForgeSurfaceHook.register();
+        NeoForgePreviewHook.register(modBus);
+        NeoForgeConfigAccessHook.register();
+
+        ModLoadingContext.get().registerExtensionPoint(ConfigScreenHandler.ConfigScreenFactory.class,
+                () -> new ConfigScreenHandler.ConfigScreenFactory((mc, parent) -> new com.simpleblood.gui.BloodConfigScreen(parent)));
+
+        SimpleBlood.LOGGER.info("Simple Blood (NeoForge) ready.");
+    }
+
+    private void onClientSetup(FMLClientSetupEvent event) {
+        SimpleBloodClient.load();
+    }
+
+    private void onRegisterParticleProviders(RegisterParticleProvidersEvent event) {
+        BloodParticles.bind();
+        event.registerSpriteSet(BloodParticles.BLOOD_DRIP, BloodParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BLOOD_SPLASH, sprites -> new BloodParticle.Factory(sprites, true));
+        event.registerSpriteSet(BloodParticles.BLOOD_DROP, com.simpleblood.particle.BloodDropParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BLOOD_STREAK, com.simpleblood.particle.BloodStreakParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BLOOD_FOG, BloodFogParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BONE_CHIP, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.BONE));
+        event.registerSpriteSet(BloodParticles.METAL_FLAKE, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.METAL));
+        event.registerSpriteSet(BloodParticles.WOOD_SPLINTER, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.WOOD));
+        event.registerSpriteSet(BloodParticles.GIBLET, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.LIQUID));
+        event.registerSpriteSet(BloodParticles.BONE_DUST, sprites -> new com.simpleblood.particle.PuffParticle.Factory(sprites, false));
+        event.registerSpriteSet(BloodParticles.WIND_PUFF, sprites -> new com.simpleblood.particle.PuffParticle.Factory(sprites, true));
+        event.registerSpriteSet(BloodParticles.SPIRIT_SPARK, com.simpleblood.particle.SparkParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.EMBER, com.simpleblood.particle.EmberParticle.Factory::new);
+    }
+
+    private void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) SimpleBloodClient.clientTick(Minecraft.getInstance());
     }
 
 }

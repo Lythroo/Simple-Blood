@@ -61,7 +61,9 @@ final class ModelFaces {
         if (quads.isEmpty() || quads.size() > MAX_QUADS || outline.isEmpty()) {
             return new ModelFaces(List.of(), List.of(), List.of(), false);
         }
-        AABB bounds = outline.bounds().inflate(SLACK);
+        boolean swungOut = state.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock
+                && state.getValue(net.minecraft.world.level.block.FenceGateBlock.OPEN);
+        AABB bounds = (swungOut ? new AABB(0, 0, 0, 1, 1, 1) : outline.bounds()).inflate(SLACK);
         List<Face> faces = new ArrayList<>();
         List<Slanted> slanted = new ArrayList<>();
         boolean agrees = true;

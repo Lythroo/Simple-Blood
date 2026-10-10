@@ -1,4 +1,4 @@
-// Fabric buildscript for OBFUSCATED Minecraft (1.21.x).
+// Fabric buildscript for OBFUSCATED Minecraft (1.20.1, 1.21.x).
 // Uses fabric-loom-remap with official Mojang mappings, and remapped mod deps.
 plugins {
     id 'net.fabricmc.fabric-loom-remap'
@@ -13,12 +13,12 @@ group = 'com.simpleblood'
 base { archivesName = 'simpleblood-fabric' }
 
 stonecutter {
-    // All 1.21.x use the older Fabric API class name for particle providers.
+    // 1.20.1 and all 1.21.x use the older Fabric API class name for particle providers.
     replacements.string(true) {
         replace 'ParticleProviderRegistry', 'ParticleFactoryRegistry'
     }
-    // Only 1.21.1 predates the ResourceLocation -> Identifier rename (1.21.11+).
-    replacements.string(stonecutter.current.version == '1.21.1') {
+    // 1.21.1 and older predate the ResourceLocation -> Identifier rename (1.21.11+).
+    replacements.string(stonecutter.eval(stonecutter.current.version, '<=1.21.1')) {
         replace 'Identifier', 'ResourceLocation'
     }
 }
@@ -34,6 +34,11 @@ loom {
             client()
             ideConfigGenerated = true
             runDir = 'run'
+            // -PnoIrisPbr: dev client without the blood's labPBR specular map under Iris.
+            if (project.hasProperty('noIrisPbr')) vmArg '-Dsimpleblood.irisPbr=false'
+            // Loom runs 1.20.1 on LWJGL 3.3.2, which Sodium 0.5 refuses at startup (its
+            // issue 2561 check wants exactly 3.3.1). Fine for a dev client: skip the check.
+            vmArg '-Dsodium.checks.issue2561=false'
         }
     }
 }
@@ -41,6 +46,10 @@ loom {
 repositories {
     mavenCentral()
     maven { url = 'https://maven.terraformersmc.com/releases/' }
+    exclusiveContent {
+        forRepository { maven { url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
 }
 
 dependencies {
@@ -58,16 +67,32 @@ dependencies {
         modCompileOnly mmDep
         modLocalRuntime mmDep
     }
+
+    // Iris (+ Sodium, which it needs), to look at the blood under shaders: run in the dev
+    // client only, never compiled against or bundled. Set per version in gradle.properties
+    // ("none" switches one off; Sodium runs on its own with -Pdeps.iris=none).
+    def iris = project.findProperty('deps.iris')
+    def sodium = project.findProperty('deps.sodium')
+    if (sodium && sodium != 'none') modLocalRuntime "maven.modrinth:sodium:${sodium}"
+    if (iris && iris != 'none' && sodium && sodium != 'none') {
+        modLocalRuntime "maven.modrinth:iris:${iris}"
+        // The libraries Iris carries inside its jar: remapped dev mods lose them, and Iris then
+        // crashes the moment a shader pack loads. Versions as bundled by that Iris build.
+        localRuntime 'org.anarres:jcpp:1.4.14'
+        localRuntime 'org.antlr:antlr4-runtime:4.13.1'
+        localRuntime "io.github.douira:glsl-transformer:${project.property('deps.iris_glsl_transformer')}"
+    }
 }
 
 processResources {
-    exclude 'META-INF/neoforge.mods.toml' // keep this a Fabric-only jar
+    exclude 'META-INF/neoforge.mods.toml', 'META-INF/mods.toml' // keep this a Fabric-only jar
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
     inputs.property 'minecraftRange', mcVersion
     filesMatching(['fabric.mod.json', 'simpleblood.mixins.json']) {
         expand version: project.version,
                 mixinCompat: project.property('mixin_compat'),
+                extraMixins: (stonecutter.eval(stonecutter.current.version, '>=1.21.11') ? ', "RenderTypeInvoker"' : ''), // 1.21.11+: RenderType.create for the shader clouds
                 minecraft_range: mcVersion // exact game version → correct Modrinth detection
     }
 }

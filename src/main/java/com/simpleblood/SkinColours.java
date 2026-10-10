@@ -108,7 +108,14 @@ public final class SkinColours {
     }
 
     private static CompletableFuture<String> profileSkinUrl(Minecraft mc) {
-        //? if 1.21.1 {
+        //? if 1.20.1 {
+        /*com.mojang.authlib.GameProfile profile = mc.getUser().getGameProfile();
+        return CompletableFuture.supplyAsync(() -> {
+                    com.mojang.authlib.minecraft.MinecraftProfileTexture skin = legacySkin(mc, profile);
+                    return skin != null ? skin.getUrl() : null;
+                }, net.minecraft.Util.backgroundExecutor())
+                .exceptionally(e -> null);
+        *///?} elif 1.21.1 {
         /*return mc.getSkinManager().getOrLoad(mc.getGameProfile())
                 .thenApply(net.minecraft.client.resources.PlayerSkin::textureUrl)
                 .exceptionally(e -> null);
@@ -162,7 +169,9 @@ public final class SkinColours {
     }
 
     public static void showSavedSkin() {
-        //? if 1.21.1 {
+        //? if 1.20.1 {
+        /*net.minecraft.Util.getPlatform().openFile(savedSkin().getParent().toFile());
+        *///?} elif 1.21.1 {
         /*net.minecraft.Util.getPlatform().openPath(savedSkin().getParent());
         *///?} elif <26.3 {
         net.minecraft.util.Util.getPlatform().openPath(savedSkin().getParent());
@@ -282,7 +291,17 @@ public final class SkinColours {
 
     private static Callable<OwnSkin> ownSkin() {
         Minecraft mc = Minecraft.getInstance();
-        //? if 1.21.1 {
+        //? if 1.20.1 {
+        /*com.mojang.authlib.GameProfile profile = mc.player != null ? mc.player.getGameProfile() : mc.getUser().getGameProfile();
+        return () -> {
+            com.mojang.authlib.minecraft.MinecraftProfileTexture skin = legacySkin(mc, profile);
+            if (skin != null) return new OwnSkin(download(skin.getUrl()), "slim".equals(skin.getMetadata("model")));
+            boolean slim = "slim".equals(net.minecraft.client.resources.DefaultPlayerSkin.getSkinModelName(profile.getId()));
+            try (InputStream in = mc.getResourceManager().open(net.minecraft.client.resources.DefaultPlayerSkin.getDefaultSkin(profile.getId()))) {
+                return new OwnSkin(in.readAllBytes(), slim);
+            }
+        };
+        *///?} elif 1.21.1 {
         /*CompletableFuture<net.minecraft.client.resources.PlayerSkin> pending = mc.player != null
                 ? CompletableFuture.completedFuture(mc.player.getSkin())
                 : mc.getSkinManager().getOrLoad(mc.getGameProfile());
@@ -348,12 +367,29 @@ public final class SkinColours {
     }
 
     private static String urlOf(AbstractClientPlayer player) {
-        //? if 1.21.1 {
+        //? if 1.20.1 {
+        /*com.mojang.authlib.minecraft.MinecraftProfileTexture skin = Minecraft.getInstance().getSkinManager()
+                .getInsecureSkinInformation(player.getGameProfile())
+                .get(com.mojang.authlib.minecraft.MinecraftProfileTexture.Type.SKIN);
+        return skin != null ? skin.getUrl() : null;
+        *///?} elif 1.21.1 {
         /*return player.getSkin().textureUrl();
         *///?} else {
         return player.getSkin().body() instanceof net.minecraft.core.ClientAsset.DownloadedTexture t ? t.url() : null;
         //?}
     }
+
+    //? if 1.20.1 {
+    /*private static com.mojang.authlib.minecraft.MinecraftProfileTexture legacySkin(Minecraft mc, com.mojang.authlib.GameProfile profile) {
+        java.util.Map<com.mojang.authlib.minecraft.MinecraftProfileTexture.Type, com.mojang.authlib.minecraft.MinecraftProfileTexture> textures =
+                mc.getSkinManager().getInsecureSkinInformation(profile);
+        if (textures.isEmpty()) {
+            com.mojang.authlib.minecraft.MinecraftSessionService session = mc.getMinecraftSessionService();
+            textures = session.getTextures(session.fillProfileProperties(profile, false), false);
+        }
+        return textures.get(com.mojang.authlib.minecraft.MinecraftProfileTexture.Type.SKIN);
+    }
+    *///?}
 
     private static int carried(byte[] png) throws IOException {
         try (NativeImage image = NativeImage.read(png)) {
@@ -398,7 +434,7 @@ public final class SkinColours {
     }
 
     private static int get(NativeImage image, int x, int y) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*int abgr = image.getPixelRGBA(x, y);
         return (abgr & 0xFF00FF00) | ((abgr & 0xFF) << 16) | ((abgr >> 16) & 0xFF);
         *///?} else {
@@ -407,7 +443,7 @@ public final class SkinColours {
     }
 
     private static void set(NativeImage image, int x, int y, int argb) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*image.setPixelRGBA(x, y, (argb & 0xFF00FF00) | ((argb & 0xFF) << 16) | ((argb >> 16) & 0xFF));
         *///?} else {
         image.setPixel(x, y, argb);

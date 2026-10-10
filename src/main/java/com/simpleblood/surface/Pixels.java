@@ -6,7 +6,7 @@ final class Pixels {
     private Pixels() {}
 
     static void setAbgr(NativeImage image, int x, int y, int abgr) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*image.setPixelRGBA(x, y, abgr);
         *///?} else {
         image.setPixelABGR(x, y, abgr);
@@ -14,7 +14,7 @@ final class Pixels {
     }
 
     static int luminanceSum(NativeImage image, int x, int y) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*int abgr = image.getPixelRGBA(x, y);
         return (abgr & 0xFF) + ((abgr >> 8) & 0xFF) + ((abgr >> 16) & 0xFF);
         *///?} else {
@@ -24,7 +24,7 @@ final class Pixels {
     }
 
     static int alpha(NativeImage image, int x, int y) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*return (image.getPixelRGBA(x, y) >>> 24) & 0xFF;
         *///?} else {
         return (image.getPixel(x, y) >>> 24) & 0xFF;

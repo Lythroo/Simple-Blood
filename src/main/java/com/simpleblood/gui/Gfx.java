@@ -96,30 +96,66 @@ public final class Gfx {
         return out;
     }
 
-    private static final Identifier BUTTON = Identifier.withDefaultNamespace("widget/button");
-    private static final Identifier BUTTON_HOVER = Identifier.withDefaultNamespace("widget/button_highlighted");
-    private static final Identifier BUTTON_OFF = Identifier.withDefaultNamespace("widget/button_disabled");
-    private static final Identifier SLIDER = Identifier.withDefaultNamespace("widget/slider");
-    private static final Identifier SLIDER_HOVER = Identifier.withDefaultNamespace("widget/slider_highlighted");
-    private static final Identifier HANDLE = Identifier.withDefaultNamespace("widget/slider_handle");
-    private static final Identifier HANDLE_HOVER = Identifier.withDefaultNamespace("widget/slider_handle_highlighted");
-    private static final Identifier FIELD = Identifier.withDefaultNamespace("widget/text_field");
-    private static final Identifier FIELD_HOVER = Identifier.withDefaultNamespace("widget/text_field_highlighted");
-    private static final Identifier CHECK = Identifier.withDefaultNamespace("widget/checkbox");
-    private static final Identifier CHECK_HOVER = Identifier.withDefaultNamespace("widget/checkbox_highlighted");
-    private static final Identifier CHECK_ON = Identifier.withDefaultNamespace("widget/checkbox_selected");
-    private static final Identifier CHECK_ON_HOVER = Identifier.withDefaultNamespace("widget/checkbox_selected_highlighted");
-    private static final Identifier SCROLLER = Identifier.withDefaultNamespace("widget/scroller");
-    private static final Identifier SCROLLER_BG = Identifier.withDefaultNamespace("widget/scroller_background");
+    private static final Identifier BUTTON = com.simpleblood.Ids.vanilla("widget/button");
+    private static final Identifier BUTTON_HOVER = com.simpleblood.Ids.vanilla("widget/button_highlighted");
+    private static final Identifier BUTTON_OFF = com.simpleblood.Ids.vanilla("widget/button_disabled");
+    private static final Identifier SLIDER = com.simpleblood.Ids.vanilla("widget/slider");
+    private static final Identifier SLIDER_HOVER = com.simpleblood.Ids.vanilla("widget/slider_highlighted");
+    private static final Identifier HANDLE = com.simpleblood.Ids.vanilla("widget/slider_handle");
+    private static final Identifier HANDLE_HOVER = com.simpleblood.Ids.vanilla("widget/slider_handle_highlighted");
+    private static final Identifier FIELD = com.simpleblood.Ids.vanilla("widget/text_field");
+    private static final Identifier FIELD_HOVER = com.simpleblood.Ids.vanilla("widget/text_field_highlighted");
+    private static final Identifier CHECK = com.simpleblood.Ids.vanilla("widget/checkbox");
+    private static final Identifier CHECK_HOVER = com.simpleblood.Ids.vanilla("widget/checkbox_highlighted");
+    private static final Identifier CHECK_ON = com.simpleblood.Ids.vanilla("widget/checkbox_selected");
+    private static final Identifier CHECK_ON_HOVER = com.simpleblood.Ids.vanilla("widget/checkbox_selected_highlighted");
+    private static final Identifier SCROLLER = com.simpleblood.Ids.vanilla("widget/scroller");
+    private static final Identifier SCROLLER_BG = com.simpleblood.Ids.vanilla("widget/scroller_background");
 
     public void sprite(Identifier id, int x, int y, int w, int h) {
         if (w <= 0 || h <= 0) return;
-        //? if 1.21.1 {
+        //? if 1.20.1 {
+        /*legacySprite(id, x, y, w, h);
+        *///?} elif 1.21.1 {
         /*g.blitSprite(id, x, y, w, h);
         *///?} else {
         g.blitSprite(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, id, x, y, w, h);
         //?}
     }
+
+    //? if 1.20.1 {
+    /*private static final Identifier WIDGETS = com.simpleblood.Ids.vanilla("textures/gui/widgets.png");
+    private static final Identifier SLIDER_SHEET = com.simpleblood.Ids.vanilla("textures/gui/slider.png");
+    private static final Identifier CHECKBOX_SHEET = com.simpleblood.Ids.vanilla("textures/gui/checkbox.png");
+
+    /^*
+     * 1.20.1 has no GUI sprites (they came in 1.20.2): the same widgets are cut from the old
+     * texture sheets, the way 1.20.1's own buttons, sliders, checkboxes and lists draw them.
+     ^/
+    private void legacySprite(Identifier id, int x, int y, int w, int h) {
+        com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+        if (id == BUTTON_OFF || id == BUTTON || id == BUTTON_HOVER) {
+            int row = id == BUTTON_OFF ? 0 : id == BUTTON ? 1 : 2;
+            g.blitNineSliced(WIDGETS, x, y, w, h, 20, 4, 200, 20, 0, 46 + row * 20);
+        } else if (id == SLIDER || id == SLIDER_HOVER) {
+            g.blitNineSliced(SLIDER_SHEET, x, y, w, h, 20, 4, 200, 20, 0, id == SLIDER ? 0 : 20);
+        } else if (id == HANDLE || id == HANDLE_HOVER) {
+            g.blitNineSliced(SLIDER_SHEET, x, y, w, h, 20, 4, 200, 20, 0, id == HANDLE ? 40 : 60);
+        } else if (id == CHECK || id == CHECK_HOVER || id == CHECK_ON || id == CHECK_ON_HOVER) {
+            boolean on = id == CHECK_ON || id == CHECK_ON_HOVER;
+            boolean hovered = id == CHECK_HOVER || id == CHECK_ON_HOVER;
+            g.blit(CHECKBOX_SHEET, x, y, w, h, hovered ? 20 : 0, on ? 20 : 0, 20, 20, 64, 64);
+        } else if (id == FIELD || id == FIELD_HOVER) {
+            fill(x, y, x + w, y + h, id == FIELD_HOVER ? 0xFFFFFFFF : 0xFFA0A0A0);
+            fill(x + 1, y + 1, x + w - 1, y + h - 1, 0xFF000000);
+        } else if (id == SCROLLER_BG) {
+            fill(x, y, x + w, y + h, 0xFF000000);
+        } else if (id == SCROLLER) {
+            fill(x, y, x + w, y + h, 0xFF808080);
+            fill(x, y, x + w - 1, y + h - 1, 0xFFC0C0C0);
+        }
+    }
+    *///?}
 
     public void button(int x, int y, int w, int h, boolean enabled, boolean hovered) {
         sprite(!enabled ? BUTTON_OFF : hovered ? BUTTON_HOVER : BUTTON, x, y, w, h);
@@ -161,7 +197,7 @@ public final class Gfx {
     public void scene(com.simpleblood.surface.PreviewScene scene, int x0, int y0, int x1, int y1, float scale,
                       float yaw, float pitch, net.minecraft.world.phys.Vec3 focus) {
         if (x1 <= x0 || y1 <= y0) return;
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*com.mojang.blaze3d.vertex.PoseStack pose = g.pose();
         g.enableScissor(x0, y0, x1, y1);
         pose.pushPose();
@@ -204,7 +240,7 @@ public final class Gfx {
         if (lines == null || lines.isEmpty()) return;
         List<Component> comps = new ArrayList<>(lines.size());
         for (String l : lines) comps.add(Component.literal(l));
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*g.renderTooltip(font, comps, Optional.empty(), mx, my);
         *///?} else {
         g.setTooltipForNextFrame(font, comps, Optional.empty(), mx, my);

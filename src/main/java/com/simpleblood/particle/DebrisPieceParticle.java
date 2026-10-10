@@ -20,10 +20,10 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.Vec3;
 
-//? if 1.21.1 {
-/*public class DebrisPieceParticle extends net.minecraft.client.particle.TextureSheetParticle {
+//? if <=1.21.1 {
+/*public class DebrisPieceParticle extends net.minecraft.client.particle.TextureSheetParticle implements DrawnBeforeWater {
 *///?} else {
-public class DebrisPieceParticle extends SingleQuadParticle {
+public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBeforeWater {
 //?}
 
     private static final int CHIP_SHAPES = 4, CHIP_TURNS = 4;
@@ -43,10 +43,15 @@ public class DebrisPieceParticle extends SingleQuadParticle {
     private static final float WATER_DRAG = 0.75f;
 
     private static final float BARK_R = 0x4A / 255f, BARK_G = 0x3E / 255f, BARK_B = 0x34 / 255f;
+    private static final float FLESH_R = 0xD8 / 255f, FLESH_G = 0x70 / 255f, FLESH_B = 0x6A / 255f;
 
     private final SpriteSet sprites;
     private final com.simpleblood.BloodKind kind;
     private final boolean metal;
+    private final boolean gib;
+    private final BloodColor.Color blood;
+    private final boolean bloodGlows, bloodPaints;
+    private final float bloodSize;
     private final boolean liesFlat;
     private final int shape;
     private final float red, green, blue;
@@ -59,6 +64,7 @@ public class DebrisPieceParticle extends SingleQuadParticle {
     private int restFrame;
     private float lift;
     private org.joml.Quaternionf flat;
+    private boolean glints;
     private int layer;
     private int bounces;
     private boolean landed;
@@ -68,7 +74,7 @@ public class DebrisPieceParticle extends SingleQuadParticle {
                                   double velX, double velY, double velZ,
                                   SpriteSet sprites, TextureAtlasSprite sprite, com.simpleblood.BloodKind kind,
                                   float size, float red, float green, float blue) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*super(world, x, y, z, velX, velY, velZ);
         this.setSprite(sprite);
         *///?} else {
@@ -79,8 +85,13 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         this.sprites = sprites;
         this.kind = kind;
         this.metal = kind == com.simpleblood.BloodKind.METAL;
-        this.liesFlat = kind != com.simpleblood.BloodKind.BONE;
+        this.gib = kind == com.simpleblood.BloodKind.LIQUID;
+        this.liesFlat = kind != com.simpleblood.BloodKind.BONE && !gib;
         boolean wood = kind == com.simpleblood.BloodKind.WOOD;
+        this.blood = BloodParticle.currentBloodColor();
+        this.bloodGlows = BloodParticle.currentGlows();
+        this.bloodPaints = BloodParticle.currentPaintsSurfaces();
+        this.bloodSize = BloodParticle.currentSizeMultiplier();
 
         if (BloodParticle.ballisticSpawn()) {
             this.xd = velX;
@@ -94,20 +105,26 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         this.phase = random.nextInt(metal ? TUMBLE.length : CHIP_TURNS);
         this.spinRate = (metal ? 0.55f + random.nextFloat() * 0.6f
                 : wood ? 0.4f + random.nextFloat() * 0.45f
+                : gib ? 0.25f + random.nextFloat() * 0.35f
                 : 0.3f + random.nextFloat() * 0.4f)
                 * (random.nextBoolean() ? 1 : -1);
-        this.bounce = metal ? 0.3f : wood ? 0.36f : 0.42f;
+        this.bounce = metal ? 0.3f : wood ? 0.36f : gib ? 0.15f : 0.42f;
 
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
-        float lifeScale = cfg.particleLifetimeMultiplier() * BloodParticle.nextLifeScale();
-        this.lifetime = Math.max(10, (int) (((metal ? 70 : 60) + random.nextInt(30)) * lifeScale));
+        float lifeScale = cfg.particleLifetimeMultiplier() * cfg.kinds.pieceLifetimeMultiplier() * BloodParticle.nextLifeScale();
+        this.lifetime = Math.max(10, (int) (((metal ? 70 : gib ? 140 : 60) + random.nextInt(30)) * lifeScale));
+        this.glints = cfg.kinds.metalGlint;
 
-        this.quadSize = (metal || wood ? 0.10f : 0.09f) * (1f + random.nextFloat() * 0.3f) * size;
+        this.quadSize = (gib ? 0.14f : metal || wood ? 0.10f : 0.09f) * (1f + random.nextFloat() * 0.3f) * size;
         this.setSize(0.08f, 0.08f);
         if (wood) {
             red = red * 0.45f + BARK_R * 0.55f;
             green = green * 0.45f + BARK_G * 0.55f;
             blue = blue * 0.45f + BARK_B * 0.55f;
+        } else if (gib) {
+            red = red * 0.5f + FLESH_R * 0.5f;
+            green = green * 0.5f + FLESH_G * 0.5f;
+            blue = blue * 0.5f + FLESH_B * 0.5f;
         }
         this.red = red;
         this.green = green;
@@ -117,6 +134,7 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         this.gravity = 0f;
         this.hasPhysics = true;
         pickSprite();
+        UnderwaterParticles.add(this);
     }
 
     @Override
@@ -126,6 +144,7 @@ public class DebrisPieceParticle extends SingleQuadParticle {
             BloodParticle.countDeath();
         }
         LYING.remove(this);
+        UnderwaterParticles.remove(this);
         super.remove();
     }
 
@@ -138,7 +157,7 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         try {
             tickPiece();
         } catch (Throwable t) {
-            Guard.fail(Guard.Part.PARTICLES, "a bone chip, metal flake or splinter moving", t);
+            Guard.fail(Guard.Part.PARTICLES, "a bone chip, metal flake, splinter or giblet moving", t);
             this.remove();
         }
     }
@@ -182,10 +201,15 @@ public class DebrisPieceParticle extends SingleQuadParticle {
             yd *= drag;
             zd *= drag;
 
+            if (gib && cfg.gore.gibletTrails && !onGround && age % 3 == 0) {
+                bleed(com.simpleblood.BloodParticles.BLOOD_DRIP, xd * 0.3, -0.15, zd * 0.3);
+            }
+
             if (onGround) {
                 if (!landed) {
                     landed = true;
                     if (!water) BloodSounds.pieceLanded(level, new Vec3(x, y, z), kind);
+                    if (gib && cfg.gore.gibletTrails) splat();
                 }
                 if (!water && wantY < -0.07 && bounces < 2) {
                     yd = -wantY * bounce;
@@ -211,6 +235,30 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         float lifeFraction = 1.0f - (float) age / lifetime;
         if (lifeFraction < 0.25f) {
             this.alpha = Math.max(0f, lifeFraction / 0.25f);
+        }
+    }
+
+    private void splat() {
+        bleed(com.simpleblood.BloodParticles.BLOOD_DRIP, 0, -0.1, 0);
+        for (int i = 0; i < 2; i++) {
+            double a = random.nextDouble() * Math.PI * 2;
+            double s = 0.04 + random.nextDouble() * 0.05;
+            bleed(com.simpleblood.BloodParticles.BLOOD_SPLASH, Math.cos(a) * s, 0.1 + random.nextDouble() * 0.06, Math.sin(a) * s);
+        }
+    }
+
+    private void bleed(net.minecraft.core.particles.SimpleParticleType type, double vx, double vy, double vz) {
+        BloodParticle.setCurrentBloodColor(blood);
+        BloodParticle.setCurrentKind(com.simpleblood.BloodKind.LIQUID);
+        BloodParticle.setGlowing(bloodGlows);
+        BloodParticle.setPaintsSurfaces(bloodPaints);
+        BloodParticle.setShouldTransformToFog(true);
+        BloodParticle.setEntitySizeMultiplier(bloodSize);
+        BloodParticle.setBallistic(true, 1.0f);
+        try {
+            com.simpleblood.ClientBloodParticleSpawner.emit(level, type, x, y, z, vx, vy, vz);
+        } finally {
+            BloodParticle.resetSpawnState();
         }
     }
 
@@ -273,8 +321,8 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         if (metal) {
             int frame = resting ? restFrame : TUMBLE[Math.floorMod((int) Math.floor(phase), TUMBLE.length)];
             if (!resting) {
-                if (frame == FACE && lastFrame != FACE && random.nextFloat() < 0.4f) glintTicks = 2;
-            } else if (frame == FACE && glintTicks == 0 && random.nextInt(90) == 0) {
+                if (glints && frame == FACE && lastFrame != FACE && random.nextFloat() < 0.4f) glintTicks = 2;
+            } else if (glints && frame == FACE && glintTicks == 0 && random.nextInt(90) == 0) {
                 glintTicks = 3;
             }
             lastFrame = frame;
@@ -290,27 +338,75 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         }
     }
 
-    //? if 1.21.1 {
+    //? if 1.20.1 {
     /*@Override
     public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, net.minecraft.client.Camera camera, float partialTick) {
+        if (drawnBeforeWater()) return;
+        if (flat == null) {
+            super.render(buffer, camera, partialTick);
+            return;
+        }
+        LegacyQuads.draw(buffer, camera, flat, true,
+                net.minecraft.util.Mth.lerp(partialTick, xo, x), net.minecraft.util.Mth.lerp(partialTick, yo, y),
+                net.minecraft.util.Mth.lerp(partialTick, zo, z), getQuadSize(partialTick),
+                getU0(), getU1(), getV0(), getV1(), rCol, gCol, bCol, alpha, getLightColor(partialTick));
+    }
+    *///?} elif 1.21.1 {
+    /*@Override
+    public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, net.minecraft.client.Camera camera, float partialTick) {
+        if (drawnBeforeWater()) return;
         if (flat != null) renderRotatedQuad(buffer, camera, flat, partialTick);
         else super.render(buffer, camera, partialTick);
     }
     *///?} elif <26.1 {
     /*@Override
     public void extract(net.minecraft.client.renderer.state.QuadParticleRenderState state, net.minecraft.client.Camera camera, float partialTick) {
+        if (drawnBeforeWater()) return;
         if (flat != null) extractRotatedQuad(state, camera, flat, partialTick);
         else super.extract(state, camera, partialTick);
     }
     *///?} else {
     @Override
     public void extract(net.minecraft.client.renderer.state.level.QuadParticleRenderState state, net.minecraft.client.Camera camera, float partialTick) {
+        if (drawnBeforeWater()) return;
         if (flat != null) extractRotatedQuad(state, camera, flat, partialTick);
         else super.extract(state, camera, partialTick);
     }
     //?}
 
-    //? if 1.21.1 {
+    @Override
+    public boolean isIn(ClientLevel level) {
+        return isAlive() && this.level == level;
+    }
+
+    @Override
+    public boolean drawnBeforeWater() {
+        return level.getFluidState(BlockPos.containing(x, y, z)).is(FluidTags.WATER);
+    }
+
+    @Override
+    public void quadBeforeWater(com.mojang.blaze3d.vertex.VertexConsumer vc, com.mojang.blaze3d.vertex.PoseStack.Pose pose,
+                                net.minecraft.client.Camera camera, float partialTick) {
+        Vec3 cam = DrawnBeforeWater.cameraPos(camera);
+        DrawnBeforeWater.quad(vc, pose, flat != null ? flat : camera.rotation(),
+                (float) (net.minecraft.util.Mth.lerp(partialTick, xo, x) - cam.x),
+                (float) (net.minecraft.util.Mth.lerp(partialTick, yo, y) - cam.y),
+                (float) (net.minecraft.util.Mth.lerp(partialTick, zo, z) - cam.z),
+                getQuadSize(partialTick), getU0(), getU1(), getV0(), getV1(),
+                rCol, gCol, bCol, alpha, pieceLight(partialTick));
+    }
+
+    //? if <26.1 {
+    /*private int pieceLight(float partialTick) {
+        return getLightColor(partialTick);
+    }
+    *///?} else {
+    private int pieceLight(float partialTick) {
+        return getLightCoords(partialTick);
+    }
+    //?}
+
+    //? if <=1.21.1 {
     /*@Override
     public net.minecraft.client.particle.ParticleRenderType getRenderType() {
         return net.minecraft.client.particle.ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
@@ -333,7 +429,7 @@ public class DebrisPieceParticle extends SingleQuadParticle {
         }
 
         @Override
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*public Particle createParticle(SimpleParticleType type, ClientLevel world,
                                        double x, double y, double z,
                                        double velX, double velY, double velZ) {

@@ -30,6 +30,7 @@ public final class TestEffects {
         Minecraft mc = Minecraft.getInstance();
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (mc.player == null || cfg == null) return false;
+        BloodParticle.resetSpawnState();
         BloodParticle.setCurrentBloodColor(BloodColor.getBloodColor(mc.player));
         BloodParticle.setShouldTransformToFog(true);
         BloodParticle.setShouldDespawnInWater(false);

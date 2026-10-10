@@ -80,12 +80,32 @@ public final class ConfigAccess {
             if (!free(widgets, s[0], s[1])) continue;
             Button b = new BloodButton(s[0], s[1], W, H, LABEL, btn -> Screens.open(mc, new BloodConfigScreen(screen)));
             b.setTooltip(Tooltip.create(TIP));
+            //? if neoforge && 1.20.1 {
+            /*addWidget(screen, b);
+            *///?} else {
             ((ScreenInvoker) screen).simpleblood$addWidget(b);
+            //?}
             placed = b;
             return;
         }
     }
 
+    //? if neoforge && 1.20.1 {
+    /*    private static java.lang.reflect.Method addRenderableWidget;
+
+    private static void addWidget(Screen screen, Button b) {
+        try {
+            if (addRenderableWidget == null) {
+                addRenderableWidget = net.minecraftforge.fml.util.ObfuscationReflectionHelper
+                        .findMethod(Screen.class, "m_142416_", GuiEventListener.class);
+            }
+            addRenderableWidget.invoke(screen, b);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("could not add the Blood button", e);
+        }
+    }
+
+    *///?}
     private static boolean free(List<AbstractWidget> widgets, int x, int y) {
         for (AbstractWidget w : widgets) {
             if (x < w.getX() + w.getWidth() + 2 && x + W + 2 > w.getX()

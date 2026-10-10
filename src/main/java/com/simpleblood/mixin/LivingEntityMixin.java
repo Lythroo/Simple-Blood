@@ -162,6 +162,7 @@ public class LivingEntityMixin implements BloodEntityAccess {
             simpleblood$lastContextTick = entity.tickCount;
             simpleblood$setWound(ctx.wound);
             SimpleBloodClient.addBurstTask(new ClientBloodBurstTask(clientWorld, entity, ctx));
+            if (!playerDied) com.simpleblood.Giblets.hit(clientWorld, entity, ctx);
             if (playerDied && cfg.deathBurstEnabled()) {
                 ClientBloodParticleSpawner.spawnBloodOnDeath(clientWorld, entity, ctx);
             }

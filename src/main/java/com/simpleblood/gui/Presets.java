@@ -167,6 +167,8 @@ public final class Presets {
         c.lowHealth = d.lowHealth;
         c.audio = d.audio;
         c.underwater = d.underwater;
+        c.kinds = d.kinds;
+        c.physicsMod = d.physicsMod;
         c.directional = d.directional;
         c.player.playerBleed = d.player.playerBleed;
     }

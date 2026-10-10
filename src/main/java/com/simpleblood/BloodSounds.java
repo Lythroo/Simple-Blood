@@ -56,6 +56,7 @@ public final class BloodSounds {
         switch (kind) {
             case METAL -> play(level, SoundEvents.CHAIN_HIT, at, 0.12f, 1.7f + rng.nextFloat() * 0.3f);
             case WOOD -> play(level, SoundEvents.BAMBOO_WOOD_HIT, at, 0.12f, 1.6f + rng.nextFloat() * 0.3f);
+            case LIQUID -> play(level, SoundEvents.SLIME_SQUISH_SMALL, at, 0.18f, 1.2f + rng.nextFloat() * 0.3f);
             default -> play(level, SoundEvents.BONE_BLOCK_HIT, at, 0.14f, 1.6f + rng.nextFloat() * 0.35f);
         }
     }
@@ -117,7 +118,11 @@ public final class BloodSounds {
                 if (death) play(level, SoundEvents.SMALL_AMETHYST_BUD_BREAK, at, 0.5f, 1.2f + p * 0.2f);
             }
             case WIND -> {
+                //? if 1.20.1 {
+                /*play(level, SoundEvents.PHANTOM_FLAP, at, 0.15f + 0.2f * volume, death ? 1.1f : 1.6f + p * 0.3f);
+                *///?} else {
                 play(level, SoundEvents.BREEZE_IDLE_AIR, at, 0.2f + 0.25f * volume, death ? 0.9f : 1.3f + p * 0.3f);
+                //?}
             }
             default -> {
                 play(level, SoundEvents.GRAVEL_HIT, at, 0.2f + 0.25f * volume, 1.3f + p * 0.25f);

@@ -8,3 +8,4 @@ run/
 dist/
 upload/
 modrinth_token.txt
+libs/

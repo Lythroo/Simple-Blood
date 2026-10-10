@@ -23,7 +23,7 @@ public final class SimpleBlood {
 
     public static boolean vanillaMobExists(String path) {
         try {
-            return BuiltInRegistries.ENTITY_TYPE.containsKey(Identifier.withDefaultNamespace(path));
+            return BuiltInRegistries.ENTITY_TYPE.containsKey(Ids.vanilla(path));
         } catch (Exception e) {
             return false;
         }
@@ -160,6 +160,8 @@ public final class SimpleBlood {
     }
 
     public static boolean bloodGlows(LivingEntity entity) {
+        SimpleBloodConfig glowCfg = SimpleBloodClient.getConfig();
+        if (glowCfg != null && !glowCfg.kinds.glow) return false;
         Identifier id = idOf(entity);
         SimpleBloodAPI.BloodSettings api = apiSettings(id);
         if (api != null && api.getGlows() != null) return api.getGlows();

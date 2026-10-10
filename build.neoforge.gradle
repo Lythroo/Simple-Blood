@@ -29,6 +29,14 @@ neoForge {
         register('client') {
             client()
             gameDirectory = file('run')
+            // -PnoIrisPbr: dev client without the blood's labPBR specular map under Iris.
+            if (project.hasProperty('noIrisPbr')) jvmArgument '-Dsimpleblood.irisPbr=false'
+            // Iris gives entity-format programs an overlay sampler that vanilla types like
+            // breeze_wind never bind; the dev-only sampler check then crashes (Iris #3137/#3347).
+            if (project.findProperty('deps.iris')) jvmArgument '-Dneoforge.disableGlValidation=true'
+            // 26.3: Iris's shadow pipelines carry one vertex format where the dev-only draw check
+            // (FrontendGpuDevice.STRICT_VALIDATION) expects sixteen.
+            if (project.findProperty('deps.iris')) jvmArgument '-Dneoforge.disableBlaze3DValidation=true'
         }
     }
 
@@ -39,15 +47,44 @@ neoForge {
     }
 }
 
+configurations {
+    devShaderMods { transitive = false } // Iris + Sodium for the dev client (see copyShaderMods)
+}
+
 repositories {
     mavenCentral()
+    exclusiveContent {
+        forRepository { maven { url = 'https://api.modrinth.com/maven' } }
+        filter { includeGroup 'maven.modrinth' }
+    }
 }
 
 dependencies {
+    // Iris (+ Sodium, which it needs), to look at the blood under shaders: run in the dev
+    // client only, never compiled against or bundled. Set per version in gradle.properties
+    // ("none" switches it off).
+    def iris = project.findProperty('deps.iris')
+    def sodium = project.findProperty('deps.sodium')
+    if (iris && iris != 'none' && sodium && sodium != 'none') {
+        devShaderMods "maven.modrinth:iris:${iris}"
+        devShaderMods "maven.modrinth:sodium:${sodium}"
+    }
 }
+
+// On the classpath NeoForge loads them as mods but keeps Sodium's classes from the game, so
+// they go into the run's mods folder instead, as a player would install them.
+def copyShaderMods = tasks.register('copyShaderMods', Copy) {
+    from configurations.devShaderMods
+    into file('run/mods')
+    doFirst {
+        fileTree('run/mods').matching { include 'iris-*.jar', 'sodium-*.jar' }.each { it.delete() }
+    }
+}
+tasks.matching { it.name == 'runClient' }.configureEach { dependsOn copyShaderMods }
 
 processResources {
     exclude 'fabric.mod.json' // keep this a NeoForge-only jar
+    exclude 'META-INF/mods.toml' // the 1.20.1 (Forge-era) metadata
     def minecraftRange = "[${mcVersion}]" // Maven exact range → correct Modrinth detection
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
@@ -59,6 +96,7 @@ processResources {
     filesMatching(['META-INF/neoforge.mods.toml', 'simpleblood.mixins.json']) {
         expand version: project.version,
                 mixinCompat: project.property('mixin_compat'),
+                extraMixins: (stonecutter.eval(stonecutter.current.version, '>=1.21.11') ? ', "RenderTypeInvoker"' : ''), // 1.21.11+: RenderType.create for the shader clouds
                 minecraft_range: minecraftRange,
                 logo_lines: logoLines
     }

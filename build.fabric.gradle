@@ -23,6 +23,8 @@ loom {
             client()
             ideConfigGenerated = true
             runDir = 'run'
+            // -PnoIrisPbr: dev client without the blood's labPBR specular map under Iris.
+            if (project.hasProperty('noIrisPbr')) vmArg '-Dsimpleblood.irisPbr=false'
         }
     }
 }
@@ -68,13 +70,14 @@ dependencies {
 }
 
 processResources {
-    exclude 'META-INF/neoforge.mods.toml' // keep this a Fabric-only jar
+    exclude 'META-INF/neoforge.mods.toml', 'META-INF/mods.toml' // keep this a Fabric-only jar
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
     inputs.property 'minecraftRange', mcVersion
     filesMatching(['fabric.mod.json', 'simpleblood.mixins.json']) {
         expand version: project.version,
                 mixinCompat: project.property('mixin_compat'),
+                extraMixins: ', "RenderTypeInvoker"', // 1.21.11+: RenderType.create for the shader clouds
                 minecraft_range: mcVersion // exact game version → correct Modrinth detection
     }
 }

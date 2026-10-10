@@ -28,10 +28,20 @@ public class BloodDropParticle extends BloodParticle {
         this.setSize(0.02f, 0.02f);
     }
 
+    //? if 1.20.1 {
+    /*@Override
+    public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, net.minecraft.client.Camera camera, float partialTick) {
+        LegacyQuads.draw(buffer, camera, LegacyQuads.uprightTowards(camera), false,
+                net.minecraft.util.Mth.lerp(partialTick, xo, x), net.minecraft.util.Mth.lerp(partialTick, yo, y),
+                net.minecraft.util.Mth.lerp(partialTick, zo, z), getQuadSize(partialTick),
+                getU0(), getU1(), getV0(), getV1(), rCol, gCol, bCol, alpha, getLightColor(partialTick));
+    }
+    *///?} else {
     @Override
     public SingleQuadParticle.FacingCameraMode getFacingCameraMode() {
         return SingleQuadParticle.FacingCameraMode.LOOKAT_Y;
     }
+    //?}
 
     public static class Factory implements ParticleProvider<SimpleParticleType> {
 
@@ -42,7 +52,7 @@ public class BloodDropParticle extends BloodParticle {
         }
 
         @Override
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*public Particle createParticle(SimpleParticleType type, ClientLevel world,
                                        double x, double y, double z,
                                        double velX, double velY, double velZ) {
@@ -55,7 +65,7 @@ public class BloodDropParticle extends BloodParticle {
             if (!com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.PARTICLES)) return null;
             try {
                 BloodColor.Color color = currentColor();
-                //? if 1.21.1 {
+                //? if <=1.21.1 {
                 /*TextureAtlasSprite sprite = this.spriteProvider.get(world.getRandom());
                 *///?} else {
                 TextureAtlasSprite sprite = this.spriteProvider.get(random);

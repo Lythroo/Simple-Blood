@@ -26,6 +26,7 @@ final class BlockToneSampler {
     static void clear() {
         CACHE.clear();
         CROSS_CACHE.clear();
+        SEE_THROUGH_CACHE.clear();
         ALL_QUADS.clear();
     }
 
@@ -203,7 +204,7 @@ final class BlockToneSampler {
                 ? new Direction[]{null, Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}
                 : new Direction[]{null};
         try {
-            //? if 1.21.1 {
+            //? if <=1.21.1 {
             /*net.minecraft.client.resources.model.BakedModel model =
                     Minecraft.getInstance().getBlockRenderer().getBlockModel(state);
             for (Direction face : faces) {
@@ -302,6 +303,45 @@ final class BlockToneSampler {
     }
 
     private static final Map<BlockState, Boolean> CROSS_CACHE = new ConcurrentHashMap<>();
+    private static final Map<BlockState, Boolean> SEE_THROUGH_CACHE = new ConcurrentHashMap<>();
+
+    static boolean isSeeThrough(BlockState state) {
+        Boolean cached = SEE_THROUGH_CACHE.get(state);
+        if (cached != null) return cached;
+        boolean seeThrough;
+        try {
+            seeThrough = detectSeeThrough(state);
+        } catch (Throwable t) {
+            seeThrough = false;
+        }
+        if (SEE_THROUGH_CACHE.size() > 2048) SEE_THROUGH_CACHE.clear();
+        SEE_THROUGH_CACHE.put(state, seeThrough);
+        return seeThrough;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static boolean detectSeeThrough(BlockState state) {
+        //? if <=1.21.1 {
+        /*return net.minecraft.client.renderer.ItemBlockRenderTypes.getChunkRenderType(state)
+                == net.minecraft.client.renderer.RenderType.translucent();
+        *///?} elif <26.1 {
+        /*return net.minecraft.client.renderer.ItemBlockRenderTypes.getChunkRenderType(state)
+                == net.minecraft.client.renderer.chunk.ChunkSectionLayer.TRANSLUCENT;
+        *///?} else {
+        net.minecraft.client.renderer.block.dispatch.BlockStateModel model =
+                Minecraft.getInstance().getModelManager().getBlockStateModelSet().get(state);
+        List<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> parts = new java.util.ArrayList<>();
+        model.collectParts(RandomSource.create(42), parts);
+        for (net.minecraft.client.renderer.block.dispatch.BlockStateModelPart part : parts) {
+            for (Direction d : new Direction[]{null, Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}) {
+                for (net.minecraft.client.resources.model.geometry.BakedQuad q : part.getQuads(d)) {
+                    if (q.materialInfo().layer() == net.minecraft.client.renderer.chunk.ChunkSectionLayer.TRANSLUCENT) return true;
+                }
+            }
+        }
+        return false;
+        //?}
+    }
 
     static boolean isCrossModel(BlockState state) {
         Boolean cached = CROSS_CACHE.get(state);
@@ -319,7 +359,7 @@ final class BlockToneSampler {
 
     private static boolean detectCross(BlockState state) {
         RandomSource rng = RandomSource.create(42);
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*net.minecraft.client.resources.model.BakedModel model =
                 Minecraft.getInstance().getBlockRenderer().getBlockModel(state);
         if (model.getQuads(state, null, rng).isEmpty()) return false;
@@ -357,7 +397,7 @@ final class BlockToneSampler {
     }
 
     static TextureAtlasSprite faceSprite(BlockState state, Direction face, RandomSource rng) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*net.minecraft.client.resources.model.BakedModel model =
                 Minecraft.getInstance().getBlockRenderer().getBlockModel(state);
         List<net.minecraft.client.renderer.block.model.BakedQuad> quads = model.getQuads(state, face, rng);

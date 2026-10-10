@@ -16,7 +16,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.util.RandomSource;
 
-//? if 1.21.1 {
+//? if <=1.21.1 {
 /*public class SparkParticle extends net.minecraft.client.particle.TextureSheetParticle {
 *///?} else {
 public class SparkParticle extends SingleQuadParticle {
@@ -31,7 +31,7 @@ public class SparkParticle extends SingleQuadParticle {
                             double velX, double velY, double velZ,
                             SpriteSet sprites, TextureAtlasSprite sprite,
                             float size, float red, float green, float blue) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*super(world, x, y, z, velX, velY, velZ);
         this.setSprite(sprite);
         *///?} else {
@@ -52,7 +52,7 @@ public class SparkParticle extends SingleQuadParticle {
         }
 
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
-        this.lifetime = Math.max(6, (int) ((12 + random.nextInt(10)) * cfg.particleLifetimeMultiplier()));
+        this.lifetime = Math.max(6, (int) ((12 + random.nextInt(10)) * cfg.particleLifetimeMultiplier() * cfg.kinds.pieceLifetimeMultiplier()));
         this.quadSize = 0.11f * (1f + random.nextFloat() * 0.4f) * size;
         this.setSize(0.05f, 0.05f);
         float pale = 0.3f;
@@ -110,7 +110,7 @@ public class SparkParticle extends SingleQuadParticle {
     }
     //?}
 
-    //? if 1.21.1 {
+    //? if <=1.21.1 {
     /*@Override
     public net.minecraft.client.particle.ParticleRenderType getRenderType() {
         return net.minecraft.client.particle.ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
@@ -131,7 +131,7 @@ public class SparkParticle extends SingleQuadParticle {
         }
 
         @Override
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*public Particle createParticle(SimpleParticleType type, ClientLevel world,
                                        double x, double y, double z,
                                        double velX, double velY, double velZ) {

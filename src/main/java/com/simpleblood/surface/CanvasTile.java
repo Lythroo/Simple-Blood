@@ -73,12 +73,16 @@ public final class CanvasTile {
     boolean active;
 
     private NativeImage image;
+    private NativeImage spec;
     int slot = -1;
     boolean dirty;
     int lastTouched;
     int light;
     int lightTick = -100;
+    boolean onSeeThrough;
     int glow;
+    net.minecraft.world.level.block.piston.PistonMovingBlockEntity mover;
+    boolean followsMover;
     private final List<int[]> ripples = new ArrayList<>(2);
 
     CanvasTile(Key key, BlockPos pos, BlockState state, Vec3 origin, Vec3 u, Vec3 v, double w, double h,
@@ -155,6 +159,39 @@ public final class CanvasTile {
         this.powder = new boolean[n];
         this.moved = new boolean[n];
         java.util.Arrays.fill(baseTone, BASE);
+    }
+
+    CanvasTile(CanvasTile src, Key key, BlockPos pos, int dx, int dy, int dz) {
+        this.key = key;
+        this.pos = pos.immutable();
+        this.face = src.face;
+        this.custom = src.custom;
+        this.state = src.state;
+        this.res = src.res;
+        this.lastTouched = src.lastTouched;
+        this.nx = src.nx; this.ny = src.ny; this.nz = src.nz;
+        this.mask = src.mask == null ? null : src.mask.clone();
+        this.swayPivot = src.swayPivot == null ? null : src.swayPivot.add(dx, dy, dz);
+        this.swayAxis = src.swayAxis;
+        this.ox = src.ox + dx; this.oy = src.oy + dy; this.oz = src.oz + dz;
+        this.ux = src.ux; this.uy = src.uy; this.uz = src.uz;
+        this.vx = src.vx; this.vy = src.vy; this.vz = src.vz;
+        this.w = src.w; this.h = src.h;
+        this.pw = src.pw; this.ph = src.ph;
+        this.tone = src.tone.clone();
+        this.baseTone = src.baseTone.clone();
+        this.depth = src.depth.clone();
+        this.rgb = src.rgb.clone();
+        this.born = src.born.clone();
+        this.life = src.life.clone();
+        this.thin = src.thin.clone();
+        this.powder = src.powder.clone();
+        this.moved = new boolean[src.moved.length];
+        this.count = src.count;
+        this.exposedMask = src.exposedMask;
+        this.light = src.light;
+        this.glow = src.glow;
+        this.dirty = true;
     }
 
     Vec3 pixelCenter(int px, int py) {
@@ -286,6 +323,40 @@ public final class CanvasTile {
             if (tone[i] != EMPTY) out.add(new int[]{i % pw, i / pw, rgb[i], depth[i], powder[i] ? 1 : 0});
         }
         return out;
+    }
+
+    record Lifted(int px, int py, byte tone, byte depth, int rgb, int born, int life, byte thin, boolean powder) {}
+
+    List<Lifted> lift() {
+        List<Lifted> out = new ArrayList<>(count);
+        for (int i = 0; i < tone.length; i++) {
+            if (tone[i] != EMPTY) {
+                out.add(new Lifted(i % pw, i / pw, tone[i], depth[i], rgb[i], born[i], life[i], thin[i], powder[i]));
+            }
+        }
+        return out;
+    }
+
+    boolean place(Lifted l, int px, int py, int now) {
+        if (!paintable(px, py)) return false;
+        int i = py * pw + px;
+        if (tone[i] == EMPTY) {
+            count++;
+            tone[i] = l.tone();
+            depth[i] = l.depth();
+            born[i] = l.born();
+            life[i] = l.life();
+            thin[i] = l.thin();
+            powder[i] = l.powder();
+        } else {
+            depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + l.depth());
+            born[i] = Math.max(born[i], l.born());
+        }
+        rgb[i] = l.rgb();
+        dirty = true;
+        active = !powder[i];
+        lastTouched = now;
+        return true;
     }
 
     int filledNeighbours(int px, int py) {
@@ -860,6 +931,9 @@ public final class CanvasTile {
         if (image == null) {
             image = new NativeImage(pw, ph, true);
         }
+        if (spec == null && atlas.wantsSpecular()) {
+            spec = new NativeImage(pw, ph, true);
+        }
         boolean puddle = !custom && face == Direction.UP && count > 2;
         byte[] cls = puddle ? edgeClasses(lookup) : null;
         ripples.removeIf(r -> now - r[2] >= RIPPLE_TICKS);
@@ -872,6 +946,7 @@ public final class CanvasTile {
         float glowSum = 0f;
         for (int i = 0; i < tone.length; i++) {
             int x = i % pw, y = i / pw;
+            if (spec != null) Pixels.setAbgr(spec, x, y, 0);
             if (tone[i] == EMPTY) {
                 Pixels.setAbgr(image, x, y, 0);
                 continue;
@@ -925,10 +1000,18 @@ public final class CanvasTile {
             alpha *= rippleAlpha;
             if (shade > 0.75f) alpha *= 1.0f - Math.min(1f, (shade - 0.75f) / 0.25f);
             Pixels.setAbgr(image, x, y, Pixels.packAbgr(r, g, b, clamp((int) (alpha * 255))));
+            if (spec != null && swayPivot == null) Pixels.setAbgr(spec, x, y, wetSpecular(deep, thin[i], dry));
         }
         glow = count == 0 ? 0 : Math.round(15f * Math.min(1f, glowSum / count));
-        atlas.upload(slot, image);
+        atlas.upload(slot, image, spec);
         dirty = false;
+    }
+
+    private static final int F0_BLOOD = 6;
+
+    private static int wetSpecular(float deep, int thinLevel, float dry) {
+        float smooth = (0.78f + 0.20f * deep - 0.06f * thinLevel) * (1.0f - dry);
+        return Pixels.packAbgr(clamp((int) (smooth * 255)), F0_BLOOD, 0, 255);
     }
 
     private static int clamp(int v) { return v < 0 ? 0 : Math.min(255, v); }
@@ -939,6 +1022,10 @@ public final class CanvasTile {
         if (image != null) {
             image.close();
             image = null;
+        }
+        if (spec != null) {
+            spec.close();
+            spec = null;
         }
     }
 }

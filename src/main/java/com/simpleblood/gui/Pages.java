@@ -187,8 +187,12 @@ public final class Pages {
         pages.add(new Page("General", "The big switches and your colour", true, Pages::general));
         pages.add(new Page("Drops", "Flying blood: bursts, drips, physics", true, Pages::particles));
         pages.add(new Page("Puddles", "Blood that sticks to blocks", true, Pages::surfaces));
-        pages.add(new Page("Hits", "Which way it flies, and weapons", true, Pages::hits));
+        pages.add(new Page("Hits", "Which way it flies, weapons, giblets", true, Pages::hits));
         pages.add(new Page("Water & Sound", "Clouds under water, noises", true, Pages::waterSound));
+        pages.add(new Page("Kinds", "Bone, metal, wood, embers, sparks, wind, glow", false, Pages::kinds));
+        if (com.simpleblood.compat.PhysicsModRagdolls.available()) {
+            pages.add(new Page("Physics Mod", "Ragdolls: bleeding, splashes, smears", false, Pages::physicsMod));
+        }
         pages.add(new Page("Mobs", "Who bleeds what", false, Pages::mobs));
         pages.add(new Page("Modded", "Mobs from other mods", false, Pages::modded));
         pages.add(new Page("Presets", "Pick a look, one click", true, Pages::presets));
@@ -211,10 +215,6 @@ public final class Pages {
         b.preview(null, null);
         b.bool("Menu button", "The Blood button on the title and pause screens. Without it, type /simpleblood to get here.",
                 () -> c.general.menuButton, v -> c.general.menuButton = v, d.general.menuButton);
-        if (com.simpleblood.compat.PhysicsModRagdolls.available()) {
-            b.bool("Ragdolls bleed", "Physics Mod ragdolls keep bleeding, splash where they land and smear the ground.",
-                    () -> c.general.physicsModRagdolls, v -> c.general.physicsModRagdolls = v, d.general.physicsModRagdolls);
-        }
 
         b.heading("Your blood colour");
         b.preview(PreviewScene.Kind.HIT, playerColour(c));
@@ -349,6 +349,8 @@ public final class Pages {
         b.bool("Walls and ceilings", "Blood on walls and ceilings too. Needed for runs down block sides.", () -> c.surfaces.wallsAndCeilings, v -> c.surfaces.wallsAndCeilings = v, d.surfaces.wallsAndCeilings);
         b.bool("Detailed shapes", "Fences, stairs, signs and plants get blood on the wood you see, not the hitbox. Off is a bit cheaper.",
                 () -> c.surfaces.detailedShapes, v -> { c.surfaces.detailedShapes = v; BloodSurfaces.clear(); }, d.surfaces.detailedShapes);
+        b.bool("Skip swaying blocks", "With a shader pack on, leaves, grass, plants, vines and lanterns take no blood: the pack sways them, and blood on them would stay put. Drops fall on through.",
+                () -> c.surfaces.skipSwayingBlocks, v -> c.surfaces.skipSwayingBlocks = v, d.surfaces.skipSwayingBlocks);
         b.preview(PreviewScene.Kind.FOOTPRINTS, playerColour(c));
         b.bool("Footprints", "Walk through fresh blood, leave a trail.", () -> c.surfaces.footprints, v -> c.surfaces.footprints = v, d.surfaces.footprints);
         b.slider("Trail length", "Steps until the feet are clean again.", 2, 16, 1, "", () -> c.surfaces.footprintSteps, v -> c.surfaces.footprintSteps = v, d.surfaces.footprintSteps);
@@ -368,6 +370,12 @@ public final class Pages {
         b.bool("Weapon flavour", "Swords fling streaks, maces slam, arrows punch through.", () -> c.directional.weaponFlavour, v -> c.directional.weaponFlavour = v, d.directional.weaponFlavour);
         b.preview(PreviewScene.Kind.HIT, playerColour(c), PreviewScene.Aspect.EXIT);
         b.bool("Exit spray", "A bit comes out the other side.", () -> c.directional.entrySpatter, v -> c.directional.entrySpatter = v, d.directional.entrySpatter);
+        b.preview(null, null);
+        b.heading("Giblets");
+        b.bool("Giblets", "Chunks of meat fly off mobs that bleed: now and then on a hard hit, a handful when they die. Off by default.",
+                () -> c.gore.giblets, v -> c.gore.giblets = v, d.gore.giblets);
+        b.slider("Amount", "How many chunks fly off.", 10, 300, 10, "%", () -> c.gore.gibletAmount, v -> c.gore.gibletAmount = v, d.gore.gibletAmount);
+        b.bool("Blood trail", "Chunks bleed as they fly and splash where they land.", () -> c.gore.gibletTrails, v -> c.gore.gibletTrails = v, d.gore.gibletTrails);
     }
 
     private static void waterSound(Builder b) {
@@ -377,6 +385,8 @@ public final class Pages {
         b.slider("Cloud size", "How big the clouds get.", 30, 300, 10, "%", () -> c.underwater.fogSize, v -> c.underwater.fogSize = v, d.underwater.fogSize);
         b.slider("Cloud lifetime", "How long they hang around.", 30, 200, 10, "%", () -> c.underwater.fogLifetime, v -> c.underwater.fogLifetime = v, d.underwater.fogLifetime);
         b.slider("Cloud opacity", "How thick they look.", 30, 200, 10, "%", () -> c.underwater.fogOpacity, v -> c.underwater.fogOpacity = v, d.underwater.fogOpacity);
+        b.slider("Clouds with shaders", "With a shader pack on, clouds are drawn darker and denser so they sit in the water. This sets how thick they are then.",
+                10, 200, 10, "%", () -> c.underwater.shaderCloudOpacity, v -> c.underwater.shaderCloudOpacity = v, d.underwater.shaderCloudOpacity);
         b.preview(null, null);
         b.heading("Sound");
         b.bool("Sounds", "All the noises the mod makes.", () -> c.audio.soundEnabled, v -> c.audio.soundEnabled = v, d.audio.soundEnabled);
@@ -384,6 +394,55 @@ public final class Pages {
         b.slider("Pitch", "Higher or lower.", 50, 150, 5, "%", () -> c.audio.soundPitch, v -> c.audio.soundPitch = v, d.audio.soundPitch);
         b.bool("Landing sounds", "Little taps and plinks when drops land.", () -> c.audio.landingSounds, v -> c.audio.landingSounds = v, d.audio.landingSounds);
         b.bool("Footstep sounds", "Squelch.", () -> c.audio.footstepSounds, v -> c.audio.footstepSounds = v, d.audio.footstepSounds);
+    }
+
+    private static void kinds(Builder b) {
+        SimpleBloodConfig c = b.cfg, d = b.defaults;
+        SimpleBloodConfig.KindSettings k = c.kinds, dk = d.kinds;
+        b.note("Mobs with nothing to bleed throw what they are made of. Which mob throws what is set in the Mobs table.");
+        b.heading("Bone");
+        b.slider("Amount", "Chips and dust per hit (skeletons, strays, bogged).", 0, 300, 10, "%", () -> k.boneAmount, v -> k.boneAmount = v, dk.boneAmount);
+        b.slider("Dust", "How thick the puffs of bone dust look.", 10, 200, 10, "%", () -> k.boneDustOpacity, v -> k.boneDustOpacity = v, dk.boneDustOpacity);
+        b.heading("Metal");
+        b.slider("Amount", "Flakes per hit (golems).", 0, 300, 10, "%", () -> k.metalAmount, v -> k.metalAmount = v, dk.metalAmount);
+        b.bool("Glint", "Flakes flash as they turn into the light, and twinkle where they lie.", () -> k.metalGlint, v -> k.metalGlint = v, dk.metalGlint);
+        b.heading("Wood");
+        b.slider("Amount", "Splinters per hit (the creaking).", 0, 300, 10, "%", () -> k.woodAmount, v -> k.woodAmount = v, dk.woodAmount);
+        b.slider("Resin", "Share of drops that stay resin, which pools like blood.", 0, 100, 5, "%", () -> k.resinShare, v -> k.resinShare = v, dk.resinShare);
+        b.heading("Embers");
+        b.slider("Amount", "Embers per hit (blazes, magma cubes).", 0, 300, 10, "%", () -> k.emberAmount, v -> k.emberAmount = v, dk.emberAmount);
+        b.bool("Smoke", "A wisp of smoke now and then among the embers.", () -> k.emberSmoke, v -> k.emberSmoke = v, dk.emberSmoke);
+        b.heading("Sparks");
+        b.slider("Amount", "Sparks per hit (allays, vexes).", 0, 300, 10, "%", () -> k.sparkAmount, v -> k.sparkAmount = v, dk.sparkAmount);
+        b.heading("Wind");
+        b.slider("Amount", "Gusts per hit (breezes).", 0, 300, 10, "%", () -> k.windAmount, v -> k.windAmount = v, dk.windAmount);
+        b.slider("Thickness", "How thick the gusts look.", 10, 200, 10, "%", () -> k.windOpacity, v -> k.windOpacity = v, dk.windOpacity);
+        b.heading("Pieces");
+        b.slider("Lifetime", "How long chips, flakes, splinters, embers and sparks last.", 25, 300, 25, "%", () -> k.pieceLifetime, v -> k.pieceLifetime = v, dk.pieceLifetime);
+        b.heading("Glowing blood");
+        b.bool("Glow", "Blood marked Glow in the Mobs table (glow squid ink) glows in the dark.", () -> k.glow, v -> k.glow = v, dk.glow);
+        b.slider("Cloud thickness", "How thick glowing clouds under water look.", 10, 200, 10, "%", () -> k.glowCloudOpacity, v -> k.glowCloudOpacity = v, dk.glowCloudOpacity);
+    }
+
+    private static void physicsMod(Builder b) {
+        SimpleBloodConfig c = b.cfg, d = b.defaults;
+        SimpleBloodConfig.PhysicsModSettings p = c.physicsMod, dp = d.physicsMod;
+        b.bool("Ragdolls bleed", "Physics Mod ragdolls keep bleeding, splash where they land and smear the ground.",
+                () -> c.general.physicsModRagdolls, v -> c.general.physicsModRagdolls = v, d.general.physicsModRagdolls);
+        b.slider("Bleed time", "How long a ragdoll keeps bleeding. It bleeds less and less over this time.", 1, 30, 1, "s",
+                () -> p.bleedSeconds, v -> p.bleedSeconds = v, dp.bleedSeconds);
+        b.slider("Drips", "How much limbs drip, more while they are thrown about.", 0, 300, 10, "%", () -> p.drips, v -> p.drips = v, dp.drips);
+        b.slider("Splashes", "Drops thrown up where a limb lands hard.", 0, 300, 10, "%", () -> p.splashes, v -> p.splashes = v, dp.splashes);
+        b.heading("Stains");
+        b.bool("Stains", "A stain where a limb lands hard, on the floor, a wall or the ceiling.", () -> p.stains, v -> p.stains = v, dp.stains);
+        b.slider("Stain size", "How big those stains are. Harder hits stain more.", 25, 300, 25, "%", () -> p.stainSize, v -> p.stainSize = v, dp.stainSize);
+        b.slider("Whole ragdolls", "Share of hard landings of a whole ragdoll that stain. Broken ragdolls and pieces always do.", 0, 100, 5, "%",
+                () -> p.wholeRagdollStains, v -> p.wholeRagdollStains = v, dp.wholeRagdollStains);
+        b.heading("Smears");
+        b.bool("Smears", "Limbs sliding along the ground leave a trail.", () -> p.smears, v -> p.smears = v, dp.smears);
+        b.slider("How often", "How often a sliding limb smears.", 10, 200, 10, "%", () -> p.smearAmount, v -> p.smearAmount = v, dp.smearAmount);
+        b.heading("Pieces");
+        b.bool("Pieces bleed", "Mobs that break into blocky or fractured pieces bleed too, not just ragdolls.", () -> p.pieces, v -> p.pieces = v, dp.pieces);
     }
 
     public static String mobFilter = "";

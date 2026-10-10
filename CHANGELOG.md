@@ -1,5 +1,53 @@
 # Simple Blood changelog
 
+## 1.1.0
+
+### Versions
+- Minecraft 1.20.1, Fabric and NeoForge.
+- The NeoForge 1.20.1 jar runs on Forge.
+
+### Shaders
+- Wet, glossy puddles under Iris.
+- Drying blood loses its shine.
+- Packs need labPBR switched on.
+- Underwater clouds no longer glare.
+- Swaying leaves and plants skip blood.
+
+### Giblets
+- Optional meat chunks fly off mobs.
+- Off by default, under Hits.
+- They leave a trail of blood.
+
+### Kinds
+- New settings page for debris blood.
+- Amount per kind: bone to wind.
+- Dust, gust and glow cloud thickness.
+- Toggles for glint, smoke, glowing blood.
+- Fainter bone dust, thinner glowing clouds.
+
+### Physics Mod
+- New settings page for ragdolls.
+- Bleed time, drips, splashes, stains, smears.
+- Pieces bleeding can be switched off.
+
+### Moving blocks
+- Blood swings with doors and trapdoors.
+- Fence gates carry their blood along.
+- Pressed buttons and plates keep it.
+- Pistons push and pull blood along.
+- Piston heads take the blood out.
+
+### Fixes
+- Heavy runs drip off the bottom.
+- Test buttons always paint puddles.
+- Drops no longer freeze mid-air.
+- No blood floating above fences.
+- Drops land on edges and corners.
+- Blood falls through fence gaps.
+- Stray drops soak away.
+- Underwater blood and debris visible from above.
+- Blood on ice and glass no longer see-through.
+
 ## 1.0.2
 
 ### Debris

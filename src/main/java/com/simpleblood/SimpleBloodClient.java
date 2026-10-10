@@ -58,7 +58,12 @@ public final class SimpleBloodClient {
             activeBursts.clear();
             if (client.level != null) Guard.reset();
         }
-        if (config == null || client.level == null || client.isPaused()) {
+        //? if 1.20.1 {
+        /*if (config == null || client.level == null || client.isPaused()) {
+        *///?} else {
+        if (config == null || client.level == null || client.isPaused()
+                || !client.level.tickRateManager().runsNormally()) {
+        //?}
             return;
         }
         Guard.run(Guard.Part.SURFACES, "footprints", () -> com.simpleblood.surface.Footprints.tick(client));

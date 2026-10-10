@@ -34,7 +34,7 @@ public class BloodStreakParticle extends BloodParticle {
     private void alignToVelocity(Camera camera) {
         double vx = x - xo, vy = y - yo, vz = z - zo;
         if (vx * vx + vy * vy + vz * vz < 1.0e-6) return;
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*org.joml.Vector3f up = camera.getUpVector();
         org.joml.Vector3f left = camera.getLeftVector();
         *///?} else {
@@ -49,7 +49,7 @@ public class BloodStreakParticle extends BloodParticle {
         this.setSprite(sprites.get(orientation, 7));
     }
 
-    //? if 1.21.1 {
+    //? if <=1.21.1 {
     /*@Override
     public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, Camera camera, float partialTick) {
         alignToVelocity(camera);
@@ -78,7 +78,7 @@ public class BloodStreakParticle extends BloodParticle {
         }
 
         @Override
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*public Particle createParticle(SimpleParticleType type, ClientLevel world,
                                        double x, double y, double z,
                                        double velX, double velY, double velZ) {
@@ -91,7 +91,7 @@ public class BloodStreakParticle extends BloodParticle {
             if (!com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.PARTICLES)) return null;
             try {
                 BloodColor.Color color = currentColor();
-                //? if 1.21.1 {
+                //? if <=1.21.1 {
                 /*TextureAtlasSprite sprite = this.spriteProvider.get(world.getRandom());
                 *///?} else {
                 TextureAtlasSprite sprite = this.spriteProvider.get(random);

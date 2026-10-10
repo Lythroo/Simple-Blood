@@ -1,0 +1,93 @@
+// NeoForge buildscript for 1.20.1. NeoForge 1.20.1 is the Forge 47.1 fork: Forge packages
+// (net.minecraftforge), SRG names at runtime and a META-INF/mods.toml, so it builds with
+// ModDevGradle's legacy plugin. The jar runs on MinecraftForge 1.20.1 too.
+plugins {
+    id 'net.neoforged.moddev.legacyforge'
+}
+
+def mcVersion = project.property('deps.minecraft')
+def javaVersion = (project.property('java_version') as String).toInteger()
+
+version = "${project.property('mod_version')}+${mcVersion}"
+group = 'com.simpleblood'
+
+base { archivesName = 'simpleblood-neoforge' }
+
+// 1.20.1 predates the ResourceLocation -> Identifier rename (1.21.11+).
+stonecutter {
+    replacements.string(true) {
+        replace 'Identifier', 'ResourceLocation'
+    }
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(javaVersion) }
+    withSourcesJar()
+}
+
+legacyForge {
+    enable {
+        neoForgeVersion = project.property('deps.neoforge')
+    }
+
+    runs {
+        register('client') {
+            client()
+            gameDirectory = file('run')
+        }
+    }
+
+    mods {
+        register('simpleblood') {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+// Mixin names are SRG at runtime here: the annotation processor writes the refmap.
+mixin {
+    add sourceSets.main, 'simpleblood.refmap.json'
+    config 'simpleblood.mixins.json'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+processResources {
+    exclude 'fabric.mod.json', 'META-INF/neoforge.mods.toml' // keep this a Forge-era jar
+    def minecraftRange = "[${mcVersion}]" // Maven exact range → correct Modrinth detection
+    inputs.property 'version', project.version
+    inputs.property 'mixinCompat', project.property('mixin_compat')
+    inputs.property 'minecraftRange', minecraftRange
+    filesMatching(['META-INF/mods.toml', 'simpleblood.mixins.json']) {
+        expand version: project.version,
+                mixinCompat: project.property('mixin_compat'),
+                extraMixins: '',
+                minecraft_range: minecraftRange
+    }
+    // Forge 1.20.1 finds mixin names through the refmap, and goes without ScreenInvoker: the
+    // annotation processor cannot map it (ConfigAccess reaches the method another way here).
+    doLast {
+        def file = new File(destinationDir, 'simpleblood.mixins.json')
+        def json = new groovy.json.JsonSlurper().parse(file)
+        json.refmap = 'simpleblood.refmap.json'
+        json.client.remove('ScreenInvoker')
+        file.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = javaVersion
+    it.options.encoding = 'UTF-8'
+}
+
+// Forge 1.20.1 finds mixin configs through
+// the manifest, not through mods.toml.
+tasks.named('jar') {
+    manifest.attributes('MixinConfigs': 'simpleblood.mixins.json')
+}

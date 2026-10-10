@@ -21,7 +21,11 @@ public class PlayerMixin {
             if (look instanceof net.minecraft.world.phys.EntityHitResult ehr && ehr.getEntity() == target) {
                 hit = ehr.getLocation();
             }
+            //? if 1.20.1 {
+            /*boolean smash = false;
+            *///?} else {
             boolean smash = net.minecraft.world.item.MaceItem.canSmashAttack(self);
+            //?}
             HitContext.rememberLocalCharge(target.getId(), self.getAttackStrengthScale(0.5f), hit, smash);
         } catch (Throwable t) {
             com.simpleblood.Guard.fail(com.simpleblood.Guard.Part.HITS, "reading the attack charge", t);

@@ -4,7 +4,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 
-//? if 1.21.1 {
+//? if <=1.21.1 {
 /*public final class BloodButton extends Button {
 *///?} else {
 public final class BloodButton extends Button.Plain {
@@ -16,7 +16,7 @@ public final class BloodButton extends Button.Plain {
         super(x, y, w, h, label, onPress, DEFAULT_NARRATION);
     }
 
-    //? if 1.21.1 {
+    //? if <=1.21.1 {
     /*@Override
     protected void renderWidget(net.minecraft.client.gui.GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.renderWidget(g, mouseX, mouseY, partialTick);

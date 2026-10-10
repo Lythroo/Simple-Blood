@@ -23,7 +23,7 @@ import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
 
-//? if 1.21.1 {
+//? if <=1.21.1 {
 /*public class BloodParticle extends net.minecraft.client.particle.TextureSheetParticle {
 *///?} else {
 public class BloodParticle extends SingleQuadParticle {
@@ -88,8 +88,24 @@ public class BloodParticle extends SingleQuadParticle {
 
     private static final ThreadLocal<Boolean> spawnPaintsSurfaces = ThreadLocal.withInitial(() -> true);
 
+    public static boolean currentPaintsSurfaces() {
+        return spawnPaintsSurfaces.get();
+    }
+
     public static void setPaintsSurfaces(boolean paints) {
         spawnPaintsSurfaces.set(paints);
+    }
+
+    public static void resetSpawnState() {
+        currentBloodColor.remove();
+        shouldTransformToFog.remove();
+        shouldDespawnInWater.remove();
+        entitySizeMultiplier.remove();
+        currentKind.remove();
+        spawnGlows.remove();
+        spawnPaintsSurfaces.remove();
+        spawnExact.remove();
+        spawnLifeScale.remove();
     }
 
     public static void setShouldDespawnInWater(boolean shouldDespawn) {
@@ -192,6 +208,9 @@ public class BloodParticle extends SingleQuadParticle {
 
     private boolean isOnGround = false;
     private boolean ghost;
+    private int soakFrom = -1;
+    private boolean stopped;
+    private static final int SOAK_TICKS = 6;
     boolean splash;
     private final boolean mayPaint;
     protected float landingScale = 1f;
@@ -211,7 +230,7 @@ public class BloodParticle extends SingleQuadParticle {
                             TextureAtlasSprite sprite,
                             float sizeMultiplier,
                             float red, float green, float blue) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*super(world, x, y, z, velX, velY, velZ);
         this.setSprite(sprite);
         *///?} else {
@@ -359,7 +378,7 @@ public class BloodParticle extends SingleQuadParticle {
             if (this.age++ >= this.lifetime) { this.remove(); return; }
             this.setPos(x + xd, y + yd, z + zd);
             boolean paints = SimpleBloodClient.getConfig().surfaces.enabled && kind.paintsSurfaces() && mayPaint;
-            if (paints && depositOnSurface(prevX, prevY, prevZ, wantX, wantY, wantZ)) {
+            if (paints && depositOnSurface(prevX, prevY, prevZ, wantX, wantY, wantZ, false)) {
                 this.remove();
                 return;
             }
@@ -405,9 +424,9 @@ public class BloodParticle extends SingleQuadParticle {
             } else if (BloodSurfaces.isHandDrawn(hereState) || BloodSurfaces.hasTiltedFaces(hereState)) {
                 thin = true;
             } else if (hereState.getCollisionShape(level, here).isEmpty()) {
-                thin = entered && BloodSurfaces.isCrossModel(hereState);
+                thin = entered && BloodSurfaces.isCrossModel(hereState) && !BloodSurfaces.sways(hereState);
             }
-            if (thin && depositOnSurface(prevX, prevY, prevZ, wantX, wantY, wantZ)) {
+            if (thin && depositOnSurface(prevX, prevY, prevZ, wantX, wantY, wantZ, false)) {
                 this.remove();
                 return;
             }
@@ -416,12 +435,13 @@ public class BloodParticle extends SingleQuadParticle {
         if (blocked && !isOnGround) {
             boolean paints = SimpleBloodClient.getConfig().surfaces.enabled && kind.paintsSurfaces() && mayPaint;
 
-            if (paints && depositOnSurface(prevX, prevY, prevZ, wantX, wantY, wantZ)) {
+            if (paints && depositOnSurface(prevX, prevY, prevZ, wantX, wantY, wantZ, true)) {
                 this.remove();
                 return;
             }
             if (paints && phantomContact(prevX, prevY, prevZ, wantX, wantY, wantZ)) {
                 ghost = true;
+                stopped = false;
                 xd = wantX; yd = wantY; zd = wantZ;
                 this.setPos(prevX + wantX, prevY + wantY, prevZ + wantZ);
                 return;
@@ -431,6 +451,7 @@ public class BloodParticle extends SingleQuadParticle {
                 xd = 0;
                 yd = 0;
                 zd = 0;
+                if (paints && soakFrom < 0) soakFrom = age;
             }
         }
 
@@ -440,12 +461,23 @@ public class BloodParticle extends SingleQuadParticle {
 
             if (!hasBlockBelow) {
                 isOnGround = false;
+                stopped = false;
                 yd = -0.1;
             }
         }
 
         if (isOnGround && this.quadSize < targetScale) {
             this.quadSize += (targetScale - this.quadSize) * 0.15f;
+        }
+
+        if (soakFrom >= 0) {
+            float left = 1.0f - (age - soakFrom) / (float) SOAK_TICKS;
+            if (left <= 0f) {
+                this.remove();
+                return;
+            }
+            this.alpha = Math.min(this.alpha, 0.95f * left);
+            return;
         }
 
         float lifeFraction = 1.0f - (float) age / lifetime;
@@ -456,32 +488,137 @@ public class BloodParticle extends SingleQuadParticle {
 
     private boolean phantomContact(double fromX, double fromY, double fromZ, double wantX, double wantY, double wantZ) {
         double len = Math.sqrt(wantX * wantX + wantY * wantY + wantZ * wantZ);
-        if (len < 1.0e-6) return false;
-        double s = (len + 0.03) / len;
-        double cx = fromX + wantX * s, cy = fromY + wantY * s, cz = fromZ + wantZ * s;
-        BlockPos pos = BlockPos.containing(cx, cy, cz);
-        BlockState state = level.getBlockState(pos);
-        if (state.isAir()) return false;
-        net.minecraft.world.phys.shapes.VoxelShape collision = state.getCollisionShape(level, pos);
-        if (collision.isEmpty()) return false;
-        double lx = cx - pos.getX(), ly = cy - pos.getY(), lz = cz - pos.getZ();
-        boolean inCollision = false;
-        for (net.minecraft.world.phys.AABB b : collision.toAabbs()) {
-            if (b.inflate(0.002).contains(lx, ly, lz)) { inCollision = true; break; }
+        if (len > 1.0e-6) {
+            double s = (len + 0.03) / len;
+            double cx = fromX + wantX * s, cy = fromY + wantY * s, cz = fromZ + wantZ * s;
+            for (net.minecraft.world.phys.AABB b : solidBoxes(BlockPos.containing(cx, cy, cz))) {
+                if (b.inflate(0.002).contains(cx, cy, cz)) return !BloodSurfaces.visibleSolidAt(level, cx, cy, cz);
+            }
         }
-        if (!inCollision) return false;
-        return !BloodSurfaces.visibleSolidAt(level, cx, cy, cz);
+        Vec3 p = contactPoint();
+        return p != null && !BloodSurfaces.visibleSolidAt(level, p.x, p.y, p.z);
+    }
+
+    private BloodSurfaces.Hit traceToContact() {
+        Vec3 end = contactPoint();
+        if (end == null) return null;
+        Vec3 centre = new Vec3(x, y, z);
+        Vec3 toEnd = end.subtract(centre);
+        if (toEnd.lengthSqr() < 1.0e-8) return BloodSurfaces.trace(level, centre.add(0, 0.1, 0), centre.add(0, -0.1, 0));
+        Vec3 dir = toEnd.normalize();
+        return BloodSurfaces.trace(level, end.subtract(dir.scale(0.15)), end.add(dir.scale(0.02)));
+    }
+
+    private Vec3 contactPoint() {
+        net.minecraft.world.phys.AABB box = getBoundingBox().inflate(0.05);
+        Vec3 centre = new Vec3(x, y, z);
+        Vec3 best = null, bestMid = null;
+        double bestDist = Double.MAX_VALUE;
+        for (BlockPos pos : BlockPos.betweenClosed(
+                net.minecraft.util.Mth.floor(box.minX), net.minecraft.util.Mth.floor(box.minY), net.minecraft.util.Mth.floor(box.minZ),
+                net.minecraft.util.Mth.floor(box.maxX), net.minecraft.util.Mth.floor(box.maxY), net.minecraft.util.Mth.floor(box.maxZ))) {
+            for (net.minecraft.world.phys.AABB w : solidBoxes(pos)) {
+                if (!w.intersects(box)) continue;
+                Vec3 q = new Vec3(Math.max(w.minX, Math.min(w.maxX, x)),
+                        Math.max(w.minY, Math.min(w.maxY, y)),
+                        Math.max(w.minZ, Math.min(w.maxZ, z)));
+                double d = q.distanceToSqr(centre);
+                if (d < bestDist) { bestDist = d; best = q; bestMid = w.getCenter(); }
+            }
+        }
+        if (best == null) return null;
+        if (bestDist < 1.0e-8) return centre;
+        Vec3 inward = bestMid.subtract(best);
+        return inward.lengthSqr() < 1.0e-8 ? best : best.add(inward.normalize().scale(0.02));
     }
 
     private boolean insideCollision(double px, double py, double pz) {
-        BlockPos pos = BlockPos.containing(px, py, pz);
-        BlockState state = level.getBlockState(pos);
-        if (state.isAir()) return false;
-        double lx = px - pos.getX(), ly = py - pos.getY(), lz = pz - pos.getZ();
-        for (net.minecraft.world.phys.AABB b : state.getCollisionShape(level, pos).toAabbs()) {
-            if (b.inflate(0.002).contains(lx, ly, lz)) return true;
+        for (net.minecraft.world.phys.AABB b : solidBoxes(BlockPos.containing(px, py, pz))) {
+            if (b.inflate(0.002).contains(px, py, pz)) return true;
         }
         return false;
+    }
+
+    private java.util.List<net.minecraft.world.phys.AABB> solidBoxes(BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir() || BloodSurfaces.sways(state)) return java.util.List.of();
+        net.minecraft.world.phys.shapes.VoxelShape collision = state.getCollisionShape(level, pos);
+        if (collision.isEmpty()) return java.util.List.of();
+        net.minecraft.world.phys.shapes.VoxelShape drawn = state.getShape(level, pos);
+        double top = drawn.isEmpty() ? Double.MAX_VALUE : drawn.max(net.minecraft.core.Direction.Axis.Y);
+        java.util.List<net.minecraft.world.phys.AABB> out = new java.util.ArrayList<>();
+        for (net.minecraft.world.phys.AABB b : collision.toAabbs()) {
+            if (b.minY >= top) continue;
+            out.add(new net.minecraft.world.phys.AABB(
+                    b.minX + pos.getX(), b.minY + pos.getY(), b.minZ + pos.getZ(),
+                    b.maxX + pos.getX(), Math.min(b.maxY, top) + pos.getY(), b.maxZ + pos.getZ()));
+        }
+        return out;
+    }
+
+    @Override
+    public void move(double dx, double dy, double dz) {
+        if (stopped) return;
+        double ox = dx, oy = dy, oz = dz;
+        if (this.hasPhysics && (dx != 0 || dy != 0 || dz != 0) && dx * dx + dy * dy + dz * dz < 10000.0) {
+            net.minecraft.world.phys.AABB box = getBoundingBox();
+            net.minecraft.world.phys.AABB swept = box.expandTowards(dx, dy, dz).inflate(1.0e-7);
+            java.util.List<net.minecraft.world.phys.AABB> solids = new java.util.ArrayList<>();
+            for (BlockPos pos : BlockPos.betweenClosed(
+                    net.minecraft.util.Mth.floor(swept.minX), net.minecraft.util.Mth.floor(swept.minY) - 1, net.minecraft.util.Mth.floor(swept.minZ),
+                    net.minecraft.util.Mth.floor(swept.maxX), net.minecraft.util.Mth.floor(swept.maxY), net.minecraft.util.Mth.floor(swept.maxZ))) {
+                for (net.minecraft.world.phys.AABB b : solidBoxes(pos)) {
+                    if (b.intersects(swept)) solids.add(b);
+                }
+            }
+            dy = clip(solids, box, 1, dy);
+            box = box.move(0, dy, 0);
+            if (Math.abs(dx) < Math.abs(dz)) {
+                dz = clip(solids, box, 2, dz);
+                box = box.move(0, 0, dz);
+                dx = clip(solids, box, 0, dx);
+            } else {
+                dx = clip(solids, box, 0, dx);
+                box = box.move(dx, 0, 0);
+                dz = clip(solids, box, 2, dz);
+            }
+        }
+        if (dx != 0 || dy != 0 || dz != 0) {
+            setBoundingBox(getBoundingBox().move(dx, dy, dz));
+            setLocationFromBoundingbox();
+        }
+        if (Math.abs(oy) >= 1.0e-5 && Math.abs(dy) < 1.0e-5) stopped = true;
+        this.onGround = oy != dy && oy < 0;
+        if (ox != dx) this.xd = 0;
+        if (oz != dz) this.zd = 0;
+    }
+
+    private static double clip(java.util.List<net.minecraft.world.phys.AABB> solids, net.minecraft.world.phys.AABB box, int axis, double d) {
+        if (d == 0) return 0;
+        final double eps = 1.0e-7;
+        for (net.minecraft.world.phys.AABB s : solids) {
+            boolean overlapX = s.maxX > box.minX + eps && s.minX < box.maxX - eps;
+            boolean overlapY = s.maxY > box.minY + eps && s.minY < box.maxY - eps;
+            boolean overlapZ = s.maxZ > box.minZ + eps && s.minZ < box.maxZ - eps;
+            switch (axis) {
+                case 0 -> {
+                    if (!overlapY || !overlapZ) continue;
+                    if (d > 0 && s.minX >= box.maxX - eps) d = Math.min(d, s.minX - box.maxX);
+                    else if (d < 0 && s.maxX <= box.minX + eps) d = Math.max(d, s.maxX - box.minX);
+                }
+                case 1 -> {
+                    if (!overlapX || !overlapZ) continue;
+                    if (d > 0 && s.minY >= box.maxY - eps) d = Math.min(d, s.minY - box.maxY);
+                    else if (d < 0 && s.maxY <= box.minY + eps) d = Math.max(d, s.maxY - box.minY);
+                }
+                default -> {
+                    if (!overlapX || !overlapY) continue;
+                    if (d > 0 && s.minZ >= box.maxZ - eps) d = Math.min(d, s.minZ - box.maxZ);
+                    else if (d < 0 && s.maxZ <= box.minZ + eps) d = Math.max(d, s.maxZ - box.minZ);
+                }
+            }
+        }
+        return d > 0 ? Math.max(0, d) : Math.min(0, d);
     }
 
     private void spawnFogParticle() {
@@ -497,7 +634,7 @@ public class BloodParticle extends SingleQuadParticle {
     }
 
     private boolean depositOnSurface(double fromX, double fromY, double fromZ,
-                                     double wantX, double wantY, double wantZ) {
+                                     double wantX, double wantY, double wantZ, boolean touching) {
         Vec3 from = new Vec3(fromX, fromY, fromZ);
         Vec3 dir = new Vec3(wantX, wantY, wantZ);
         double len = dir.length();
@@ -511,6 +648,7 @@ public class BloodParticle extends SingleQuadParticle {
         if (hit == null && onGround) {
             hit = BloodSurfaces.trace(level, new Vec3(x, y + 0.05, z), new Vec3(x, y - 0.2, z));
         }
+        if (hit == null && touching) hit = traceToContact();
         if (hit == null) return false;
 
         int colour = ((int) (baseRed * 255) << 16) | ((int) (baseGreen * 255) << 8) | (int) (baseBlue * 255);
@@ -559,7 +697,7 @@ public class BloodParticle extends SingleQuadParticle {
     }
     //?}
 
-    //? if 1.21.1 {
+    //? if <=1.21.1 {
     /*@Override
     public net.minecraft.client.particle.ParticleRenderType getRenderType() {
         return net.minecraft.client.particle.ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
@@ -586,7 +724,7 @@ public class BloodParticle extends SingleQuadParticle {
         }
 
         @Override
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*public Particle createParticle(SimpleParticleType type, ClientLevel world,
                                        double x, double y, double z,
                                        double velX, double velY, double velZ) {
@@ -601,7 +739,7 @@ public class BloodParticle extends SingleQuadParticle {
                 float sizeMultiplier = SimpleBloodClient.getConfig().particleSizeMultiplier();
                 BloodColor.Color color = currentBloodColor.get();
 
-                //? if 1.21.1 {
+                //? if <=1.21.1 {
                 /*TextureAtlasSprite sprite = this.spriteProvider.get(world.getRandom());
                 *///?} else {
                 TextureAtlasSprite sprite = this.spriteProvider.get(random);

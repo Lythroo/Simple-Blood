@@ -13,13 +13,17 @@ public final class SurfaceRenderer {
 
     private SurfaceRenderer() {}
 
-    public static Vec3 cameraPos() {
+    public static net.minecraft.client.Camera camera() {
         //? if >=26.2 {
-        /*net.minecraft.client.Camera cam = net.minecraft.client.Minecraft.getInstance().gameRenderer.mainCamera();
+        /*return net.minecraft.client.Minecraft.getInstance().gameRenderer.mainCamera();
         *///?} else {
-        net.minecraft.client.Camera cam = net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
+        return net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();
         //?}
-        //? if 1.21.1 {
+    }
+
+    public static Vec3 cameraPos() {
+        net.minecraft.client.Camera cam = camera();
+        //? if <=1.21.1 {
         /*return cam.getPosition();
         *///?} else {
         return cam.position();
@@ -27,7 +31,9 @@ public final class SurfaceRenderer {
     }
 
     private static float partialTick() {
-        //? if 1.21.1 {
+        //? if 1.20.1 {
+        /*return net.minecraft.client.Minecraft.getInstance().getFrameTime();
+        *///?} elif 1.21.1 {
         /*return net.minecraft.client.Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false);
         *///?} else {
         return net.minecraft.client.Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(false);
@@ -35,14 +41,14 @@ public final class SurfaceRenderer {
     }
 
     public static Object renderType() {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*return net.minecraft.client.renderer.RenderType.entityTranslucent(BloodCanvasAtlas.ATLAS_ID);
         *///?} else {
         return net.minecraft.client.renderer.rendertype.RenderTypes.entityTranslucent(BloodCanvasAtlas.ATLAS_ID);
         //?}
     }
 
-    public static void render(ClientLevel level, Vec3 cam, PoseStack.Pose pose, VertexConsumer vc) {
+    public static void render(ClientLevel level, Vec3 cam, PoseStack.Pose pose, VertexConsumer vc, boolean onSeeThrough) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (cfg == null || !cfg.surfaces.enabled || BloodSurfaces.tileCount() == 0) return;
 
@@ -59,12 +65,19 @@ public final class SurfaceRenderer {
             int nowTick = BloodSurfaces.now();
             if (nowTick - t.lightTick >= 5) {
                 t.light = light(level, t);
+                t.onSeeThrough = seeThrough(t) || BlockToneSampler.isSeeThrough(level.getBlockState(t.pos));
                 t.lightTick = nowTick;
             }
+            if (t.onSeeThrough != onSeeThrough) continue;
             double sway = t.swayPivot == null ? 0 : SignFaces.sway(level.getGameTime(), partialTick(), t.pos);
             int light = t.glow > 0 ? withBlockLight(t.light, t.glow) : t.light;
             double lift = 0.0025 + Math.sqrt(distSq) * 0.00012 + (t.swayPivot == null ? 0 : 0.004);
-            drawTile(t, pose, vc, cam, cam, light, lift, 255, sway);
+            Vec3 origin = cam;
+            if (t.mover != null && t.followsMover && !t.mover.isRemoved()) {
+                float pt = partialTick();
+                origin = cam.subtract(t.mover.getXOff(pt), t.mover.getYOff(pt), t.mover.getZOff(pt));
+            }
+            drawTile(t, pose, vc, origin, origin, light, lift, 255, sway);
         }
     }
 
@@ -150,18 +163,42 @@ public final class SurfaceRenderer {
 
     private static void vertex(VertexConsumer vc, PoseStack.Pose pose, double x, double y, double z,
                                float u, float v, int light, int nx, int ny, int nz, int grey) {
+        //? if 1.20.1 {
+        /*vc.vertex(pose.pose(), (float) x, (float) y, (float) z)
+                .color(grey, grey, grey, 255)
+                .uv(u, v)
+                .overlayCoords(OverlayTexture.NO_OVERLAY)
+                .uv2(light)
+                .normal(pose.normal(), nx, ny, nz)
+                .endVertex();
+        *///?} else {
         vc.addVertex(pose, (float) x, (float) y, (float) z)
                 .setColor(grey, grey, grey, 255)
                 .setUv(u, v)
                 .setOverlay(OverlayTexture.NO_OVERLAY)
                 .setLight(light)
                 .setNormal(pose, nx, ny, nz);
+        //?}
     }
 
     private static int withBlockLight(int packed, int level) {
         int block = (packed >> 4) & 0xF, sky = (packed >> 20) & 0xF;
         return (Math.max(block, level) << 4) | (sky << 20);
     }
+
+    //? if >=26.2 {
+    /*public static void submit(ClientLevel level, net.minecraft.client.renderer.SubmitNodeCollector collector) {
+        Vec3 cam = cameraPos();
+        net.minecraft.client.renderer.rendertype.RenderType type = (net.minecraft.client.renderer.rendertype.RenderType) renderType();
+        collector.submitCustomGeometry(new PoseStack(), type, (pose, consumer) -> com.simpleblood.Guard.run(
+                com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> render(level, cam, pose, consumer, false)));
+        if (collector instanceof net.minecraft.client.renderer.SubmitNodeStorage storage) {
+            storage.order(0).afterTerrain.submit(new net.minecraft.client.renderer.feature.CustomFeatureRenderer.Submit(
+                    new PoseStack().last(), type, (pose, consumer) -> com.simpleblood.Guard.run(
+                            com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> render(level, cam, pose, consumer, true))));
+        }
+    }
+    *///?}
 
     private static int light(ClientLevel level, CanvasTile t) {
         var p = t.custom ? t.pos : t.pos.relative(t.face);

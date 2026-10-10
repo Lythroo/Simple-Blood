@@ -3,6 +3,7 @@ plugins {
     id("net.fabricmc.fabric-loom") version "1.16.1" apply false        // unobfuscated MC (26.x)
     id("net.fabricmc.fabric-loom-remap") version "1.16.1" apply false  // obfuscated MC (1.21.x)
     id("net.neoforged.moddev") version "2.0.147" apply false
+    id("net.neoforged.moddev.legacyforge") version "2.0.147" apply false // NeoForge 1.20.1
 }
 
 stonecutter active "26.1.2-fabric" /* [SC] DO NOT edit */

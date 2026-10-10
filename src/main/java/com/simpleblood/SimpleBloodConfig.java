@@ -23,6 +23,9 @@ public class SimpleBloodConfig {
     public LowHealthSettings lowHealth = new LowHealthSettings();
     public AudioSettings audio = new AudioSettings();
     public UnderwaterSettings underwater = new UnderwaterSettings();
+    public KindSettings kinds = new KindSettings();
+    public PhysicsModSettings physicsMod = new PhysicsModSettings();
+    public GoreSettings gore = new GoreSettings();
     public DirectionalSettings directional = new DirectionalSettings();
     public VanillaEntities vanillaEntities = new VanillaEntities();
     public ModdedEntities moddedEntities = new ModdedEntities();
@@ -31,7 +34,9 @@ public class SimpleBloodConfig {
         try {
             //? if fabric {
             Path configDir = net.fabricmc.loader.api.FabricLoader.getInstance().getConfigDir();
-            //?} else {
+            //?} elif 1.20.1 {
+            /*Path configDir = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get();
+            *///?} else {
             /*Path configDir = net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get();
             *///?}
             Path path = configDir.resolve("simpleblood.json");
@@ -102,6 +107,9 @@ public class SimpleBloodConfig {
         if (lowHealth == null) lowHealth = new LowHealthSettings();
         if (audio == null) audio = new AudioSettings();
         if (underwater == null) underwater = new UnderwaterSettings();
+        if (kinds == null) kinds = new KindSettings();
+        if (physicsMod == null) physicsMod = new PhysicsModSettings();
+        if (gore == null) gore = new GoreSettings();
         if (directional == null) directional = new DirectionalSettings();
         if (vanillaEntities == null) vanillaEntities = new VanillaEntities();
         if (moddedEntities == null) moddedEntities = new ModdedEntities();
@@ -233,6 +241,7 @@ public class SimpleBloodConfig {
         public boolean rainWashes = true;
         public boolean wallsAndCeilings = true;
         public boolean detailedShapes = true;
+        public boolean skipSwayingBlocks = true;
         public boolean footprints = true;
         public int footprintSteps = 6;
     }
@@ -324,6 +333,7 @@ public class SimpleBloodConfig {
         public int fogLifetime = 100;
         public int fogOpacity = 100;
         public int fogSize = 100;
+        public int shaderCloudOpacity = 100;
 
         public float getFogLifetimeMultiplier() {
             return fogLifetime / 100.0f;
@@ -336,6 +346,58 @@ public class SimpleBloodConfig {
         public float getFogSizeMultiplier() {
             return fogSize / 100.0f;
         }
+    }
+
+    public static class KindSettings {
+        public int boneAmount = 100;
+        public int boneDustOpacity = 100;
+        public int metalAmount = 100;
+        public boolean metalGlint = true;
+        public int woodAmount = 100;
+        public int resinShare = 35;
+        public int emberAmount = 100;
+        public boolean emberSmoke = true;
+        public int sparkAmount = 100;
+        public int windAmount = 100;
+        public int windOpacity = 100;
+        public int pieceLifetime = 100;
+        public boolean glow = true;
+        public int glowCloudOpacity = 100;
+
+        public float amount(BloodKind kind) {
+            int pct = switch (kind) {
+                case BONE, DEBRIS -> boneAmount;
+                case METAL -> metalAmount;
+                case WOOD -> woodAmount;
+                case EMBER -> emberAmount;
+                case SPIRIT -> sparkAmount;
+                case WIND -> windAmount;
+                default -> 100;
+            };
+            return Math.max(0, pct) / 100.0f;
+        }
+
+        public float pieceLifetimeMultiplier() {
+            return Math.max(10, pieceLifetime) / 100.0f;
+        }
+    }
+
+    public static class GoreSettings {
+        public boolean giblets = false;
+        public int gibletAmount = 100;
+        public boolean gibletTrails = true;
+    }
+
+    public static class PhysicsModSettings {
+        public int bleedSeconds = 8;
+        public int drips = 100;
+        public int splashes = 100;
+        public boolean stains = true;
+        public int stainSize = 100;
+        public int wholeRagdollStains = 35;
+        public boolean smears = true;
+        public int smearAmount = 100;
+        public boolean pieces = true;
     }
 
     public static class VanillaEntities {

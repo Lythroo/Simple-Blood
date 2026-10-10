@@ -35,7 +35,6 @@ public final class PhysicsModRagdolls {
     private static final String MOD_ID = "physicsmod";
     private static final int MATCH_WINDOW = 60;
     private static final double MATCH_RANGE = 3.0;
-    private static final int BLEED_TICKS = 20 * 8;
     private static final double IMPACT_SPEED = 0.22, IMPACT_SPEED_GORE = 0.15;
     private static final int PAINT_PER_TICK = 6;
 
@@ -143,6 +142,20 @@ public final class PhysicsModRagdolls {
         return cfg != null && cfg.globalEnabled() && cfg.general.physicsModRagdolls && available();
     }
 
+    private static SimpleBloodConfig.PhysicsModSettings settings() {
+        return SimpleBloodClient.getConfig().physicsMod;
+    }
+
+    private static int bleedTicks() {
+        return 20 * Math.max(1, settings().bleedSeconds);
+    }
+
+    private static int scaled(int base, int percent) {
+        float f = base * Math.max(0, percent) / 100f;
+        int n = (int) f;
+        return RNG.nextFloat() < f - n ? n + 1 : n;
+    }
+
     public static void tick(ClientLevel level) {
         if (level != lastLevel) {
             lastLevel = level;
@@ -188,7 +201,7 @@ public final class PhysicsModRagdolls {
             }
         }
 
-        if (!DEATHS.isEmpty() && worldBodies.get(world) instanceof Iterable<?> bodies) {
+        if (!DEATHS.isEmpty() && settings().pieces && worldBodies.get(world) instanceof Iterable<?> bodies) {
             Map<Death, List<Object>> batches = new IdentityHashMap<>();
             for (Object rigid : bodies) {
                 if (SEEN.contains(rigid) || ragdollBodies.contains(rigid)) continue;
@@ -209,7 +222,7 @@ public final class PhysicsModRagdolls {
         Iterator<Bleeding> it = BLEEDING.iterator();
         while (it.hasNext()) {
             Bleeding b = it.next();
-            if (now - b.born > BLEED_TICKS || (b.ragdoll != null && !aliveRagdolls.contains(b.ragdoll))) {
+            if (now - b.born > bleedTicks() || (b.ragdoll != null && !aliveRagdolls.contains(b.ragdoll))) {
                 it.remove();
                 continue;
             }
@@ -281,10 +294,14 @@ public final class PhysicsModRagdolls {
             return;
         }
         Death d = b.death;
-        float fresh = 1f - (float) (now - b.born) / BLEED_TICKS;
+        float fresh = Math.max(0f, 1f - (float) (now - b.born) / bleedTicks());
         boolean liquid = d.kind == BloodKind.LIQUID;
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        SimpleBloodConfig.PhysicsModSettings s = cfg.physicsMod;
         boolean paints = liquid && d.stains && cfg.surfaces.enabled;
+        float wholeStains = Math.max(0, s.wholeRagdollStains) / 100f;
+        float drips = Math.max(0, s.drips) / 100f;
+        float smearChance = 0.5f * Math.max(0, s.smearAmount) / 100f;
         float dripShare = Math.min(1f, 10f / n);
         double impactSpeed = b.gore ? IMPACT_SPEED_GORE : IMPACT_SPEED;
         int painted = 0;
@@ -302,21 +319,21 @@ public final class PhysicsModRagdolls {
                 double beforeSpeed = before == null ? 0 : before.length();
 
                 if (beforeSpeed > impactSpeed && speed < beforeSpeed * 0.35) {
-                    splash(level, p, beforeSpeed);
-                    if (paints && painted < PAINT_PER_TICK && (b.gore || RNG.nextFloat() < 0.35f)) {
-                        stain(level, d, p, before, beforeSpeed, b.gore);
+                    splash(level, p, beforeSpeed, s.splashes);
+                    if (paints && s.stains && painted < PAINT_PER_TICK && (b.gore || RNG.nextFloat() < wholeStains)) {
+                        stain(level, d, p, before, beforeSpeed, b.gore, s.stainSize);
                         painted++;
                     }
                 }
 
-                if (liquid && RNG.nextFloat() < 0.035f * dripShare * fresh * (1f + (float) speed * 5f)) {
+                if (liquid && RNG.nextFloat() < 0.035f * drips * dripShare * fresh * (1f + (float) speed * 5f)) {
                     ClientBloodParticleSpawner.emit(level, BloodParticles.BLOOD_DRIP, p.x, p.y, p.z,
                             v.x * 0.5, -0.05, v.z * 0.5);
                 }
 
                 double horizontal = Math.sqrt(v.x * v.x + v.z * v.z);
-                if (paints && painted < PAINT_PER_TICK && fresh > 0.15f && horizontal > 0.04
-                        && (now + i) % 2 == 0 && nearGround(level, p)) {
+                if (paints && s.smears && painted < PAINT_PER_TICK && fresh > 0.15f && horizontal > 0.04
+                        && RNG.nextFloat() < smearChance && nearGround(level, p)) {
                     paint(level, p.add(0, 0.1, 0), p.add(0, -0.6, 0), colourOf(d), 1 + RNG.nextInt(2));
                     painted++;
                 }
@@ -329,8 +346,8 @@ public final class PhysicsModRagdolls {
         }
     }
 
-    private static void splash(ClientLevel level, Vec3 p, double speed) {
-        int count = 2 + RNG.nextInt(3);
+    private static void splash(ClientLevel level, Vec3 p, double speed, int percent) {
+        int count = scaled(2 + RNG.nextInt(3), percent);
         for (int k = 0; k < count; k++) {
             double a = RNG.nextDouble() * Math.PI * 2;
             double s = 0.08 + speed * 0.4;
@@ -339,8 +356,9 @@ public final class PhysicsModRagdolls {
         }
     }
 
-    private static void stain(ClientLevel level, Death d, Vec3 p, Vec3 velocity, double speed, boolean gore) {
+    private static void stain(ClientLevel level, Death d, Vec3 p, Vec3 velocity, double speed, boolean gore, int sizePercent) {
         int pixels = gore ? 6 + (int) Math.min(10, speed * 30) : 2 + (int) Math.min(4, speed * 12);
+        pixels = Math.max(1, scaled(pixels, sizePercent));
         Vec3 dir = velocity.normalize();
         boolean hit = paint(level, p.subtract(dir.scale(0.3)), p.add(dir.scale(0.8)), colourOf(d), pixels);
         if (!hit) hit = paint(level, p.add(0, 0.1, 0), p.add(0, -0.8, 0), colourOf(d), pixels);

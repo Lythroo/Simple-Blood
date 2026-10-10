@@ -13,10 +13,10 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.util.RandomSource;
 
-//? if 1.21.1 {
-/*public class BloodFogParticle extends net.minecraft.client.particle.TextureSheetParticle {
+//? if <=1.21.1 {
+/*public class BloodFogParticle extends net.minecraft.client.particle.TextureSheetParticle implements DrawnBeforeWater {
 *///?} else {
-public class BloodFogParticle extends SingleQuadParticle {
+public class BloodFogParticle extends SingleQuadParticle implements DrawnBeforeWater {
 //?}
 
     private static final ThreadLocal<BloodColor.Color> currentBloodColor =
@@ -45,10 +45,18 @@ public class BloodFogParticle extends SingleQuadParticle {
     protected int getLightColor(float partialTick) {
         return glows ? 0xF000F0 : super.getLightColor(partialTick);
     }
+
+    private int cloudLight(float partialTick) {
+        return getLightColor(partialTick);
+    }
     *///?} else {
     @Override
     protected int getLightCoords(float partialTick) {
         return glows ? 0xF000F0 : super.getLightCoords(partialTick);
+    }
+
+    private int cloudLight(float partialTick) {
+        return getLightCoords(partialTick);
     }
     //?}
 
@@ -66,12 +74,17 @@ public class BloodFogParticle extends SingleQuadParticle {
 
     private boolean counted;
 
+    private final boolean shaders = com.simpleblood.compat.ShaderPacks.inUse();
+
+    private final boolean beforeWater = !(shaders && glows);
+
     @Override
     public void remove() {
         if (counted) {
             counted = false;
             BloodParticle.countDeath();
         }
+        if (beforeWater) UnderwaterParticles.remove(this);
         super.remove();
     }
 
@@ -79,7 +92,7 @@ public class BloodFogParticle extends SingleQuadParticle {
                             double velX, double velY, double velZ,
                             SpriteSet spriteProvider,
                             float red, float green, float blue) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*super(world, x, y, z, velX, velY, velZ);
         this.setSprite(spriteProvider.get(0, 7));
         *///?} else {
@@ -105,6 +118,11 @@ public class BloodFogParticle extends SingleQuadParticle {
             green += (1f - green) * 0.35f;
             blue += (1f - blue) * 0.35f;
         }
+        if (shaders && !glows) {
+            red = Math.min(1f, red * 1.7f);
+            green = Math.min(1f, green * 1.7f);
+            blue = Math.min(1f, blue * 1.7f);
+        }
         this.setColor(red, green, blue);
 
         float baseTargetScale = MIN_SCALE + this.random.nextFloat() * (MAX_SCALE - MIN_SCALE);
@@ -115,7 +133,10 @@ public class BloodFogParticle extends SingleQuadParticle {
 
         this.quadSize = this.targetScale * initialScaleFactor * START_FRACTION;
 
-        this.baseAlpha = Math.min(0.85f, 0.25f * opacityMult * (glows ? 2.8f : 1f));
+        float glowDensity = glows ? 1.6f * SimpleBloodClient.getConfig().kinds.glowCloudOpacity / 100.0f : 1f;
+        float shaderDensity = !shaders || glows ? 1f
+                : 2.4f * SimpleBloodClient.getConfig().underwater.shaderCloudOpacity / 100.0f;
+        this.baseAlpha = Math.min(0.85f, 0.25f * opacityMult * glowDensity * shaderDensity);
 
         float initialSurfaceFade = 1.0f;
         if (this.initialSubmersionDepth < 0.15f) {
@@ -123,11 +144,12 @@ public class BloodFogParticle extends SingleQuadParticle {
         }
 
         this.desiredAlpha = baseAlpha * initialSurfaceFade;
-        this.alpha = this.desiredAlpha;
+        applyAlpha();
 
         this.xd = velX * 0.05f + (this.random.nextFloat() - 0.5f) * 0.02f;
         this.yd = velY * 0.05f - 0.008f;
         this.zd = velZ * 0.05f + (this.random.nextFloat() - 0.5f) * 0.02f;
+        if (beforeWater) UnderwaterParticles.add(this);
     }
 
     @Override
@@ -196,11 +218,57 @@ public class BloodFogParticle extends SingleQuadParticle {
             this.quadSize = adjustedTargetScale;
         }
 
-        this.alpha = this.desiredAlpha;
+        applyAlpha();
 
         float animationProgress = ((float)this.age / this.lifetime) * this.animationSpeed;
         int spriteIndex = Math.min(7, (int)(animationProgress * 8.0f));
         this.setSprite(this.spriteProvider.get(spriteIndex, 7));
+    }
+
+    private void applyAlpha() {
+        this.alpha = this.desiredAlpha;
+    }
+
+    //? if <=1.21.1 {
+    /*@Override
+    public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, net.minecraft.client.Camera camera, float partialTick) {
+        if (beforeWater) return;
+        super.render(buffer, camera, partialTick);
+    }
+    *///?} elif <26.1 {
+    /*@Override
+    public void extract(net.minecraft.client.renderer.state.QuadParticleRenderState state, net.minecraft.client.Camera camera, float partialTick) {
+        if (beforeWater) return;
+        super.extract(state, camera, partialTick);
+    }
+    *///?} else {
+    @Override
+    public void extract(net.minecraft.client.renderer.state.level.QuadParticleRenderState state, net.minecraft.client.Camera camera, float partialTick) {
+        if (beforeWater) return;
+        super.extract(state, camera, partialTick);
+    }
+    //?}
+
+    @Override
+    public boolean isIn(ClientLevel level) {
+        return isAlive() && this.level == level;
+    }
+
+    @Override
+    public boolean drawnBeforeWater() {
+        return beforeWater;
+    }
+
+    @Override
+    public void quadBeforeWater(com.mojang.blaze3d.vertex.VertexConsumer vc, com.mojang.blaze3d.vertex.PoseStack.Pose pose,
+                                net.minecraft.client.Camera camera, float partialTick) {
+        net.minecraft.world.phys.Vec3 cam = DrawnBeforeWater.cameraPos(camera);
+        DrawnBeforeWater.quad(vc, pose, camera.rotation(),
+                (float) (net.minecraft.util.Mth.lerp(partialTick, xo, x) - cam.x),
+                (float) (net.minecraft.util.Mth.lerp(partialTick, yo, y) - cam.y),
+                (float) (net.minecraft.util.Mth.lerp(partialTick, zo, z) - cam.z),
+                getQuadSize(partialTick), getU0(), getU1(), getV0(), getV1(),
+                rCol, gCol, bCol, alpha, cloudLight(partialTick));
     }
 
     private float getSubmersionDepth() {
@@ -238,7 +306,7 @@ public class BloodFogParticle extends SingleQuadParticle {
         }
     }
 
-    //? if 1.21.1 {
+    //? if <=1.21.1 {
     /*@Override
     public net.minecraft.client.particle.ParticleRenderType getRenderType() {
         return net.minecraft.client.particle.ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
@@ -285,7 +353,7 @@ public class BloodFogParticle extends SingleQuadParticle {
         }
 
         @Override
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*public Particle createParticle(SimpleParticleType type, ClientLevel world,
                                        double x, double y, double z,
                                        double velX, double velY, double velZ) {

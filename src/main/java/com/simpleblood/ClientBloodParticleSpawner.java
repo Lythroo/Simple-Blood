@@ -36,12 +36,24 @@ public class ClientBloodParticleSpawner {
     private static void emitPiece(ClientLevel world, BloodKind kind, net.minecraft.core.particles.SimpleParticleType type,
                                   double x, double y, double z, double vx, double vy, double vz) {
         net.minecraft.util.RandomSource rng = world.getRandom();
+        float amount = SimpleBloodClient.getConfig().kinds.amount(kind);
+        int pieces = (int) amount + (rng.nextFloat() < amount - (int) amount ? 1 : 0);
+        for (int i = 0; i < pieces; i++) {
+            double f = i == 0 ? 1.0 : 0.8 + rng.nextDouble() * 0.4;
+            emitOnePiece(world, kind, type, x, y, z, vx * f, vy * f, vz * f);
+        }
+    }
+
+    private static void emitOnePiece(ClientLevel world, BloodKind kind, net.minecraft.core.particles.SimpleParticleType type,
+                                     double x, double y, double z, double vx, double vy, double vz) {
+        SimpleBloodConfig.KindSettings kinds = SimpleBloodClient.getConfig().kinds;
+        net.minecraft.util.RandomSource rng = world.getRandom();
         net.minecraft.core.particles.SimpleParticleType piece;
         switch (kind) {
             case METAL -> piece = BloodParticles.METAL_FLAKE;
             case SPIRIT -> piece = BloodParticles.SPIRIT_SPARK;
             case EMBER -> {
-                if (rng.nextFloat() < 0.2f) {
+                if (kinds.emberSmoke && rng.nextFloat() < 0.2f) {
                     Minecraft.getInstance().particleEngine.createParticle(net.minecraft.core.particles.ParticleTypes.SMOKE,
                             x, y, z, vx * 0.1, 0.03, vz * 0.1);
                     return;
@@ -53,7 +65,7 @@ public class ClientBloodParticleSpawner {
                 piece = BloodParticles.WIND_PUFF;
             }
             case WOOD -> {
-                if (rng.nextFloat() < 0.35f) {
+                if (rng.nextFloat() < kinds.resinShare / 100.0f) {
                     BloodParticle.setCurrentKind(BloodKind.LIQUID);
                     try {
                         Minecraft.getInstance().particleEngine.createParticle(type, x, y, z, vx, vy, vz);
@@ -169,6 +181,8 @@ public class ClientBloodParticleSpawner {
 
             emit(world, BloodParticles.BLOOD_SPLASH, spawnX, spawnY, spawnZ, velX, velY, velZ);
         }
+
+        Giblets.death(world, entity, ctx);
     }
 
     public static void spawnBloodForLowHealth(ClientLevel world, LivingEntity entity, SimpleBloodConfig config) {

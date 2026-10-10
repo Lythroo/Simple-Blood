@@ -1,4 +1,4 @@
-//? if fabric && 1.21.1 {
+//? if fabric && <=1.21.1 {
 /*package com.simpleblood.fabric;
 
 final class FabricPreviewHook {

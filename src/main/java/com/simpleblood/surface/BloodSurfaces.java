@@ -12,6 +12,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.world.level.block.piston.PistonHeadBlock;
+import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
@@ -23,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -64,6 +68,26 @@ public final class BloodSurfaces {
 
     public static boolean isCrossModel(BlockState state) {
         return detailed() && BlockToneSampler.isCrossModel(state);
+    }
+
+    public static boolean sways(BlockState state) {
+        if (!settings().skipSwayingBlocks || state.isAir() || !com.simpleblood.compat.ShaderPacks.inUse()) return false;
+        Block b = state.getBlock();
+        return state.is(net.minecraft.tags.BlockTags.LEAVES)
+                || b instanceof net.minecraft.world.level.block.VineBlock
+                || b instanceof net.minecraft.world.level.block.GrowingPlantBlock
+                || b instanceof net.minecraft.world.level.block.LanternBlock
+                || b instanceof net.minecraft.world.level.block.SugarCaneBlock
+                || isPlant(b)
+                || BlockToneSampler.isCrossModel(state);
+    }
+
+    private static boolean isPlant(Block b) {
+        //? if <=1.21.1 {
+        /*return b instanceof net.minecraft.world.level.block.BushBlock;
+        *///?} else {
+        return b instanceof net.minecraft.world.level.block.VegetationBlock;
+        //?}
     }
 
     public static boolean isHandDrawn(BlockState state) {
@@ -136,6 +160,7 @@ public final class BloodSurfaces {
             }
             return null;
         }
+        if (sways(state)) return null;
         if (isHandDrawn(state)) return SignFaces.clip(state, pos, from, to);
         if (!detailed() && (SignFaces.applies(state) || BlockToneSampler.isCrossModel(state))) return null;
         VoxelShape shape = state.getShape(level, pos);
@@ -160,7 +185,7 @@ public final class BloodSurfaces {
         BlockPos pos = BlockPos.containing(x, y, z);
         try {
             BlockState state = level.getBlockState(pos);
-            if (state.isAir()) return false;
+            if (state.isAir() || sways(state)) return false;
             VoxelShape shape = state.getShape(level, pos);
             if (shape.isEmpty()) return false;
             double lx = x - pos.getX(), ly = y - pos.getY(), lz = z - pos.getZ();
@@ -389,7 +414,7 @@ public final class BloodSurfaces {
         BlockPos npos = pos.relative(dir);
         BlockState ns = level.getBlockState(npos);
         VoxelShape shape = ns.getShape(level, npos);
-        return shape.isEmpty() || BlockToneSampler.isCrossModel(ns) || !Block.isFaceFull(shape, dir.getOpposite());
+        return shape.isEmpty() || BlockToneSampler.isCrossModel(ns) || sways(ns) || !Block.isFaceFull(shape, dir.getOpposite());
     }
 
     private static boolean inFluid(ClientLevel level, BlockPos pos) {
@@ -557,14 +582,16 @@ public final class BloodSurfaces {
                 RUNS.remove(run);
                 continue;
             }
+            boolean fed = false;
             if (run.source != null) {
                 if (TILES.get(run.source.key) != run.source
                         || !CanvasTile.body(run.source, run.sourceX, run.sourceY, FLOW, BODY_TILES)
                                 .draw(run.source.pixelCenter(run.sourceX, run.sourceY), RNG)) {
                     run.source = null;
                     run.remaining = Math.min(run.remaining, Math.max(1, run.tile.res / 4));
-                } else if ((run.travelled & 1) == 1) {
-                    run.volume++;
+                } else {
+                    fed = true;
+                    if ((run.travelled & 1) == 1) run.volume++;
                 }
             }
             if (run.waterRow >= 0 && run.row > run.waterRow) {
@@ -604,8 +631,12 @@ public final class BloodSurfaces {
                 run.tile.paintThin(run.column, run.row, run.colour, now, lifetime, RNG, pattern, thin);
                 run.row++;
                 run.travelled++;
-                run.remaining--;
+                if (!fed) run.remaining--;
                 run.nextTick = now + run.interval;
+                if (run.remaining <= 0 && run.volume > 1) {
+                    run.volume--;
+                    run.remaining = Math.max(1, run.tile.res / 4);
+                }
                 if (run.remaining <= 0) RUNS.remove(run);
             } else {
                 RUNS.remove(run);
@@ -711,6 +742,156 @@ public final class BloodSurfaces {
         }
     }
 
+    private static final Map<Long, List<CanvasTile>> BY_POS = new HashMap<>();
+    private static final Map<Long, BlockState> CHANGED = new LinkedHashMap<>();
+
+    public static void blockChanging(ClientLevel level, BlockPos pos) {
+        try {
+            if (BY_POS.isEmpty() || !RenderThread.on() || level != trackedLevel) return;
+            long key = pos.asLong();
+            if (!BY_POS.containsKey(key) || CHANGED.containsKey(key)) return;
+            CHANGED.put(key, level.getBlockState(pos));
+        } catch (Throwable t) {
+            com.simpleblood.Guard.fail(com.simpleblood.Guard.Part.SURFACES, "following a block that changed", t);
+        }
+    }
+
+    private record Move(CanvasTile tile, BlockPos to, Direction by, PistonMovingBlockEntity mover) {}
+
+    private record Carried(Vec3 at, Vec3 normal, CanvasTile.Lifted pixel, int res) {}
+
+    private static void followChanges(ClientLevel level) {
+        if (CHANGED.isEmpty()) return;
+        List<Move> moves = new ArrayList<>();
+        for (Map.Entry<Long, BlockState> e : CHANGED.entrySet()) {
+            BlockPos pos = BlockPos.of(e.getKey());
+            BlockState was = e.getValue(), is = level.getBlockState(pos);
+            List<CanvasTile> here = BY_POS.get(e.getKey());
+            if (was == is || here == null || here.isEmpty()) continue;
+            if (pistonMoves(level, pos, was, is, here, moves)) continue;
+            BlockMotion.Motion motion = BlockMotion.of(level, pos, was, is);
+            if (motion != null) carry(level, pos, new ArrayList<>(here), motion);
+        }
+        CHANGED.clear();
+        if (moves.isEmpty()) return;
+        BloodCanvasAtlas atlas = BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null;
+        for (Move m : moves) {
+            if (TILES.get(m.tile().key) == m.tile()) TILES.remove(m.tile().key);
+            unindex(m.tile());
+        }
+        for (Move m : moves) {
+            CanvasTile t = m.tile();
+            CanvasTile.Key key = new CanvasTile.Key(m.to().asLong(), t.key.face(), t.key.box());
+            CanvasTile copy = new CanvasTile(t, key, m.to(), m.by().getStepX(), m.by().getStepY(), m.by().getStepZ());
+            copy.mover = m.mover();
+            copy.followsMover = m.mover() != null;
+            t.dispose(atlas);
+            CanvasTile there = TILES.get(key);
+            if (there != null) remove(there);
+            putTile(key, copy);
+        }
+    }
+
+    private static boolean pistonMoves(ClientLevel level, BlockPos pos, BlockState was, BlockState is,
+                                       List<CanvasTile> here, List<Move> moves) {
+        boolean left = is.isAir() || is.is(net.minecraft.world.level.block.Blocks.MOVING_PISTON);
+        if (left && !(was.getBlock() instanceof PistonHeadBlock)) {
+            for (Direction d : Direction.values()) {
+                BlockPos to = pos.relative(d);
+                if (level.getBlockEntity(to) instanceof PistonMovingBlockEntity m && !m.isSourcePiston()
+                        && m.getMovementDirection() == d && m.getMovedState() == was) {
+                    for (CanvasTile t : here) moves.add(new Move(t, to, d, m));
+                    return true;
+                }
+            }
+        }
+        if (was.getBlock() instanceof PistonBaseBlock && is.getBlock() == was.getBlock()
+                && !was.getValue(PistonBaseBlock.EXTENDED) && is.getValue(PistonBaseBlock.EXTENDED)) {
+            Direction facing = is.getValue(PistonBaseBlock.FACING);
+            BlockPos head = pos.relative(facing);
+            PistonMovingBlockEntity m = level.getBlockEntity(head) instanceof PistonMovingBlockEntity p ? p : null;
+            for (CanvasTile t : here) if (onOuterFace(t, pos, facing)) moves.add(new Move(t, head, facing, m));
+            return true;
+        }
+        if (was.getBlock() instanceof PistonHeadBlock && left) {
+            Direction facing = was.getValue(PistonHeadBlock.FACING);
+            BlockPos base = pos.relative(facing.getOpposite());
+            if (!(level.getBlockEntity(base) instanceof PistonMovingBlockEntity m)) return false;
+            for (CanvasTile t : here) if (onOuterFace(t, pos, facing)) moves.add(new Move(t, base, facing.getOpposite(), m));
+            return true;
+        }
+        if (is.is(net.minecraft.world.level.block.Blocks.MOVING_PISTON)
+                && level.getBlockEntity(pos) instanceof PistonMovingBlockEntity m && m.isSourcePiston()) {
+            for (CanvasTile t : here) {
+                t.mover = m;
+                t.followsMover = false;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean onOuterFace(CanvasTile t, BlockPos pos, Direction side) {
+        if (t.custom || t.face != side) return false;
+        int edge = switch (side.getAxis()) {
+            case X -> pos.getX();
+            case Y -> pos.getY();
+            case Z -> pos.getZ();
+        } + (side.getAxisDirection() == Direction.AxisDirection.POSITIVE ? 1 : 0);
+        return Math.abs(planeCoord(t, side) - edge) < 1.0e-3;
+    }
+
+    private static void carry(ClientLevel level, BlockPos pos, List<CanvasTile> tiles, BlockMotion.Motion motion) {
+        List<Carried> carried = new ArrayList<>();
+        for (CanvasTile t : tiles) {
+            Vec3 n = new Vec3(t.nx, t.ny, t.nz);
+            for (CanvasTile.Lifted l : t.lift()) carried.add(new Carried(t.pixelCenter(l.px(), l.py()), n, l, t.res));
+            remove(t);
+        }
+        Vec3 origin = Vec3.atLowerCornerOf(pos);
+        List<Carried> lost = new ArrayList<>();
+        for (Carried c : carried) {
+            Vec3 local = c.at().subtract(origin);
+            Vec3 at = motion.point(local).add(origin);
+            Vec3 n = motion.normal(local, c.normal());
+            CanvasTile t = tileAt(level, pos, axisDirection(n.x, n.y, n.z), at);
+            if (t == null || Math.abs((at.x - t.ox) * t.nx + (at.y - t.oy) * t.ny + (at.z - t.oz) * t.nz) > 0.03
+                    || !t.place(c.pixel(), t.pixelX(at), t.pixelY(at), now)) {
+                lost.add(c);
+            }
+        }
+        for (int i = 0; i < lost.size(); i += 6) {
+            Carried c = lost.get(i);
+            BloodParticle.spawnDroplet(level, c.at().x, c.at().y, c.at().z, c.pixel().rgb(),
+                    Math.min(c.res() / 2, 1 + c.pixel().depth()), c.at().y - MAX_FALL);
+        }
+    }
+
+    private static boolean settle(ClientLevel level, CanvasTile tile) {
+        BlockState current = level.getBlockState(tile.pos);
+        if (current == tile.state) {
+            refreshVisibility(level, tile);
+            return true;
+        }
+        if (current.isAir()) return true;
+        List<CanvasTile> one = new ArrayList<>(1);
+        one.add(tile);
+        carry(level, tile.pos, one, STAY);
+        return false;
+    }
+
+    private static final BlockMotion.Motion STAY = new BlockMotion.Motion() {
+        @Override
+        public Vec3 point(Vec3 local) {
+            return local;
+        }
+
+        @Override
+        public Vec3 normal(Vec3 local, Vec3 normal) {
+            return normal;
+        }
+    };
+
     private static List<CanvasTile> crossTiles(ClientLevel level, BlockPos pos, BlockState state) {
         SimpleBloodConfig.SurfaceSettings s = settings();
         int res = s.resolution == 16 ? 16 : 8;
@@ -725,7 +906,7 @@ public final class BloodSurfaces {
                 tile = quadTile(key, pos, state, quads.get(q), res, offset);
                 if (tile == null) continue;
                 if (TILES.size() >= s.maxTiles) evictOldest();
-                TILES.put(key, tile);
+                putTile(key, tile);
             }
             tiles.add(tile);
         }
@@ -746,7 +927,7 @@ public final class BloodSurfaces {
 
     private static Vec3 modelOffset(ClientLevel level, BlockPos pos, BlockState state) {
         try {
-            //? if 1.21.1 {
+            //? if <=1.21.1 {
             /*return state.getOffset(level, pos);
             *///?} else {
             return state.getOffset(pos);
@@ -813,7 +994,7 @@ public final class BloodSurfaces {
                     tile.swayAxis = r.axis();
                 }
                 if (TILES.size() >= s.maxTiles) evictOldest();
-                TILES.put(key, tile);
+                putTile(key, tile);
             }
             tiles.add(tile);
         }
@@ -871,6 +1052,7 @@ public final class BloodSurfaces {
 
     private static CanvasTile tileAt(ClientLevel level, BlockPos pos, Direction face, Vec3 point, boolean create) {
         BlockState state = level.getBlockState(pos);
+        if (sways(state)) return null;
         if (isHandDrawn(state)) {
             if (!create) return null;
             return nearestPlane(signTiles(level, pos, state), point, face);
@@ -930,7 +1112,7 @@ public final class BloodSurfaces {
                 tile.setBaseTones(BlockToneSampler.sample(tile, RNG));
             }
             if (face == Direction.UP) tile.exposedMask = sideExposure(level, pos) | insetEdges(tile);
-            TILES.put(key, tile);
+            putTile(key, tile);
             refreshVisibility(level, tile);
         }
         return tile;
@@ -1058,7 +1240,7 @@ public final class BloodSurfaces {
             tile = quadTile(key, pos, state, quads.get(s.index()), cfg.resolution == 16 ? 16 : 8, Vec3.ZERO);
             if (tile == null) return null;
             if (TILES.size() >= cfg.maxTiles) evictOldest();
-            TILES.put(key, tile);
+            putTile(key, tile);
         }
         return tile;
     }
@@ -1086,7 +1268,7 @@ public final class BloodSurfaces {
                 tile.setBaseTones(BlockToneSampler.sample(tile, RNG));
             }
             if (face == Direction.UP) tile.exposedMask = sideExposure(level, pos) | insetEdges(tile);
-            TILES.put(key, tile);
+            putTile(key, tile);
             refreshVisibility(level, tile);
         }
         return tile;
@@ -1388,15 +1570,24 @@ public final class BloodSurfaces {
             return;
         }
         syncLevel(level);
-        now++;
         drainPending(level);
         if (TILES.isEmpty()) return;
+        //? if 1.20.1 {
+        /*if (mc.isPaused()) {
+        *///?} else {
+        if (mc.isPaused() || !level.tickRateManager().runsNormally()) {
+        //?}
+            flushUploads();
+            return;
+        }
+        now++;
 
         SimpleBloodConfig.SurfaceSettings s = settings();
         if (!s.enabled) {
             clear();
             return;
         }
+        followChanges(level);
         advanceRuns(level);
         landFallingShapes(level);
         relaxPuddles(level, s);
@@ -1410,6 +1601,12 @@ public final class BloodSurfaces {
                 if (!level.hasChunkAt(tile.pos)) {
                     remove(tile);
                     continue;
+                }
+                if (tile.mover != null) {
+                    if (!tile.mover.isRemoved() && level.getBlockEntity(tile.pos) == tile.mover) continue;
+                    tile.mover = null;
+                    tile.followsMover = false;
+                    if (!settle(level, tile)) continue;
                 }
                 BlockState current = level.getBlockState(tile.pos);
                 if (current != tile.state) {
@@ -1503,8 +1700,23 @@ public final class BloodSurfaces {
     }
 
     private static void remove(CanvasTile tile) {
-        TILES.remove(tile.key);
+        CanvasTile gone = TILES.remove(tile.key);
+        unindex(tile);
+        if (gone != null && gone != tile) unindex(gone);
         tile.dispose(BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null);
+    }
+
+    private static void putTile(CanvasTile.Key key, CanvasTile tile) {
+        CanvasTile old = TILES.put(key, tile);
+        if (old != null && old != tile) unindex(old);
+        BY_POS.computeIfAbsent(tile.pos.asLong(), k -> new ArrayList<>(2)).add(tile);
+    }
+
+    private static void unindex(CanvasTile tile) {
+        List<CanvasTile> at = BY_POS.get(tile.pos.asLong());
+        if (at == null) return;
+        at.remove(tile);
+        if (at.isEmpty()) BY_POS.remove(tile.pos.asLong());
     }
 
     public static void clear() {
@@ -1517,6 +1729,8 @@ public final class BloodSurfaces {
         BloodCanvasAtlas atlas = BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null;
         for (CanvasTile t : TILES.values()) t.dispose(atlas);
         TILES.clear();
+        BY_POS.clear();
+        CHANGED.clear();
         FALLING.clear();
         RUNS.clear();
         RUN_COOLDOWN.clear();

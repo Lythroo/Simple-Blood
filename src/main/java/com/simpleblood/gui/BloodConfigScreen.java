@@ -435,7 +435,18 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         return true;
     }
 
-    //? if 1.21.1 {
+    //? if 1.20.1 {
+    /*@Override
+    public void render(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        renderBackground(graphics);
+        draw(new Gfx(graphics, font), mouseX, mouseY);
+    }
+
+    @Override
+    public void renderBackground(net.minecraft.client.gui.GuiGraphics graphics) {
+        if (!dimWorld(new Gfx(graphics, font))) super.renderBackground(graphics);
+    }
+    *///?} elif 1.21.1 {
     /*@Override
     public void render(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics, mouseX, mouseY, partialTick);
@@ -529,15 +540,20 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         return (picker != null ? picker : root).charTyped(c);
     }
 
+    //? if 1.20.1 {
+    /*@Override
+    public boolean mouseScrolled(double mx, double my, double dy) {
+    *///?} else {
     @Override
     public boolean mouseScrolled(double mx, double my, double dx, double dy) {
+    //?}
         return guarded("scrolling", () -> {
             if (picker != null) return true;
             return root.mouseScrolled(mx, my, dy);
         });
     }
 
-    //? if 1.21.1 {
+    //? if <=1.21.1 {
     /*@Override
     public boolean mouseClicked(double mx, double my, int button) { return click(mx, my, button); }
 

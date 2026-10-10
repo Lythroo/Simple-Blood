@@ -8,7 +8,7 @@ public final class Platform {
     private Platform() {}
 
     public static String minecraftVersion() {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*return net.minecraft.SharedConstants.getCurrentVersion().getName();
         *///?} else {
         return net.minecraft.SharedConstants.getCurrentVersion().name();
@@ -32,7 +32,24 @@ public final class Platform {
         }
         return ids;
     }
-    //?} else {
+    //?} elif 1.20.1 {
+    /*public static String loader() {
+        return "NeoForge";
+    }
+
+    public static String modVersion() {
+        return net.minecraftforge.fml.ModList.get().getModContainerById(SimpleBlood.MOD_ID)
+                .map(c -> c.getModInfo().getVersion().toString()).orElse("?");
+    }
+
+    public static List<String> modIds() {
+        List<String> ids = new ArrayList<>();
+        for (var info : net.minecraftforge.fml.ModList.get().getMods()) {
+            ids.add(info.getModId());
+        }
+        return ids;
+    }
+    *///?} else {
     /*public static String loader() {
         return "NeoForge";
     }

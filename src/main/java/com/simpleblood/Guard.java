@@ -234,7 +234,7 @@ public final class Guard {
         }
         Component copyTip = Component.literal("Copies the full error report (also in " + REPORT_FILE + ")");
         Component openTip = Component.literal(ISSUES_URL);
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*Style copy = Style.EMPTY.withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, report))
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, copyTip));
         Style open = Style.EMPTY.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, ISSUES_URL))
@@ -260,13 +260,14 @@ public final class Guard {
             if (mc == null || mc.player != null) return;
             Component title = Component.literal("Simple Blood: error");
             Component text = Component.literal("See " + REPORT_FILE);
-            SystemToast.SystemToastId id = new SystemToast.SystemToastId(8000L);
-            //? if 1.21.1 {
-            /*SystemToast.add(mc.getToasts(), id, title, text);
+            //? if 1.20.1 {
+            /*SystemToast.add(mc.getToasts(), SystemToast.SystemToastIds.PERIODIC_NOTIFICATION, title, text);
+            *///?} elif 1.21.1 {
+            /*SystemToast.add(mc.getToasts(), new SystemToast.SystemToastId(8000L), title, text);
             *///?} elif <26.2 {
-            SystemToast.add(mc.getToastManager(), id, title, text);
+            SystemToast.add(mc.getToastManager(), new SystemToast.SystemToastId(8000L), title, text);
             //?} else {
-            /*SystemToast.add(mc.gui.toastManager(), id, title, text);
+            /*SystemToast.add(mc.gui.toastManager(), new SystemToast.SystemToastId(8000L), title, text);
             *///?}
         } catch (Throwable ignored) {
         }

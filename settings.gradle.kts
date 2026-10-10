@@ -19,13 +19,15 @@ stonecutter {
     create(rootProject) {
         fun match(version: String, vararg loaders: String) = loaders.forEach { loader ->
             val buildFile = when {
+                loader == "neoforge" && version == "1.20.1" -> "build.neoforge-legacy.gradle" // Forge-era NeoForge (47.1)
                 loader != "fabric" -> "build.$loader.gradle"
-                version.startsWith("1.") -> "build.fabric-legacy.gradle" // obfuscated 1.21.x
+                version.startsWith("1.") -> "build.fabric-legacy.gradle" // obfuscated 1.20.1 / 1.21.x
                 else -> "build.fabric.gradle"                            // unobfuscated 26.x
             }
             version("$version-$loader", version).buildscript = buildFile
         }
 
+        match("1.20.1", "fabric", "neoforge")
         match("1.21.1", "fabric", "neoforge")
         match("1.21.11", "fabric", "neoforge")
         match("26.1", "fabric", "neoforge")

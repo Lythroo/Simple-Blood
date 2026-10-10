@@ -36,19 +36,19 @@ public final class SceneRenderer {
     }
 
     public static final int FULL_BRIGHT = 0xF000F0;
-    private static final Identifier ZOMBIE = Identifier.withDefaultNamespace("textures/entity/zombie/zombie.png");
-    private static final Identifier UNDERWATER = Identifier.withDefaultNamespace("textures/misc/underwater.png");
+    private static final Identifier ZOMBIE = com.simpleblood.Ids.vanilla("textures/entity/zombie/zombie.png");
+    private static final Identifier UNDERWATER = com.simpleblood.Ids.vanilla("textures/misc/underwater.png");
     private static final int WATER_TINT = 0x6A82C4;
-    private static final Identifier WHITE = Identifier.fromNamespaceAndPath(SimpleBlood.MOD_ID, "textures/gui/white.png");
+    private static final Identifier WHITE = com.simpleblood.Ids.mod("textures/gui/white.png");
     private static final Map<String, Identifier> TEXTURES = new HashMap<>();
     private static ModelPart zombie;
 
     private static Identifier particleTexture(String name) {
-        return TEXTURES.computeIfAbsent(name, n -> Identifier.fromNamespaceAndPath(SimpleBlood.MOD_ID, "textures/particle/" + n + ".png"));
+        return TEXTURES.computeIfAbsent(name, n -> com.simpleblood.Ids.mod("textures/particle/" + n + ".png"));
     }
 
     static Object cutout(Identifier texture) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*return net.minecraft.client.renderer.RenderType.entityCutout(texture);
         *///?} else {
         return net.minecraft.client.renderer.rendertype.RenderTypes.entityCutout(texture);
@@ -56,7 +56,7 @@ public final class SceneRenderer {
     }
 
     static Object opaque(Identifier texture) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*return net.minecraft.client.renderer.RenderType.beaconBeam(texture, false);
         *///?} else {
         return net.minecraft.client.renderer.rendertype.RenderTypes.beaconBeam(texture, false);
@@ -64,7 +64,7 @@ public final class SceneRenderer {
     }
 
     static Object unlit(Identifier texture) {
-        //? if 1.21.1 {
+        //? if <=1.21.1 {
         /*return net.minecraft.client.renderer.RenderType.entityTranslucentEmissive(texture);
         *///?} else {
         return net.minecraft.client.renderer.rendertype.RenderTypes.entityTranslucentEmissive(texture);
@@ -199,12 +199,22 @@ public final class SceneRenderer {
 
     private static void vertex(VertexConsumer vc, PoseStack.Pose p, float x, float y, float z, float u, float v,
                                int rgb, int alpha, int light, int nx, int ny, int nz) {
+        //? if 1.20.1 {
+        /*vc.vertex(p.pose(), x, y, z)
+                .color((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, alpha)
+                .uv(u, v)
+                .overlayCoords(OverlayTexture.NO_OVERLAY)
+                .uv2(light)
+                .normal(p.normal(), nx, ny, nz)
+                .endVertex();
+        *///?} else {
         vc.addVertex(p, x, y, z)
                 .setColor((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, alpha)
                 .setUv(u, v)
                 .setOverlay(OverlayTexture.NO_OVERLAY)
                 .setLight(light)
                 .setNormal(p, nx, ny, nz);
+        //?}
     }
 
     private static int streakIndex(Quaternionf view, PreviewScene.Drop d) {

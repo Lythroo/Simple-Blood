@@ -1,3 +1,15 @@
+//? if neoforge && 1.20.1 {
+/*package com.simpleblood.neoforge;
+
+import net.minecraftforge.eventbus.api.IEventBus;
+
+final class NeoForgePreviewHook {
+    private NeoForgePreviewHook() {}
+
+    static void register(IEventBus modBus) {}
+}
+*///?}
+
 //? if neoforge && 1.21.1 {
 /*package com.simpleblood.neoforge;
 
