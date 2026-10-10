@@ -86,7 +86,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         this.kind = kind;
         this.metal = kind == com.simpleblood.BloodKind.METAL;
         this.gib = kind == com.simpleblood.BloodKind.LIQUID;
-        this.liesFlat = kind != com.simpleblood.BloodKind.BONE && !gib;
+        this.liesFlat = gib ? random.nextBoolean() : kind != com.simpleblood.BloodKind.BONE;
         boolean wood = kind == com.simpleblood.BloodKind.WOOD;
         this.blood = BloodParticle.currentBloodColor();
         this.bloodGlows = BloodParticle.currentGlows();
@@ -115,7 +115,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         this.lifetime = Math.max(10, (int) (((metal ? 70 : gib ? 140 : 60) + random.nextInt(30)) * lifeScale));
         this.glints = cfg.kinds.metalGlint;
 
-        this.quadSize = (gib ? 0.14f : metal || wood ? 0.10f : 0.09f) * (1f + random.nextFloat() * 0.3f) * size;
+        this.quadSize = (gib ? 0.17f : metal || wood ? 0.10f : 0.09f) * (1f + random.nextFloat() * 0.3f) * size;
         this.setSize(0.08f, 0.08f);
         if (wood) {
             red = red * 0.45f + BARK_R * 0.55f;
@@ -307,7 +307,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
     private DebrisPieceParticle flakeUnder() {
         DebrisPieceParticle under = null;
         for (DebrisPieceParticle o : LYING) {
-            if (o == this || o.level != level || o.removed || o.metal != metal) continue;
+            if (o == this || o.level != level || o.removed || o.kind != kind) continue;
             double dx = x - o.x, dz = z - o.z;
             double reach = (quadSize + o.quadSize) * 0.6;
             if (dx * dx + dz * dz > reach * reach) continue;

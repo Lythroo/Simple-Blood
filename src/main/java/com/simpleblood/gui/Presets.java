@@ -69,7 +69,7 @@ public final class Presets {
                 water(c, true, 100, 100, 100);
                 sound(c, 100, 110, true, true);
             }),
-            new Preset("Gore", "Way too much blood. Puddles everywhere, for ages.", c -> {
+            new Preset("Gore", "Way too much blood. Puddles everywhere, for ages, and giblets.", c -> {
                 defaults(c);
                 c.general.bloodAmount = 220;
                 c.general.particleBudget = 4000;
@@ -80,6 +80,7 @@ public final class Presets {
                 hits(c, 70, true, true);
                 water(c, true, 160, 150, 140);
                 sound(c, 130, 90, true, true);
+                giblets(c, true, 150, true);
             }),
             new Preset("Performance", "Fewer drops, fewer painted faces, no clouds. For slower machines.", c -> {
                 defaults(c);
@@ -140,6 +141,12 @@ public final class Presets {
         c.directional.share = share;
         c.directional.weaponFlavour = weaponFlavour;
         c.directional.entrySpatter = exitSpray;
+    }
+
+    private static void giblets(SimpleBloodConfig c, boolean on, int amount, boolean trails) {
+        c.gore.giblets = on;
+        c.gore.gibletAmount = amount;
+        c.gore.gibletTrails = trails;
     }
 
     private static void water(SimpleBloodConfig c, boolean clouds, int size, int lifetime, int opacity) {

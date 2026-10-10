@@ -16,6 +16,7 @@
 ### Giblets
 - Optional meat chunks fly off mobs.
 - Off by default, under Hits.
+- The Gore preset turns them on.
 - They leave a trail of blood.
 
 ### Kinds
@@ -47,6 +48,7 @@
 - Stray drops soak away.
 - Underwater blood and debris visible from above.
 - Blood on ice and glass no longer see-through.
+- Settings previews no longer crash.
 
 ## 1.0.2
 

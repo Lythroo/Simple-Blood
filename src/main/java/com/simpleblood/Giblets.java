@@ -13,6 +13,7 @@ public final class Giblets {
     private static final float PER_DAMAGE = 0.06f;
     private static final int MAX_ON_HIT = 3;
     private static final int MAX_ON_DEATH = 10;
+    private static final double FAN = Math.toRadians(170);
 
     public static void hit(ClientLevel level, LivingEntity entity, HitContext ctx) {
         if (!wanted(entity)) return;
@@ -54,16 +55,12 @@ public final class Giblets {
             Vec3 from = ctx != null && ctx.wound != null ? ctx.wound : entity.position().add(0, entity.getBbHeight() * 0.6, 0);
             Vec3 along = BloodSpray.isDirectional(ctx) ? ctx.direction : null;
             double spread = 0.1 + entity.getBbWidth() * 0.15;
+            double towards = along != null ? Math.atan2(-along.z, -along.x) : 0;
             for (int i = 0; i < count; i++) {
-                double a = rng.nextDouble() * Math.PI * 2;
-                double out = 0.08 + rng.nextDouble() * 0.14;
+                double a = along != null ? towards + (rng.nextDouble() - 0.5) * FAN : rng.nextDouble() * Math.PI * 2;
+                double out = 0.06 + rng.nextDouble() * 0.1;
                 double vx = Math.cos(a) * out, vz = Math.sin(a) * out;
-                double vy = 0.18 + rng.nextDouble() * 0.2;
-                if (along != null) {
-                    double push = 0.15 + rng.nextDouble() * 0.15;
-                    vx = vx * 0.5 + along.x * push;
-                    vz = vz * 0.5 + along.z * push;
-                }
+                double vy = 0.12 + rng.nextDouble() * 0.12;
                 if (underwater) {
                     vx *= 0.3;
                     vy *= 0.3;

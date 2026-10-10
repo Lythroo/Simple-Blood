@@ -66,6 +66,8 @@ public final class PreviewScene {
     private final Map<BlockPos, Block> blockMap = new HashMap<>();
     private final Map<CanvasTile.Key, CanvasTile> tiles = new HashMap<>();
     private final List<Drop> drops = new ArrayList<>();
+    private final List<Drop> born = new ArrayList<>();
+    private boolean movingDrops;
     private final List<Fog> fogs = new ArrayList<>();
     private final List<Run> runs = new ArrayList<>();
     public final Mob mob = new Mob();
@@ -543,11 +545,22 @@ public final class PreviewScene {
         d.kind = kind;
         d.sprite = rng.nextInt(kind == 1 ? 3 : 4);
         d.colour = colour.getAsInt() & 0xFFFFFF;
-        drops.add(d);
+        (movingDrops ? born : drops).add(d);
         return d;
     }
 
     private void moveDrops(SimpleBloodConfig c) {
+        movingDrops = true;
+        try {
+            moveEachDrop(c);
+        } finally {
+            movingDrops = false;
+            drops.addAll(born);
+            born.clear();
+        }
+    }
+
+    private void moveEachDrop(SimpleBloodConfig c) {
         double gravity = 0.04 * c.particleGravityMultiplier();
         double drag = 0.98 * c.particleDragMultiplier();
         boolean fog = kind == Kind.WATER && c.underwater.transformToFog;
