@@ -59,7 +59,7 @@ dependencies {
 }
 
 processResources {
-    exclude 'fabric.mod.json', 'META-INF/neoforge.mods.toml' // keep this a Forge-era jar
+    exclude 'fabric.mod.json', 'META-INF/neoforge.mods.toml' // the 1.20.5+ one; ours is made below
     def minecraftRange = "[${mcVersion}]" // Maven exact range → correct Modrinth detection
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
@@ -70,7 +70,7 @@ processResources {
                 extraMixins: '',
                 minecraft_range: minecraftRange
     }
-    // Forge 1.20.1 finds mixin names through the refmap, and goes without ScreenInvoker: the
+    // NeoForge 1.20.1 finds mixin names through the refmap, and goes without ScreenInvoker: the
     // annotation processor cannot map it (ConfigAccess reaches the method another way here).
     doLast {
         def file = new File(destinationDir, 'simpleblood.mixins.json')
@@ -78,6 +78,10 @@ processResources {
         json.refmap = 'simpleblood.refmap.json'
         json.client.remove('ScreenInvoker')
         file.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(json))
+        // NeoForge 1.20.1 reads mods.toml. A copy under the newer name marks the jar as NeoForge
+        // for Modrinth's upload, which otherwise takes a lone mods.toml for Forge.
+        def toml = new File(destinationDir, 'META-INF/mods.toml')
+        new File(destinationDir, 'META-INF/neoforge.mods.toml').text = toml.text
     }
 }
 
@@ -86,7 +90,7 @@ tasks.withType(JavaCompile).configureEach {
     it.options.encoding = 'UTF-8'
 }
 
-// Forge 1.20.1 finds mixin configs through
+// Release jars leave the filming aid out entirely. NeoForge 1.20.1 finds mixin configs through
 // the manifest, not through mods.toml.
 tasks.named('jar') {
     manifest.attributes('MixinConfigs': 'simpleblood.mixins.json')

@@ -14,7 +14,7 @@ authors = "Lythroo_"
 # Client only: a server never needs it, and a client with it still joins any server.
 displayTest = "IGNORE_ALL_VERSION"
 
-# NeoForge 1.20.1 still calls itself "forge", so this matches both loaders.
+# NeoForge 1.20.1 still goes by the mod id "forge".
 [[dependencies.simpleblood]]
 modId = "forge"
 mandatory = true

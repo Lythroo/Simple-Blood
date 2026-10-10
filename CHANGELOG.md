@@ -4,7 +4,6 @@
 
 ### Versions
 - Minecraft 1.20.1, Fabric and NeoForge.
-- The NeoForge 1.20.1 jar runs on Forge.
 
 ### Shaders
 - Wet, glossy puddles under Iris.
