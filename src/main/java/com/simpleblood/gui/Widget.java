@@ -3,23 +3,35 @@ package com.simpleblood.gui;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * A tiny widget toolkit of our own, so the config screen looks and behaves the same on
+ * every supported Minecraft version (vanilla's widget classes changed too much between
+ * them). Coordinates are absolute GUI pixels; containers position their children.
+ */
 public abstract class Widget {
 
+    /** A widget the hover preview can describe: which diorama, which colour, what text. */
     public interface PreviewSource {
         com.simpleblood.surface.PreviewScene.Kind previewKind();
         java.util.function.IntSupplier previewColour();
         String previewText();
+        /** The setting's name, shown above the diorama. */
         String previewName();
         boolean previewActive();
+        /** Which parts of a hit the diorama plays for this setting (HIT scenes only). */
         java.util.EnumSet<com.simpleblood.surface.PreviewScene.Aspect> previewAspects();
+        /** Settings the diorama plays with instead of the live ones (a preset's), or null. */
         default com.simpleblood.SimpleBloodConfig previewConfig() { return null; }
     }
 
     public int x, y, w, h;
+    /** The container this widget was added to, if any. */
     public Widget parent;
     public boolean visible = true;
     public boolean enabled = true;
+    /** Lines shown as a tooltip while hovered (null = none). */
     public List<String> tooltip;
+    /** Eased 0..1 hover factor for animations. */
     protected float hover;
     protected boolean focused;
 
@@ -31,19 +43,29 @@ public abstract class Widget {
         return visible && mx >= x && my >= y && mx < x + w && my < y + h;
     }
 
+    // ------------------------------------------------------------------ hover
+
+    /**
+     * The topmost widget under the mouse this frame, as the screen works it out before
+     * drawing. Only it and the containers it sits in light up, so a widget covered by
+     * another one (the colour picker over a button, say) stays quiet.
+     */
     private static Widget hoverTop;
     private static boolean hoverTracked;
 
+    /** Sets the topmost widget under the mouse for this frame (null: nothing of ours). */
     public static void hoverTop(Widget top) {
         hoverTop = top;
         hoverTracked = true;
     }
 
+    /** Stops picking a topmost widget (the screen closed): every widget answers for itself again. */
     public static void stopHoverTracking() {
         hoverTop = null;
         hoverTracked = false;
     }
 
+    /** Whether the mouse is over this widget and nothing else is drawn over it there. */
     public boolean hot(double mx, double my) {
         if (!contains(mx, my)) return false;
         if (!hoverTracked) return true;
@@ -53,6 +75,7 @@ public abstract class Widget {
         return false;
     }
 
+    /** Called every frame; drives hover easing then draws. */
     public void render(Gfx g, int mx, int my, float dt) {
         if (!visible) return;
         boolean over = enabled && hot(mx, my);
@@ -62,6 +85,7 @@ public abstract class Widget {
 
     protected abstract void draw(Gfx g, int mx, int my, float dt);
 
+    /** The deepest widget under the mouse (for tooltips), or null. */
     public Widget hovered(double mx, double my) {
         return contains(mx, my) ? this : null;
     }
@@ -77,8 +101,12 @@ public abstract class Widget {
     public void setFocused(boolean focused) { this.focused = focused; }
     public boolean isFocused() { return focused; }
 
+    /** Drops focus from this widget and everything inside it. */
     public void blur() { setFocused(false); }
 
+    // ================================================================== containers
+
+    /** A widget that owns other widgets and forwards events to them. */
     public static class Container extends Widget {
         protected final List<Widget> children = new ArrayList<>();
 
@@ -158,6 +186,7 @@ public abstract class Widget {
             for (Widget c : children) c.blur();
         }
 
+        /** The focused descendant, if any. */
         public Widget focusedChild() {
             for (Widget c : children) {
                 if (c instanceof Container k) {
@@ -171,6 +200,13 @@ public abstract class Widget {
         }
     }
 
+    // ================================================================== scrolling panel
+
+    /**
+     * A clipped, vertically scrolling container. Children are laid out in content space
+     * (their {@code y} relative to the top of the content) and shifted by the scroll
+     * position every frame; the scrollbar is drawn on the right edge.
+     */
     public static class ScrollPanel extends Container {
         private final List<Integer> localY = new ArrayList<>();
         private final List<Integer> localX = new ArrayList<>();
@@ -229,7 +265,7 @@ public abstract class Widget {
             boolean inside = contains(mx, my);
             g.scissor(x, y, x + w, y + h);
             for (Widget c : children) {
-                if (c.y + c.h < y || c.y > y + h) { c.hover = 0; continue; }
+                if (c.y + c.h < y || c.y > y + h) { c.hover = 0; continue; } // off screen: skip
                 c.render(g, inside ? mx : -1, inside ? my : -1, dt);
             }
             g.unscissor();
@@ -275,7 +311,7 @@ public abstract class Widget {
                 int thumbH = Math.max(12, (int) ((long) h * h / Math.max(1, contentHeight)));
                 double perPixel = maxScroll() / (double) Math.max(1, h - thumbH);
                 scrollTo((float) (dragStartScroll + (my - dragStartY) * perPixel));
-                scroll = scrollTarget;
+                scroll = scrollTarget; // dragging: no easing lag
                 return true;
             }
             return super.mouseDragged(mx, my, button, dx, dy);
@@ -291,15 +327,20 @@ public abstract class Widget {
         }
     }
 
+    // ================================================================== easing
+
+    /** Frame-rate independent easing helpers. */
     public static final class Anim {
         private Anim() {}
 
         private static final long START = System.nanoTime();
 
+        /** Seconds since the screen system started. */
         public static float now() {
             return (System.nanoTime() - START) / 1.0e9f;
         }
 
+        /** Moves {@code value} toward {@code target} by an exponential fraction. */
         public static float approach(float value, float target, float rate) {
             if (rate <= 0) return value;
             float t = 1f - (float) Math.exp(-rate);

@@ -11,9 +11,15 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.List;
 
+/**
+ * How the parts of a block moved when its state changed, so the blood on them can move along:
+ * a door or trapdoor swinging on its hinge, the two halves of a fence gate, a button or a
+ * pressure plate pressed in. Everything works in block-local coordinates (0..1).
+ */
 final class BlockMotion {
     private BlockMotion() {}
 
+    /** Where a point on the block ends up, and which way the surface it is on then faces. */
     interface Motion {
         Vec3 point(Vec3 local);
         Vec3 normal(Vec3 local, Vec3 normal);
@@ -21,6 +27,10 @@ final class BlockMotion {
 
     private static final double EPS = 1.0e-4;
 
+    /**
+     * The motion from {@code from} to {@code to} at the same position, or null when this is
+     * not a block whose parts move (a different block, no change of shape, too complex a shape).
+     */
     static Motion of(BlockGetter level, BlockPos pos, BlockState from, BlockState to) {
         if (from == to || from.getBlock() != to.getBlock()) return null;
         if (from.getBlock() instanceof FenceGateBlock) return gate(from, to);
@@ -34,6 +44,12 @@ final class BlockMotion {
         return hinge != null ? hinge : press(boxA, boxB);
     }
 
+    // ------------------------------------------------------------------ hinged panels
+
+    /**
+     * A panel turned a quarter about one of its edges (doors, trapdoors): the box keeps its
+     * extent along the hinge axis, swaps the other two, and still overlaps itself at the hinge.
+     */
     private static Motion hinge(AABB a, AABB b) {
         for (int k = 0; k < 3; k++) {
             if (Math.abs(min(a, k) - min(b, k)) > EPS || Math.abs(max(a, k) - max(b, k)) > EPS) continue;
@@ -42,7 +58,7 @@ final class BlockMotion {
             if (Math.abs(ai - bj) > EPS || Math.abs(aj - bi) > EPS || Math.abs(ai - aj) < EPS) continue;
             double loI = Math.max(min(a, i), min(b, i)), hiI = Math.min(max(a, i), max(b, i));
             double loJ = Math.max(min(a, j), min(b, j)), hiJ = Math.min(max(a, j), max(b, j));
-            if (hiI < loI - EPS || hiJ < loJ - EPS) continue;
+            if (hiI < loI - EPS || hiJ < loJ - EPS) continue; // no shared edge: not a hinge
             double pi = (loI + hiI) / 2, pj = (loJ + hiJ) / 2;
             for (int sign = -1; sign <= 1; sign += 2) {
                 QuarterTurn turn = new QuarterTurn(k, pi, pj, sign);
@@ -52,6 +68,7 @@ final class BlockMotion {
         return null;
     }
 
+    /** A quarter turn about the axis {@code axis} (0 x, 1 y, 2 z) through (pi, pj) in the other two. */
     private record QuarterTurn(int axis, double pi, double pj, int sign) implements Motion {
         @Override
         public Vec3 point(Vec3 p) {
@@ -73,6 +90,13 @@ final class BlockMotion {
         }
     }
 
+    // ------------------------------------------------------------------ pressed in
+
+    /**
+     * The same part a little thinner or thicker (a button pressed, a pressure plate stepped on,
+     * snow piling up): every point keeps its place relative to the box. Only for small changes,
+     * so a box that turned into something else is never squeezed into it.
+     */
     private static Motion press(AABB a, AABB b) {
         for (int k = 0; k < 3; k++) {
             double sa = size(a, k), sb = size(b, k);
@@ -99,14 +123,23 @@ final class BlockMotion {
         return b0 + (v - a0) / (a1 - a0) * (b1 - b0);
     }
 
+    // ------------------------------------------------------------------ fence gates
+
+    /**
+     * A fence gate's two halves swing about their posts, towards the side it faces once open.
+     * The posts themselves stay where they are.
+     */
     private static Motion gate(BlockState from, BlockState to) {
         boolean wasOpen = from.getValue(FenceGateBlock.OPEN), isOpen = to.getValue(FenceGateBlock.OPEN);
         if (wasOpen == isOpen) return null;
+        // Facing while open decides where the halves stand; closed, it only says which way the gate spans.
         Direction open = (isOpen ? to : from).getValue(FenceGateBlock.FACING);
-        boolean spansX = open.getAxis() == Direction.Axis.Z;
+        boolean spansX = open.getAxis() == Direction.Axis.Z; // facing north or south: the gate runs along x
         int out = spansX ? open.getStepZ() : open.getStepX();
-        double reach = 7.0 / 16;
+        double reach = 7.0 / 16; // post centre to the middle of the gate
         double mid = 0.5;
+        // Each half is a quarter turn about the vertical through its post, chosen so that the
+        // middle of the closed gate ends up that far out on the open side.
         QuarterTurn leftTurn = gateTurn(spansX, 1.0 / 16, mid + out * reach);
         QuarterTurn rightTurn = gateTurn(spansX, 15.0 / 16, mid + out * reach);
         if (leftTurn == null || rightTurn == null) return null;
@@ -114,10 +147,10 @@ final class BlockMotion {
             private Motion half(Vec3 p) {
                 double s = spansX ? p.x : p.z, f = spansX ? p.z : p.x;
                 if (!wasOpen) {
-                    if (s < 2.0 / 16 || s > 14.0 / 16) return null;
+                    if (s < 2.0 / 16 || s > 14.0 / 16) return null; // a post
                     return s < mid ? leftTurn : rightTurn;
                 }
-                if (Math.abs(f - mid) < 1.5 / 16) return null;
+                if (Math.abs(f - mid) < 1.5 / 16) return null; // a post
                 return s < mid ? inverse(leftTurn) : inverse(rightTurn);
             }
 
@@ -135,10 +168,15 @@ final class BlockMotion {
         };
     }
 
+    /**
+     * The quarter turn about the vertical through the post at {@code s} along the gate that
+     * takes the middle of the block out to {@code toF} across it, beside that post.
+     */
     private static QuarterTurn gateTurn(boolean spansX, double s, double toF) {
         Vec3 from = new Vec3(0.5, 0.5, 0.5);
         Vec3 target = spansX ? new Vec3(s, 0.5, toF) : new Vec3(toF, 0.5, s);
         double px = spansX ? s : 0.5, pz = spansX ? 0.5 : s;
+        // About y the turn works in (z, x).
         for (int sign = -1; sign <= 1; sign += 2) {
             QuarterTurn t = new QuarterTurn(1, pz, px, sign);
             if (t.point(from).distanceTo(target) < 1.0e-3) return t;
@@ -149,6 +187,8 @@ final class BlockMotion {
     private static QuarterTurn inverse(QuarterTurn t) {
         return new QuarterTurn(t.axis(), t.pi(), t.pj(), -t.sign());
     }
+
+    // ------------------------------------------------------------------ boxes
 
     private static boolean same(AABB a, AABB b) {
         for (int k = 0; k < 3; k++) {

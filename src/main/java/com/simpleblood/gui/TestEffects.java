@@ -15,10 +15,17 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * Try-it-out buttons for the config screen: they throw blood at whatever block the player is
+ * looking at, using the player's own blood colour and the settings as they are right now,
+ * so a change can be judged in the world without finding a mob to hurt. Client-side particles
+ * only, like everything else here.
+ */
 public final class TestEffects {
 
     private TestEffects() {}
 
+    /** The block face the player is looking at within reach, or null. */
     private static BlockHitResult target() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return null;
@@ -30,6 +37,8 @@ public final class TestEffects {
         Minecraft mc = Minecraft.getInstance();
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (mc.player == null || cfg == null) return false;
+        // Start clean: the last mob hit may have left settings behind (a skeleton's blood does
+        // not paint, and the test blood would then lie about unpainted).
         BloodParticle.resetSpawnState();
         BloodParticle.setCurrentBloodColor(BloodColor.getBloodColor(mc.player));
         BloodParticle.setShouldTransformToFog(true);
@@ -40,6 +49,7 @@ public final class TestEffects {
         return true;
     }
 
+    /** A handful of drops falling onto the looked-at spot: shows puddles, tones, runs. */
     public static void drops() {
         BlockHitResult hit = target();
         if (hit == null || !begin()) return;
@@ -57,6 +67,7 @@ public final class TestEffects {
         }
     }
 
+    /** A burst like a hard hit, thrown away from the player: shows sprays and wall splatter. */
     public static void burst() {
         BlockHitResult hit = target();
         if (hit == null || !begin()) return;
@@ -87,6 +98,7 @@ public final class TestEffects {
         }
     }
 
+    /** Wipes every painted surface. */
     public static void clearBlood() {
         BloodSurfaces.clear();
     }

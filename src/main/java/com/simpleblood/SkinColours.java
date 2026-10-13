@@ -24,15 +24,29 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+/**
+ * Blood colours that players carry in their skins, so everyone with Simple Blood sees the
+ * colour each player picked for themselves, on any server, with nothing installed there.
+ *
+ * Two pixels in a corner of the skin the game never draws (the unused square above the left
+ * leg) hold it: (16, 48) is the marker, pure magenta, and (17, 48) the colour, both fully
+ * opaque. A skin without the marker carries nothing, and old 64x32 skins have no room for it.
+ *
+ * Each skin is fetched once, from the address the game downloaded it from, on a thread of its
+ * own. Until it is in, the player bleeds the "Other players" colour.
+ */
 public final class SkinColours {
 
     public static final int MARKER_X = 16, MARKER_Y = 48;
+    /** The marker pixel's colour, fully opaque. */
     public static final int MARKER = 0xFFFF00FF;
+    /** What {@link #colourOf} answers for a skin that carries nothing (or is not read yet). */
     public static final int NONE = -1;
 
     private static final int MAX_BYTES = 1 << 20;
     private static final long RETRY_MS = TimeUnit.MINUTES.toMillis(5);
 
+    /** A skin read: the colour it carries ({@link #NONE} for none), and when to try again if the read failed. */
     private record Read(int colour, long retryAt) {}
 
     private static final Map<String, Read> READS = new ConcurrentHashMap<>();
@@ -46,6 +60,7 @@ public final class SkinColours {
 
     private SkinColours() {}
 
+    /** The colour {@code player}'s skin carries (0xRRGGBB), or {@link #NONE}. Any thread, never blocks. */
     public static int colourOf(Entity player) {
         if (!(player instanceof AbstractClientPlayer p)) return NONE;
         String url;
@@ -59,9 +74,15 @@ public final class SkinColours {
         return colour == READING ? NONE : colour;
     }
 
+    /** What {@link #ownColour} answers while the skin is still being read. */
     public static final int READING = -2;
     private static CompletableFuture<String> profileUrl;
 
+    /**
+     * The colour the local player's own skin carries, which is what everyone else sees:
+     * {@link #NONE}, {@link #READING}, or 0xRRGGBB. A colour uploaded this session counts
+     * at once, though the game keeps showing the old skin until it restarts. Render thread.
+     */
     public static int ownColour() {
         Integer uploaded = uploadedColour;
         if (uploaded != null) return uploaded;
@@ -81,13 +102,21 @@ public final class SkinColours {
         return url == null ? NONE : colourAt(url);
     }
 
+    /** Whether {@link #ownColour} is a colour uploaded this session (others see it once they rejoin). */
     public static boolean justUploaded() {
         return uploadedColour != null;
     }
 
+    // ------------------------------------------------------------------ your own colour
+
     private static boolean ownChecked;
     private static int ownCheckTick;
 
+    /**
+     * Client tick: once per game, when the local player's skin has been read, takes the colour it
+     * carries as their own blood colour. A fresh instance so picks up the colour put in the skin
+     * elsewhere. Each skin colour is taken only once, so a colour picked here afterwards stays.
+     */
     public static void tickOwn() {
         if (ownChecked || ++ownCheckTick % 20 != 0) return;
         int carried = ownColour();
@@ -101,12 +130,14 @@ public final class SkinColours {
         SimpleBlood.LOGGER.info("Simple Blood: took the blood colour from your skin, #{}", String.format("%06X", carried));
     }
 
+    /** Remembers a colour put in the skin from here, so it is not taken over again later. */
     private static void adopted(int colour) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         cfg.player.skinColourAdopted = colour;
         SimpleBloodConfig.save(cfg);
     }
 
+    /** The address of the local player's skin, looked up from their profile (no world needed). */
     private static CompletableFuture<String> profileSkinUrl(Minecraft mc) {
         //? if 1.20.1 {
         /*com.mojang.authlib.GameProfile profile = mc.getUser().getGameProfile();
@@ -126,6 +157,7 @@ public final class SkinColours {
         //?}
     }
 
+    /** The colour the skin at {@code url} carries, {@link #NONE}, or {@link #READING} until it is read. */
     private static int colourAt(String url) {
         Read read = READS.get(url);
         if (read != null && (read.retryAt == 0 || System.currentTimeMillis() < read.retryAt)) return read.colour;
@@ -144,21 +176,36 @@ public final class SkinColours {
         return read == null ? READING : read.colour;
     }
 
+    // ------------------------------------------------------------------ writing
+
+    /** How {@link #putInOwnSkin} went. */
     public enum Result {
+        /** Saved to {@link #savedSkin()}. */
         SAVED,
+        /** Saved, and uploaded as the player's skin. */
         UPLOADED,
+        /** The skin already carries this colour; nothing done. */
         ALREADY_THERE,
+        /** Taking the colour out, but the skin carries none; nothing done. */
         NO_COLOUR,
+        /** The game is not logged in to a Minecraft account (or the login ran out). */
         NOT_LOGGED_IN,
+        /** An upload went out a moment ago, or Minecraft asked to slow down. */
         TOO_SOON,
         FAILED
     }
 
     private static final String UPLOAD_URL = "https://api.minecraftservices.com/minecraft/profile/skins";
+    /** Between two uploads. Mojang suspends accounts that keep failing uploads in a hurry. */
     private static final long UPLOAD_GAP_MS = TimeUnit.SECONDS.toMillis(60);
     private static volatile long lastUpload;
+    /**
+     * What was uploaded this session, as the game keeps showing the old skin until it restarts:
+     * a colour, {@link #NONE} for a skin with the colour taken out, or null for nothing.
+     */
     private static volatile Integer uploadedColour;
 
+    /** Where {@link #putInOwnSkin} saves the skin. */
     public static Path savedSkin() {
         return savedSkin(false);
     }
@@ -168,6 +215,7 @@ public final class SkinColours {
                 .resolve(without ? "skin-without-blood.png" : "skin-with-blood.png");
     }
 
+    /** Opens the folder {@link #savedSkin()} is in. */
     public static void showSavedSkin() {
         //? if 1.20.1 {
         /*net.minecraft.Util.getPlatform().openFile(savedSkin().getParent().toFile());
@@ -180,6 +228,11 @@ public final class SkinColours {
         *///?}
     }
 
+    /**
+     * Saves a copy of the local player's skin with {@code colour} put in ({@link #NONE}: taken out), to {@link #savedSkin()},
+     * and with {@code upload} also makes it their Minecraft skin, like changing it on
+     * minecraft.net. Works off the render thread; {@code done} is called back on it.
+     */
     public static void putInOwnSkin(int colour, boolean upload, Consumer<Result> done) {
         int rgb = colour == NONE ? NONE : colour & 0xFFFFFF;
         Integer uploaded = uploadedColour;
@@ -239,6 +292,7 @@ public final class SkinColours {
                 return colour == NONE ? Result.NO_COLOUR : Result.ALREADY_THERE;
             }
             if (colour == NONE) {
+                // Back to the empty, see-through corner it was before.
                 argb[MARKER_Y * 64 + MARKER_X] = 0;
                 argb[MARKER_Y * 64 + MARKER_X + 1] = 0;
             } else {
@@ -258,6 +312,10 @@ public final class SkinColours {
         }
     }
 
+    /**
+     * Makes {@code png} the player's skin through Minecraft's own skin service, the one the
+     * launcher and minecraft.net use. One request; the arm model stays what it was.
+     */
     private static Result upload(byte[] png, boolean slim, String token) throws IOException, InterruptedException {
         if (token == null || token.isBlank() || token.length() < 32) return Result.NOT_LOGGED_IN;
         String boundary = "SimpleBlood" + Long.toHexString(System.nanoTime());
@@ -287,8 +345,13 @@ public final class SkinColours {
         return Result.FAILED;
     }
 
+    /** The local player's skin as a PNG, and whether it is for the slim arms. */
     private record OwnSkin(byte[] png, boolean slim) {}
 
+    /**
+     * Render thread: finds the local player's current skin (their own one, or the default one
+     * they wear) and hands back how to load its PNG, which may wait on the network.
+     */
     private static Callable<OwnSkin> ownSkin() {
         Minecraft mc = Minecraft.getInstance();
         //? if 1.20.1 {
@@ -332,6 +395,10 @@ public final class SkinColours {
         //?}
     }
 
+    /**
+     * Turns an old 64x32 skin into a 64x64 one in place, the way the game shows it: the right
+     * leg and arm mirrored onto the left, and a solid hat layer cleared.
+     */
     private static void widen(int[] argb) {
         boolean solidHat = true;
         for (int y = 0; y < 32 && solidHat; y++) {
@@ -358,6 +425,7 @@ public final class SkinColours {
         copy(argb, 52, 20, -8, 32, 4, 12);
     }
 
+    /** The game's legacy-skin copy: a rect moved by (dx, dy), mirrored left to right. */
     private static void copy(int[] argb, int x0, int y0, int dx, int dy, int w, int h) {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
@@ -366,6 +434,9 @@ public final class SkinColours {
         }
     }
 
+    // ------------------------------------------------------------------ reading
+
+    /** The address of {@code player}'s own skin, or null for a default one. */
     private static String urlOf(AbstractClientPlayer player) {
         //? if 1.20.1 {
         /*com.mojang.authlib.minecraft.MinecraftProfileTexture skin = Minecraft.getInstance().getSkinManager()
@@ -379,6 +450,9 @@ public final class SkinColours {
         //?}
     }
 
+    // 1.20.1 (before PlayerSkin): the skin texture a profile points at, or null for a default
+    // skin. The local profile carries no textures until they are fetched from the session
+    // server, so this may wait on the network: never call it on the render thread.
     //? if 1.20.1 {
     /*private static com.mojang.authlib.minecraft.MinecraftProfileTexture legacySkin(Minecraft mc, com.mojang.authlib.GameProfile profile) {
         java.util.Map<com.mojang.authlib.minecraft.MinecraftProfileTexture.Type, com.mojang.authlib.minecraft.MinecraftProfileTexture> textures =
@@ -391,6 +465,7 @@ public final class SkinColours {
     }
     *///?}
 
+    /** The colour a skin PNG carries, or {@link #NONE}. */
     private static int carried(byte[] png) throws IOException {
         try (NativeImage image = NativeImage.read(png)) {
             if (image.getWidth() != 64 || image.getHeight() != 64) return NONE;
@@ -408,6 +483,7 @@ public final class SkinColours {
         return colour & 0xFFFFFF;
     }
 
+    /** Only skin servers: a skin address comes from whoever runs the server. */
     private static byte[] download(String url) throws IOException, InterruptedException {
         URI uri = URI.create(url);
         String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(java.util.Locale.ROOT);

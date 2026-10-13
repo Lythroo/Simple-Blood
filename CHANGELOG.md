@@ -1,5 +1,30 @@
 # Simple Blood changelog
 
+## 1.1.1
+
+### Blood on mobs
+- Optional blood that sticks to mobs.
+- Runs down and drips off the body.
+- Dries away after a while.
+- Off by default; the Gore preset turns it on.
+
+### Modded mobs
+- Mob table matches the game you run.
+- Mobs from other mods get a first guess.
+- Guessed from the name: bones, metal, embers...
+
+### Settings
+- Done is now Save.
+- New Reset to defaults button.
+- Smaller bottom bar.
+- Sidebar tabs no longer overflow.
+- Presets switch giblets and blood on mobs off; Gore on.
+- Old Reset all on the presets page removed.
+
+### Fixes
+- No crash with AsyncParticles under water ([#11](https://github.com/Lythroo/Simple-Blood/issues/11)).
+- Blood on mobs works with Sodium on 1.20.1 and 1.21.1.
+
 ## 1.1.0
 
 ### Versions

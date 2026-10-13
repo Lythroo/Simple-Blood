@@ -8,6 +8,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * The one place that touches Minecraft's GUI drawing API. Three generations of it exist
+ * across the supported versions (GuiGraphics with a PoseStack, GuiGraphics with a 2D
+ * matrix stack, and the 26.x GuiGraphicsExtractor); everything above this class draws
+ * through these few calls and never sees the difference.
+ */
 public final class Gfx {
 
     //? if <26.1 {
@@ -32,6 +38,8 @@ public final class Gfx {
     public int height() { return g.guiHeight(); }
     public int lineHeight() { return font.lineHeight; }
 
+    // ------------------------------------------------------------------ shapes
+
     public void fill(int x1, int y1, int x2, int y2, int argb) {
         if (x2 <= x1 || y2 <= y1 || (argb >>> 24) == 0) return;
         g.fill(x1, y1, x2, y2, argb);
@@ -42,6 +50,7 @@ public final class Gfx {
         g.fillGradient(x1, y1, x2, y2, top, bottom);
     }
 
+    /** A one-pixel frame just inside the rectangle. */
     public void outline(int x1, int y1, int x2, int y2, int argb) {
         fill(x1, y1, x2, y1 + 1, argb);
         fill(x1, y2 - 1, x2, y2, argb);
@@ -49,12 +58,15 @@ public final class Gfx {
         fill(x2 - 1, y1 + 1, x2, y2 - 1, argb);
     }
 
+    /** Vanilla-style bevel: light top/left edge, dark bottom/right edge. */
     public void bevel(int x1, int y1, int x2, int y2, int light, int dark) {
         fill(x1, y1, x2, y1 + 1, light);
         fill(x1, y1, x1 + 1, y2, light);
         fill(x1, y2 - 1, x2, y2, dark);
         fill(x2 - 1, y1, x2, y2, dark);
     }
+
+    // ------------------------------------------------------------------ text
 
     public int textWidth(String s) { return font.width(s); }
 
@@ -77,6 +89,7 @@ public final class Gfx {
         text(s, rightX - font.width(s), y, argb, true);
     }
 
+    /** Draws text clipped to {@code maxWidth} with an ellipsis. */
     public void textClipped(String s, int x, int y, int maxWidth, int argb) {
         if (font.width(s) <= maxWidth) {
             text(s, x, y, argb, true);
@@ -96,6 +109,8 @@ public final class Gfx {
         return out;
     }
 
+    // ------------------------------------------------------------------ sprites
+
     private static final Identifier BUTTON = com.simpleblood.Ids.vanilla("widget/button");
     private static final Identifier BUTTON_HOVER = com.simpleblood.Ids.vanilla("widget/button_highlighted");
     private static final Identifier BUTTON_OFF = com.simpleblood.Ids.vanilla("widget/button_disabled");
@@ -112,6 +127,7 @@ public final class Gfx {
     private static final Identifier SCROLLER = com.simpleblood.Ids.vanilla("widget/scroller");
     private static final Identifier SCROLLER_BG = com.simpleblood.Ids.vanilla("widget/scroller_background");
 
+    /** Draws a nine-sliced GUI sprite (the sprite's mcmeta decides how it stretches). */
     public void sprite(Identifier id, int x, int y, int w, int h) {
         if (w <= 0 || h <= 0) return;
         //? if 1.20.1 {
@@ -182,6 +198,8 @@ public final class Gfx {
         sprite(SCROLLER, x, thumbY, w, thumbH);
     }
 
+    // ------------------------------------------------------------------ clipping & layering
+
     private net.minecraft.client.gui.navigation.ScreenRectangle clip;
 
     public void scissor(int x1, int y1, int x2, int y2) {
@@ -194,11 +212,21 @@ public final class Gfx {
         clip = null;
     }
 
+    // ------------------------------------------------------------------ 3D diorama
+
+    /**
+     * Draws a {@link com.simpleblood.surface.PreviewScene} into the box, {@code scale} pixels per
+     * block, seen from the given angles with {@code focus} at the box centre. Deferred GUI
+     * generations queue a picture-in-picture element; 1.21.1 draws it on the spot.
+     */
     public void scene(com.simpleblood.surface.PreviewScene scene, int x0, int y0, int x1, int y1, float scale,
                       float yaw, float pitch, net.minecraft.world.phys.Vec3 focus) {
         if (x1 <= x0 || y1 <= y0) return;
         //? if <=1.21.1 {
         /*com.mojang.blaze3d.vertex.PoseStack pose = g.pose();
+        // Drawn straight into the screen: clip to the box, and sit deep enough that nothing
+        // behind the focus sinks below the GUI background (which writes depth), while staying
+        // under the tooltips at 400.
         g.enableScissor(x0, y0, x1, y1);
         pose.pushPose();
         pose.translate((x0 + x1) / 2f, (y0 + y1) / 2f, Math.min(380f, 50f + 2.5f * scale));
@@ -230,6 +258,7 @@ public final class Gfx {
         //?}
     }
 
+    /** Starts a new layer so everything drawn afterwards sits above what came before. */
     public void layer() {
         //? if >=1.21.11 {
         g.nextStratum();
@@ -246,6 +275,8 @@ public final class Gfx {
         g.setTooltipForNextFrame(font, comps, Optional.empty(), mx, my);
         //?}
     }
+
+    // ------------------------------------------------------------------ colour helpers
 
     public static int argb(int alpha, int rgb) {
         return (Math.max(0, Math.min(255, alpha)) << 24) | (rgb & 0xFFFFFF);

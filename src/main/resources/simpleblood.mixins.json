@@ -8,6 +8,8 @@
     "ClientPacketListenerMixin",
     "ClientLevelMixin",
     "PlayerMixin",
+    "ModelPartAccessor",
+    "LivingEntityRendererMixin",
     "SpriteContentsAccessor",
     "GuiRenderStateAccessor",
     "ScreenInvoker"${extraMixins}

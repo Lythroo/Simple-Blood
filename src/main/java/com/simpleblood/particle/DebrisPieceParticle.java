@@ -20,6 +20,34 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * A solid piece knocked off a mob: a bone chip off a skeleton, a metal flake off a golem, a
+ * splinter off the creaking, or a giblet (a chunk of meat) off a mob that bleeds. It spins through hand-drawn frames (never a smoothly rotated texture),
+ * bounces once or twice, then lies where it landed and fades.
+ *
+ * <ul>
+ *   <li>Bone chips: four shapes, each drawn in four quarter turns. Spinning steps through
+ *       the turns, faster while the chip flies fast.</li>
+ *   <li>Metal flakes: three thin shapes, six frames each (face, face with a glint,
+ *       three-quarter, edge, back three-quarter, back). Tumbling plays face, edge, back and
+ *       round again; the face sometimes catches the light. Once down, a flake lies flat on
+ *       the block (a quad in the plane of the ground, turned a random quarter turn) instead
+ *       of facing the camera, and twinkles now and then if it landed face up. A flake that
+ *       lands on another rests on it: a layer higher, tilted so the edge over the other one
+ *       is raised, which reads as a little heap rather than two flakes flickering into each
+ *       other.</li>
+ *   <li>Wood splinters: four shapes in four quarter turns, like the chips, tumbling end over
+ *       end. They lie flat once down, like the flakes. Tinted a bark brown mixed from the
+ *       mob's colour (which itself goes to the resin drops).</li>
+ *   <li>Giblets: four shapes in four quarter turns, like the chips, tinted a flesh colour
+ *       mixed from the mob's blood. Soft: they hardly bounce. They bleed as they fly, leaving
+ *       a trail of drops, and splash where they land (Gore settings). About half of them
+ *       lie flat once down, like the flakes; the rest keep facing the camera.</li>
+ * </ul>
+ *
+ * Sprites are greyscale and tinted with the mob's colour, so one set serves every skeleton,
+ * every golem and any modded mob given the same kind.
+ */
 //? if <=1.21.1 {
 /*public class DebrisPieceParticle extends net.minecraft.client.particle.TextureSheetParticle implements DrawnBeforeWater {
 *///?} else {
@@ -30,42 +58,48 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
     private static final int FLAKE_SHAPES = 3, FLAKE_FRAMES = 6;
     private static final int MAX_LAYERS = 4;
 
+    /** Flakes lying flat right now, so a newcomer can see what it lands on. */
     private static final java.util.Set<DebrisPieceParticle> LYING = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /** The particle engine dropped everything (level change): no flake is lying anywhere. */
     public static void forgetLying() {
         LYING.clear();
     }
     private static final int FACE = 0, GLINT = 1, BACK = 5;
+    /** Tumble order: face, three-quarter, edge, back three-quarter, back, and back again. */
     private static final int[] TUMBLE = {0, 2, 3, 4, 5, 4, 3, 2};
 
-    private static final float GRAVITY = 0.045f;
-    private static final float WATER_SINK = 0.007f;
+    private static final float GRAVITY = 0.045f;      // blocks / tick², a little heavier than a drop
+    private static final float WATER_SINK = 0.007f;   // pieces sink slowly in water
     private static final float WATER_DRAG = 0.75f;
 
+    /** Bark brown that splinters are mixed towards (the mob's own colour is its resin). */
     private static final float BARK_R = 0x4A / 255f, BARK_G = 0x3E / 255f, BARK_B = 0x34 / 255f;
+    /** Raw meat pink that giblets are mixed towards from the mob's blood. */
     private static final float FLESH_R = 0xD8 / 255f, FLESH_G = 0x70 / 255f, FLESH_B = 0x6A / 255f;
 
     private final SpriteSet sprites;
-    private final com.simpleblood.BloodKind kind;
+    private final com.simpleblood.BloodKind kind; // BONE, METAL, WOOD, or LIQUID for a giblet
     private final boolean metal;
-    private final boolean gib;
+    private final boolean gib;                 // a chunk of meat, which bleeds
+    // A giblet's blood, as it was set for the mob it came off (drops off it are painted with it).
     private final BloodColor.Color blood;
     private final boolean bloodGlows, bloodPaints;
     private final float bloodSize;
-    private final boolean liesFlat;
+    private final boolean liesFlat;            // flakes, splinters and half the giblets lie in the ground's plane
     private final int shape;
     private final float red, green, blue;
-    private final float bounce;
-    private float phase;
-    private float spinRate;
+    private final float bounce;     // share of the fall speed kept on a bounce
+    private float phase;            // spin position, in frames
+    private float spinRate;         // frames per tick at full speed (sign: which way it turns)
     private int lastFrame = -1;
     private int glintTicks;
     private boolean resting;
     private int restFrame;
-    private float lift;
-    private org.joml.Quaternionf flat;
-    private boolean glints;
-    private int layer;
+    private float lift;             // raised this much when it settled, so it lies on the block
+    private org.joml.Quaternionf flat; // set while a flake lies flat on the ground
+    private boolean glints;            // metal flakes flash in the light (Kinds settings)
+    private int layer;              // 0 on the ground, 1 on another flake, ...
     private int bounces;
     private boolean landed;
     private boolean counted;
@@ -98,6 +132,8 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
             this.yd = velY;
             this.zd = velZ;
         } else {
+            // The vanilla constructor has already scattered the direction into a gentle puff;
+            // a knocked-off piece pops up a little before it falls.
             this.yd += 0.04 + random.nextFloat() * 0.05;
         }
 
@@ -115,6 +151,8 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         this.lifetime = Math.max(10, (int) (((metal ? 70 : gib ? 140 : 60) + random.nextInt(30)) * lifeScale));
         this.glints = cfg.kinds.metalGlint;
 
+        // A chip, flake or splinter is a few pixels of an 8 px sprite: about a tenth of a block
+        // across. A giblet is a bit chunkier.
         this.quadSize = (gib ? 0.17f : metal || wood ? 0.10f : 0.09f) * (1f + random.nextFloat() * 0.3f) * size;
         this.setSize(0.08f, 0.08f);
         if (wood) {
@@ -131,7 +169,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         this.blue = blue;
         this.setColor(red, green, blue);
         this.alpha = 1.0f;
-        this.gravity = 0f;
+        this.gravity = 0f; // our own physics in tick()
         this.hasPhysics = true;
         pickSprite();
         UnderwaterParticles.add(this);
@@ -173,6 +211,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
 
         if (resting) {
+            // The block it lay on went away: fall again.
             if (age % 10 == 0) {
                 BlockPos below = BlockPos.containing(x, y - lift - 0.05, z);
                 if (level.getBlockState(below).getCollisionShape(level, below).isEmpty()) {
@@ -190,9 +229,12 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
             yd -= (water ? WATER_SINK : GRAVITY) * cfg.particleGravityMultiplier();
             if (water && yd < -0.06) yd = -0.06;
 
+            // Particle.move gives up for good once a fall is blocked outright, so a resting
+            // piece never calls it (see settle()).
             double wantX = xd, wantY = yd, wantZ = zd;
             this.move(xd, yd, zd);
 
+            // Glanced off a wall: come back off it a little.
             if (xd == 0 && wantX != 0) xd = -wantX * 0.3;
             if (zd == 0 && wantZ != 0) zd = -wantZ * 0.3;
 
@@ -202,6 +244,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
             zd *= drag;
 
             if (gib && cfg.gore.gibletTrails && !onGround && age % 3 == 0) {
+                // A drop off it as it flies: a trail of blood under where it went.
                 bleed(com.simpleblood.BloodParticles.BLOOD_DRIP, xd * 0.3, -0.15, zd * 0.3);
             }
 
@@ -212,6 +255,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
                     if (gib && cfg.gore.gibletTrails) splat();
                 }
                 if (!water && wantY < -0.07 && bounces < 2) {
+                    // Bounce: keep some of the fall, lose most of the slide and spin.
                     yd = -wantY * bounce;
                     xd *= 0.6;
                     zd *= 0.6;
@@ -221,10 +265,11 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
                     settle();
                 }
             } else if (x == xo && y == yo && z == zo && (wantX != 0 || wantY != 0 || wantZ != 0)) {
-                settle();
+                settle(); // wedged somewhere (under a ledge, in a corner)
             }
 
             if (!resting) {
+                // Spins faster the faster it flies, and never quite stops while airborne.
                 double speed = Math.sqrt(xd * xd + yd * yd + zd * zd);
                 phase += spinRate * (float) Math.min(1.0, speed * 6.0 + 0.2);
             }
@@ -232,12 +277,14 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
 
         pickSprite();
 
+        // Fade over the last quarter of its life.
         float lifeFraction = 1.0f - (float) age / lifetime;
         if (lifeFraction < 0.25f) {
             this.alpha = Math.max(0f, lifeFraction / 0.25f);
         }
     }
 
+    /** A giblet lands: a drop straight down where it hit, and a couple thrown up around it. */
     private void splat() {
         bleed(com.simpleblood.BloodParticles.BLOOD_DRIP, 0, -0.1, 0);
         for (int i = 0; i < 2; i++) {
@@ -247,6 +294,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         }
     }
 
+    /** One drop of a giblet's blood from where it is now (a cloud instead, in water). */
     private void bleed(net.minecraft.core.particles.SimpleParticleType type, double vx, double vy, double vz) {
         BloodParticle.setCurrentBloodColor(blood);
         BloodParticle.setCurrentKind(com.simpleblood.BloodKind.LIQUID);
@@ -262,17 +310,21 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         }
     }
 
+    /** Comes to rest where it is, lying on the surface rather than half sunk into it. */
     private void settle() {
         resting = true;
         xd = yd = zd = 0;
         if (metal) restFrame = random.nextInt(3) == 0 ? BACK : FACE;
         if (onGround && liesFlat) {
+            // Lies in the plane of the ground: a quarter turn keeps its pixels on the block's grid.
             org.joml.Quaternionf lie = new org.joml.Quaternionf()
                     .rotationY((float) (random.nextInt(4) * Math.PI / 2))
                     .rotateX((float) (-Math.PI / 2));
             float tiltLift = 0f;
             DebrisPieceParticle under = flakeUnder();
             if (under != null) {
+                // Rest on it: one layer up, tilted so the edge over the other flake is raised
+                // and the far edge comes down towards the ground.
                 layer = Math.min(MAX_LAYERS, under.layer + 1);
                 double dx = x - under.x, dz = z - under.z;
                 double len = Math.sqrt(dx * dx + dz * dz);
@@ -285,10 +337,13 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
                 dx /= len;
                 dz /= len;
                 float tilt = (float) Math.toRadians(10 + random.nextInt(9));
+                // About this horizontal axis a negative turn raises the side facing the flake below.
                 lie = new org.joml.Quaternionf().rotationAxis(-tilt, (float) -dz, 0f, (float) dx).mul(lie);
                 tiltLift = quadSize * 0.6f * (float) Math.sin(tilt);
             }
             flat = lie;
+            // Just above the surface (each flake at its own hair's height, so neighbours never
+            // flicker into each other), plus a layer per flake underneath, plus the tilt.
             lift = 0.008f + random.nextFloat() * 0.006f + layer * 0.012f + tiltLift;
             LYING.add(this);
             this.setPos(x, y + lift, z);
@@ -304,26 +359,29 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         }
     }
 
+    /** The highest flake already lying where this one just came down, or null. */
     private DebrisPieceParticle flakeUnder() {
         DebrisPieceParticle under = null;
         for (DebrisPieceParticle o : LYING) {
-            if (o == this || o.level != level || o.removed || o.kind != kind) continue;
+            if (o == this || o.level != level || o.removed || o.kind != kind) continue; // flakes heap on flakes, giblets on giblets
             double dx = x - o.x, dz = z - o.z;
-            double reach = (quadSize + o.quadSize) * 0.6;
+            double reach = (quadSize + o.quadSize) * 0.6; // the drawn flake is about 60 % of its quad
             if (dx * dx + dz * dz > reach * reach) continue;
-            if (Math.abs(y - (o.y - o.lift)) > 0.1) continue;
+            if (Math.abs(y - (o.y - o.lift)) > 0.1) continue; // on another floor
             if (under == null || o.layer > under.layer) under = o;
         }
         return under;
     }
 
+    /** Chooses this tick's frame (and, for metal, how much light the face throws back). */
     private void pickSprite() {
         if (metal) {
             int frame = resting ? restFrame : TUMBLE[Math.floorMod((int) Math.floor(phase), TUMBLE.length)];
             if (!resting) {
+                // Turning into the light: sometimes the face flashes.
                 if (glints && frame == FACE && lastFrame != FACE && random.nextFloat() < 0.4f) glintTicks = 2;
             } else if (glints && frame == FACE && glintTicks == 0 && random.nextInt(90) == 0) {
-                glintTicks = 3;
+                glintTicks = 3; // a settled flake twinkles now and then
             }
             lastFrame = frame;
             boolean glint = frame == FACE && glintTicks > 0;
@@ -338,10 +396,11 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         }
     }
 
+    // A flake lying flat is drawn in the ground's plane; everything else faces the camera.
     //? if 1.20.1 {
     /*@Override
     public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, net.minecraft.client.Camera camera, float partialTick) {
-        if (drawnBeforeWater()) return;
+        if (drawnBeforeWater()) return; // UnderwaterParticles draws it, before the water surface
         if (flat == null) {
             super.render(buffer, camera, partialTick);
             return;
@@ -354,21 +413,21 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
     *///?} elif 1.21.1 {
     /*@Override
     public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, net.minecraft.client.Camera camera, float partialTick) {
-        if (drawnBeforeWater()) return;
+        if (drawnBeforeWater()) return; // UnderwaterParticles draws it, before the water surface
         if (flat != null) renderRotatedQuad(buffer, camera, flat, partialTick);
         else super.render(buffer, camera, partialTick);
     }
     *///?} elif <26.1 {
     /*@Override
     public void extract(net.minecraft.client.renderer.state.QuadParticleRenderState state, net.minecraft.client.Camera camera, float partialTick) {
-        if (drawnBeforeWater()) return;
+        if (drawnBeforeWater()) return; // UnderwaterParticles draws it, before the water surface
         if (flat != null) extractRotatedQuad(state, camera, flat, partialTick);
         else super.extract(state, camera, partialTick);
     }
     *///?} else {
     @Override
     public void extract(net.minecraft.client.renderer.state.level.QuadParticleRenderState state, net.minecraft.client.Camera camera, float partialTick) {
-        if (drawnBeforeWater()) return;
+        if (drawnBeforeWater()) return; // UnderwaterParticles draws it, before the water surface
         if (flat != null) extractRotatedQuad(state, camera, flat, partialTick);
         else super.extract(state, camera, partialTick);
     }
@@ -379,6 +438,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         return isAlive() && this.level == level;
     }
 
+    /** In water: drawn before the water surface, which would hide it from above otherwise. */
     @Override
     public boolean drawnBeforeWater() {
         return level.getFluidState(BlockPos.containing(x, y, z)).is(FluidTags.WATER);
@@ -418,6 +478,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
     }
     //?}
 
+    /** One factory per piece type: bone chips, metal flakes, wood splinters or giblets (LIQUID). */
     public static class Factory implements ParticleProvider<SimpleParticleType> {
 
         private final SpriteSet sprites;

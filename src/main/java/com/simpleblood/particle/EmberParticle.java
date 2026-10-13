@@ -23,6 +23,13 @@ import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * An ember knocked out of a fire creature (blaze, magma cube). It leaves white-hot, flickers
+ * as it flies (four small shapes, cycled quickly, at a jittering brightness), cools through
+ * the mob's colour to a deep red glow and finally to a dark fleck of ash, which no longer
+ * glows. It falls lightly, skips once where it lands and lies there cooling; the odd one
+ * gives off a curl of smoke as it goes out. Water puts it out at once, with a hiss.
+ */
 //? if <=1.21.1 {
 /*public class EmberParticle extends net.minecraft.client.particle.TextureSheetParticle {
 *///?} else {
@@ -31,8 +38,9 @@ public class EmberParticle extends SingleQuadParticle {
 
     private static final int FRAMES = 4;
     private static final int FULL_BRIGHT = 0xF000F0;
-    private static final float GRAVITY = 0.022f;
+    private static final float GRAVITY = 0.022f; // light: embers float a little before they fall
 
+    // White-hot at birth, a deep red glow before it dies, then ash.
     private static final float HOT_R = 1.0f, HOT_G = 0.95f, HOT_B = 0.7f;
     private static final float GLOW_R = 0.55f, GLOW_G = 0.12f, GLOW_B = 0.05f;
     private static final float ASH_R = 0.27f, ASH_G = 0.23f, ASH_B = 0.2f;
@@ -64,6 +72,7 @@ public class EmberParticle extends SingleQuadParticle {
             this.yd = velY;
             this.zd = velZ;
         } else {
+            // Out of the vanilla constructor's gentle puff, with a hot little upward kick.
             this.xd *= 1.2;
             this.zd *= 1.2;
             this.yd += 0.05 + random.nextFloat() * 0.06;
@@ -79,7 +88,7 @@ public class EmberParticle extends SingleQuadParticle {
         this.blue = blue;
         this.frame = random.nextInt(FRAMES);
         this.alpha = 1.0f;
-        this.gravity = 0f;
+        this.gravity = 0f; // our own physics in tick()
         this.hasPhysics = true;
         colourFor(0f);
         this.setSprite(sprites.get(frame, FRAMES - 1));
@@ -113,6 +122,7 @@ public class EmberParticle extends SingleQuadParticle {
         this.yo = y;
         this.zo = z;
         if (this.age++ >= this.lifetime) {
+            // Going out: now and then a curl of smoke.
             if (glowing && random.nextInt(4) == 0) smoke();
             this.remove();
             return;
@@ -126,13 +136,15 @@ public class EmberParticle extends SingleQuadParticle {
         if (!resting) {
             yd -= GRAVITY * SimpleBloodClient.getConfig().particleGravityMultiplier();
             double wantY = yd;
+            // Particle.move gives up for good once a fall is blocked outright, so a resting
+            // ember never calls it again.
             this.move(xd, yd, zd);
             xd *= 0.96;
             yd *= 0.96;
             zd *= 0.96;
             if (onGround) {
                 if (wantY < -0.08) {
-                    yd = -wantY * 0.25;
+                    yd = -wantY * 0.25; // a little skip
                     xd *= 0.5;
                     zd *= 0.5;
                 } else {
@@ -145,6 +157,8 @@ public class EmberParticle extends SingleQuadParticle {
         }
 
         float t = (float) age / lifetime;
+        // Flickers: a new shape every other tick while it burns, at a jittering brightness;
+        // once it has cooled to ash it holds still.
         glowing = t < 0.82f;
         if (glowing && age % 2 == 0) {
             frame = (frame + 1 + random.nextInt(FRAMES - 1)) % FRAMES;
@@ -155,9 +169,11 @@ public class EmberParticle extends SingleQuadParticle {
         this.setSprite(sprites.get(frame, FRAMES - 1));
         colourFor(t);
 
+        // The ash fades away at the very end.
         if (t > 0.9f) this.alpha = Math.max(0f, (1f - t) / 0.1f);
     }
 
+    /** White-hot, then the mob's colour, then a deep red glow, then ash. */
     private void colourFor(float t) {
         float r, g, b;
         if (t < 0.15f) {
@@ -187,12 +203,14 @@ public class EmberParticle extends SingleQuadParticle {
         return a + (b - a) * k;
     }
 
+    /** A wisp of vanilla smoke where the ember went out (from the render thread). */
     private void smoke() {
         double px = x, py = y, pz = z;
         RenderThread.run(() -> Minecraft.getInstance().particleEngine.createParticle(
                 ParticleTypes.SMOKE, px, py + 0.05, pz, 0.0, 0.02, 0.0));
     }
 
+    // Burning embers light themselves; ash takes the light of the world.
     //? if <26.1 {
     /*@Override
     protected int getLightColor(float partialTick) {

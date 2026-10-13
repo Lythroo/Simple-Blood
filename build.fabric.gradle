@@ -7,7 +7,9 @@ plugins {
 def mcVersion = project.property('deps.minecraft')
 def javaVersion = (project.property('java_version') as String).toInteger()
 
-version = "${project.property('mod_version')}+${mcVersion}"
+// -Pstudio builds the filming aid variant: same mod plus /bloodstudio, marked by a resource.
+def studio = project.hasProperty('studio')
+version = "${project.property('mod_version')}+${mcVersion}" + (studio ? '-studio' : '')
 group = 'com.simpleblood'
 
 base { archivesName = 'simpleblood-fabric' }
@@ -67,9 +69,18 @@ dependencies {
     if (physicsmod && physicsmod != 'none') {
         localRuntime "maven.modrinth:physicsmod:${physicsmod}"
     }
+
+    // -PtestMobs: mods that add mobs, to try the modded-mob table (deps.testmobs, Modrinth
+    // project:version pairs). Dev client only.
+    def testMobs = project.findProperty('deps.testmobs')
+    if (project.hasProperty('testMobs') && testMobs) {
+        testMobs.split(',').each { localRuntime "maven.modrinth:${it.trim()}" }
+    }
 }
 
 processResources {
+    if (!studio) exclude 'simpleblood_studio.txt' // release jars never wake the studio
+    if (!studio) exclude 'simpleblood-studio.mixins.json'
     exclude 'META-INF/neoforge.mods.toml', 'META-INF/mods.toml' // keep this a Fabric-only jar
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
@@ -77,7 +88,7 @@ processResources {
     filesMatching(['fabric.mod.json', 'simpleblood.mixins.json']) {
         expand version: project.version,
                 mixinCompat: project.property('mixin_compat'),
-                extraMixins: ', "RenderTypeInvoker"', // 1.21.11+: RenderType.create for the shader clouds
+                extraMixins: ', "RenderTypeInvoker", "MobRenderStateMixin", "RenderLayerMixin"', // 1.21.11+: RenderType.create for the shader clouds; render states carry the entity id
                 minecraft_range: mcVersion // exact game version → correct Modrinth detection
     }
 }
@@ -85,4 +96,21 @@ processResources {
 tasks.withType(JavaCompile).configureEach {
     it.options.release = javaVersion
     it.options.encoding = 'UTF-8'
+}
+
+// Release jars leave the filming aid out entirely.
+tasks.named('jar') {
+    if (!studio) exclude 'com/simpleblood/studio/**'
+}
+
+// Studio, 26.3: a Blood track in Flashback's timeline, compiled against a local Flashback jar.
+if (mcVersion == '26.3') {
+    dependencies { compileOnly files(rootProject.file('libs/flashback-26.3.jar')) }
+    // -PwithFlashback: run the dev client with Flashback too.
+    if (project.hasProperty('withFlashback')) dependencies { localRuntime files(rootProject.file('libs/flashback-26.3.jar')) }
+    if (studio) processResources {
+        filesMatching('fabric.mod.json') {
+            filter { it.replace('"simpleblood.mixins.json"', '"simpleblood.mixins.json", "simpleblood-studio.mixins.json"') }
+        }
+    }
 }

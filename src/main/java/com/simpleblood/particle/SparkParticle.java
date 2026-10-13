@@ -16,6 +16,11 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.util.RandomSource;
 
+/**
+ * A spark of light knocked out of a spirit (allay, vex): a point that opens into a
+ * four-point star and closes again while it floats up and away. Glows at full brightness,
+ * like the mobs themselves, and is a little paler than their colour.
+ */
 //? if <=1.21.1 {
 /*public class SparkParticle extends net.minecraft.client.particle.TextureSheetParticle {
 *///?} else {
@@ -55,11 +60,12 @@ public class SparkParticle extends SingleQuadParticle {
         this.lifetime = Math.max(6, (int) ((12 + random.nextInt(10)) * cfg.particleLifetimeMultiplier() * cfg.kinds.pieceLifetimeMultiplier()));
         this.quadSize = 0.11f * (1f + random.nextFloat() * 0.4f) * size;
         this.setSize(0.05f, 0.05f);
+        // Paler than the mob's colour: it is light, not stuff.
         float pale = 0.3f;
         this.setColor(red + (1f - red) * pale, green + (1f - green) * pale, blue + (1f - blue) * pale);
         this.alpha = 1.0f;
         this.gravity = 0f;
-        this.hasPhysics = false;
+        this.hasPhysics = false; // light passes through blocks
         this.setSprite(sprites.get(0, lifetime));
     }
 
@@ -86,7 +92,7 @@ public class SparkParticle extends SingleQuadParticle {
                 this.remove();
                 return;
             }
-            yd += 0.002 * SimpleBloodClient.getConfig().particleGravityMultiplier();
+            yd += 0.002 * SimpleBloodClient.getConfig().particleGravityMultiplier(); // floats up
             this.move(xd, yd, zd);
             xd *= 0.9;
             yd *= 0.9;

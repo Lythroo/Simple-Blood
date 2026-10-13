@@ -2,11 +2,17 @@ package com.simpleblood.gui;
 
 import java.util.function.IntConsumer;
 
+/**
+ * A modal colour picker in coarse pixel-art form: a 16x16 saturation/value grid, a hue
+ * strip, a hex field and a row of blood presets. Every change is pushed out immediately so
+ * the world (and the puddle preview) recolours while you drag; Cancel puts the old colour
+ * back.
+ */
 public final class ColourPicker extends Widget.Container {
 
     private static final int CELLS = 16;
     private static final int CELL = 6;
-    private static final int GRID = CELLS * CELL;
+    private static final int GRID = CELLS * CELL; // 96
 
     private static final int[] PRESETS = {
             0x7A0F0F, 0x660303, 0x4A1414, 0x8A1A1A, 0xC8281E, 0x3B7A2A, 0x7FCF4E, 0x5E1C82,
@@ -20,8 +26,9 @@ public final class ColourPicker extends Widget.Container {
     private final Widgets.TextField hex = new Widgets.TextField();
     private int gridX, gridY, hueX, hueY;
     private boolean dragGrid, dragHue;
-    private float open;
+    private float open; // 0..1 opening animation
 
+    /** A line or two under the grid about what the colour is for (null: none). */
     private final String note;
 
     public ColourPicker(int rgb, IntConsumer apply, Runnable close) {
@@ -86,10 +93,12 @@ public final class ColourPicker extends Widget.Container {
     @Override
     protected void draw(Gfx g, int mx, int my, float dt) {
         float a = Anim.easeOut(open);
+        // Dim the screen, then the panel.
         g.fill(0, 0, g.width(), g.height(), Gfx.alpha(0xFF000000, 0.45f * a));
         g.fill(x, y, x + w, y + h, Gfx.alpha(0xFF101010, 0.96f * a));
         g.bevel(x, y, x + w, y + h, Gfx.alpha(0xFFFFFFFF, 0.25f * a), Gfx.alpha(0xFF000000, 0.8f * a));
         g.text("Pick a colour", x + 10, y + 8, Gfx.alpha(Widgets.TEXT, a));
+        // Saturation/value grid.
         for (int j = 0; j < CELLS; j++) {
             for (int i = 0; i < CELLS; i++) {
                 float s = (i + 0.5f) / CELLS, v = 1f - (j + 0.5f) / CELLS;
@@ -100,17 +109,20 @@ public final class ColourPicker extends Widget.Container {
         int si = Math.round(sat * (CELLS - 1)), vi = Math.round((1f - val) * (CELLS - 1));
         g.outline(gridX + si * CELL - 1, gridY + vi * CELL - 1, gridX + (si + 1) * CELL + 1, gridY + (vi + 1) * CELL + 1, Gfx.alpha(0xFFFFFFFF, a));
         g.outline(gridX + si * CELL - 2, gridY + vi * CELL - 2, gridX + (si + 1) * CELL + 2, gridY + (vi + 1) * CELL + 2, Gfx.alpha(0xFF000000, a));
+        // Hue strip.
         for (int j = 0; j < CELLS; j++) {
             int c = fromHsv((j + 0.5f) / CELLS, 1f, 1f);
             g.fill(hueX, hueY + j * CELL, hueX + 12, hueY + (j + 1) * CELL, Gfx.alpha(0xFF000000 | c, a));
         }
         int hi = Math.min(CELLS - 1, (int) (hue * CELLS));
         g.outline(hueX - 1, hueY + hi * CELL - 1, hueX + 13, hueY + (hi + 1) * CELL + 1, Gfx.alpha(0xFFFFFFFF, a));
+        // Current colour, big, next to the field.
         int cur = rgb();
         int px = hueX + 22, py = gridY + 24;
         g.fill(px, py, px + 80, py + 22, Gfx.alpha(0xFF000000, a));
         g.fill(px + 1, py + 1, px + 79, py + 21, Gfx.alpha(0xFF000000 | cur, a));
         g.fill(px + 1, py + 1, px + 79, py + 2, Gfx.alpha(0xFFFFFFFF, 0.2f * a));
+        // Presets.
         g.text("Quick picks", px, py + 28, Gfx.alpha(Widgets.TEXT_DIM, a));
         for (int i = 0; i < PRESETS.length; i++) {
             int sx = px + (i % 8) * 10, sy = py + 38 + (i / 8) * 10;
@@ -154,7 +166,7 @@ public final class ColourPicker extends Widget.Container {
                 return true;
             }
         }
-        return contains(mx, my);
+        return contains(mx, my); // swallow clicks on the panel; outside closes nothing
     }
 
     private void pickGrid(double mx, double my) {
@@ -186,7 +198,7 @@ public final class ColourPicker extends Widget.Container {
 
     @Override
     public boolean keyPressed(int key, int modifiers) {
-        if (key == Keys.ESCAPE) {
+        if (key == Keys.ESCAPE) { // escape: cancel
             apply.accept(original);
             close.run();
             return true;
@@ -196,8 +208,10 @@ public final class ColourPicker extends Widget.Container {
 
     @Override
     public boolean contains(double mx, double my) {
-        return true;
+        return true; // modal: owns the whole screen while open
     }
+
+    // ------------------------------------------------------------------ HSV
 
     static float[] toHsv(int rgb) {
         float r = ((rgb >> 16) & 0xFF) / 255f, g = ((rgb >> 8) & 0xFF) / 255f, b = (rgb & 0xFF) / 255f;

@@ -10,6 +10,9 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.particle.v1.ParticleProviderRegistry;
 
+/**
+ * Fabric client entrypoint. Wiring only - behaviour lives in {@link SimpleBloodClient}.
+ */
 public class SimpleBloodFabricClient implements ClientModInitializer {
 
     @Override
@@ -42,6 +45,7 @@ public class SimpleBloodFabricClient implements ClientModInitializer {
 
         SimpleBlood.LOGGER.info("Simple Blood (Fabric) ready.");
     }
+
 
 }
 //?}

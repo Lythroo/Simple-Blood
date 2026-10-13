@@ -17,74 +17,118 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * A pixel canvas glued onto one face of one collision box of a block.
+ *
+ * The canvas resolution is fixed per block ({@code res} pixels per block edge), so a full
+ * block face is {@code res x res} pixels and a slab top or stair step gets proportionally
+ * fewer. Every painted pixel carries a <em>depth</em> (units of blood). Fresh splats are
+ * placed by Eden growth ({@link #stamp}); blood that lands in an existing puddle is added as
+ * depth and then spread by {@link #relax}, a tiny cellular relaxation that conserves volume:
+ * deep spots push blood to shallower neighbours, only genuinely deep blood spreads onto
+ * empty pixels (surface tension), and blood at an open edge drains over it. Pixels age
+ * individually, dry darker and shallower, and are eroded from the edge inward.
+ *
+ * Nothing here touches the GPU except {@link #refresh}, which rewrites this tile's
+ * {@link NativeImage} and uploads it into the shared {@link BloodCanvasAtlas}.
+ */
 public final class CanvasTile {
 
+    /** Tone indices stored per pixel; 0 = empty. */
     static final byte EMPTY = 0, DARK = 1, BASE = 2, LIGHT = 3;
     private static final float[] TONE_FACTOR = {0f, 0.87f, 1.0f, 1.28f};
 
+    /** Deepest a pixel can get; deeper blood spreads out instead. */
     static final int MAX_DEPTH = 6;
+    /** Depth from which blood spreads onto empty pixels of the same surface. */
     private static final int SPREAD_DEPTH = 3;
 
+    /** Identity of the surface this tile covers. */
     public record Key(long pos, Direction face, int box) {}
 
+    /** Answers whether a pixel just outside this tile (on the neighbouring face) is painted. */
     interface NeighbourLookup {
         boolean filledAcross(CanvasTile tile, int px, int py);
     }
 
+    /** What the relaxation may do with blood that reaches a tile border. */
     interface FlowContext extends NeighbourLookup {
+        /**
+         * The tile continuing this surface across the border at (px, py) (created on demand),
+         * with the matching pixel written to {@code xy}; {@code null} when the surface ends.
+         */
         CanvasTile across(CanvasTile tile, int px, int py, int[] xy, boolean create);
 
+        /** Whether blood at the border pixel (px, py) can pour over the block edge there. */
         boolean canDrain(CanvasTile tile, int px, int py);
 
+        /** Pours one unit of blood over the edge at (px, py) into a run down the side; false if it cannot right now. */
         boolean drain(CanvasTile tile, int px, int py, int colour);
     }
 
+    /** Ticks a landing ripple takes to expand and fade. */
     static final int RIPPLE_TICKS = 22;
 
     final Key key;
     final BlockPos pos;
     final Direction face;
     BlockState state;
+    /** A free-standing plane (e.g. a dripstone cross-plane) instead of a block face. */
     final boolean custom;
+    /** Plane normal; for block faces this equals the face direction. */
     double nx, ny, nz;
+    /** Pixels that may be painted (null = all); custom planes mask to the block texture. */
     private boolean[] mask;
+    /** The tile on the other side of the same plane (cross models draw both faces). */
     CanvasTile twin;
+    /** For banner cloth: the world point on the bar it swings from, and the bar's direction (null: still). */
     Vec3 swayPivot, swayAxis;
     private boolean propagating;
 
+    // Face rectangle in world space: origin corner, unit axes, extents (blocks).
     final double ox, oy, oz;
     final double ux, uy, uz;
     final double vx, vy, vz;
     final double w, h;
-    final int pw, ph;
+    final int pw, ph;              // pixel dimensions
     final int res;
 
-    private final byte[] tone;
-    private final byte[] baseTone;
-    private final byte[] depth;
-    private final int[] rgb;
-    private final int[] born;
-    private final int[] life;
-    private final byte[] thin;
-    private final boolean[] powder;
-    private final boolean[] moved;
+    private final byte[] tone;     // chosen tone per pixel (0 = empty)
+    private final byte[] baseTone; // tone suggested by the block texture underneath
+    private final byte[] depth;    // units of blood per pixel (0 = empty)
+    private final int[] rgb;       // blood colour per pixel (0xRRGGBB)
+    private final int[] born;      // tick the pixel was painted
+    private final int[] life;      // lifetime in ticks (jittered per pixel)
+    private final byte[] thin;     // 0 = pooled blood, 1..3 = increasingly thin running film
+    private final boolean[] powder;// snow pile pixels: flat, never flow, no relief
+    private final boolean[] moved; // scratch: received blood during the current relax step
     private int count;
+    /** Bit per horizontal direction (ordinal) whose side of this block is open to air. */
     int exposedMask;
+    /** Set whenever volume changes; cleared once a relax step moves nothing. */
     boolean active;
 
     private NativeImage image;
-    private NativeImage spec;
+    private NativeImage spec; // labPBR specular twin of image, only while Iris reads it
     int slot = -1;
     boolean dirty;
     int lastTouched;
-    int light;
+    int light;            // packed light, refreshed every few ticks by the renderer
     int lightTick = -100;
-    boolean onSeeThrough;
+    boolean onSeeThrough; // on a block you can see through (glass, ice...), so drawn after see-through terrain; refreshed with the light
+    /** Block light (0..15) the tile gives itself: glowing blood, strongest while fresh. */
     int glow;
+    /** The moving block this tile rides while a piston moves it (null: standing still). */
     net.minecraft.world.level.block.piston.PistonMovingBlockEntity mover;
+    /** Whether the tile is drawn where {@link #mover} is this frame (false: it holds still meanwhile). */
     boolean followsMover;
+    /** Active landing ripples: {centre x, centre y, start tick, strength x1000, reach x10 (pixels)}. */
     private final List<int[]> ripples = new ArrayList<>(2);
 
+    /**
+     * A tile on an arbitrary plane: origin corner, unit axes u (right) and v (down), extents
+     * in blocks. Used for cross-model blocks such as pointed dripstone.
+     */
     CanvasTile(Key key, BlockPos pos, BlockState state, Vec3 origin, Vec3 u, Vec3 v, double w, double h,
                int res, int now, boolean[] mask) {
         this(key, pos, state, origin, u, v, w, h, res, now, mask,
@@ -92,6 +136,7 @@ public final class CanvasTile {
                 Math.max(1, Math.min(BloodCanvasAtlas.TILE, (int) Math.round(h * res))));
     }
 
+    /** As above with an explicit pixel grid, so pixels can sit exactly on the sprite's texels. */
     CanvasTile(Key key, BlockPos pos, BlockState state, Vec3 origin, Vec3 u, Vec3 v, double w, double h,
                int res, int now, boolean[] mask, int pw, int ph) {
         this.key = key;
@@ -138,13 +183,14 @@ public final class CanvasTile {
         double minZ = pos.getZ() + box.minZ, maxZ = pos.getZ() + box.maxZ;
         double sx = box.maxX - box.minX, sy = box.maxY - box.minY, sz = box.maxZ - box.minZ;
 
+        // Texture axes: u runs "right", v runs "down" (so wall runs grow along +v).
         switch (face) {
             case UP    -> { ox = minX; oy = maxY; oz = minZ; ux = 1; uy = 0; uz = 0; vx = 0; vy = 0; vz = 1;  w = sx; h = sz; }
             case DOWN  -> { ox = minX; oy = minY; oz = maxZ; ux = 1; uy = 0; uz = 0; vx = 0; vy = 0; vz = -1; w = sx; h = sz; }
             case NORTH -> { ox = maxX; oy = maxY; oz = minZ; ux = -1; uy = 0; uz = 0; vx = 0; vy = -1; vz = 0; w = sx; h = sy; }
             case SOUTH -> { ox = minX; oy = maxY; oz = maxZ; ux = 1; uy = 0; uz = 0; vx = 0; vy = -1; vz = 0;  w = sx; h = sy; }
             case WEST  -> { ox = minX; oy = maxY; oz = minZ; ux = 0; uy = 0; uz = 1; vx = 0; vy = -1; vz = 0;  w = sz; h = sy; }
-            default    -> { ox = maxX; oy = maxY; oz = maxZ; ux = 0; uy = 0; uz = -1; vx = 0; vy = -1; vz = 0; w = sz; h = sy; }
+            default    -> { ox = maxX; oy = maxY; oz = maxZ; ux = 0; uy = 0; uz = -1; vx = 0; vy = -1; vz = 0; w = sz; h = sy; } // EAST
         }
         this.pw = Math.max(1, Math.min(BloodCanvasAtlas.TILE, (int) Math.round(w * res)));
         this.ph = Math.max(1, Math.min(BloodCanvasAtlas.TILE, (int) Math.round(h * res)));
@@ -161,6 +207,10 @@ public final class CanvasTile {
         java.util.Arrays.fill(baseTone, BASE);
     }
 
+    /**
+     * This tile carried {@code (dx, dy, dz)} blocks to {@code pos} (a block a piston pushed):
+     * same pixels, same age, everything moved along. The copy has no GPU slot yet.
+     */
     CanvasTile(CanvasTile src, Key key, BlockPos pos, int dx, int dy, int dz) {
         this.key = key;
         this.pos = pos.immutable();
@@ -194,12 +244,16 @@ public final class CanvasTile {
         this.dirty = true;
     }
 
+    // ------------------------------------------------------------------ geometry
+
+    /** World position of the centre of pixel (px, py); also valid for out-of-range pixels. */
     Vec3 pixelCenter(int px, int py) {
         double fu = (px + 0.5) / pw * w;
         double fv = (py + 0.5) / ph * h;
         return new Vec3(ox + ux * fu + vx * fv, oy + uy * fu + vy * fv, oz + uz * fu + vz * fv);
     }
 
+    /** Pixel column for a world point projected on this face (may be out of range). */
     int pixelX(Vec3 p) {
         double d = (p.x - ox) * ux + (p.y - oy) * uy + (p.z - oz) * uz;
         return (int) Math.floor(d / w * pw);
@@ -221,10 +275,12 @@ public final class CanvasTile {
     public int count() { return count; }
     public boolean isEmpty() { return count == 0; }
 
+    /** Units of blood at a pixel (0 when empty or out of range). */
     int depthAt(int px, int py) {
         return inside(px, py) ? depth[py * pw + px] : 0;
     }
 
+    /** Colour of a painted pixel (0 when empty). */
     int colourAt(int px, int py) {
         int i = py * pw + px;
         return tone[i] == EMPTY ? 0 : rgb[i];
@@ -234,17 +290,19 @@ public final class CanvasTile {
         return inside(px, py) && tone[py * pw + px] != EMPTY;
     }
 
+    /** How far through its life the blood at a pixel is (0 fresh .. 1 gone). */
     float ageAt(int px, int py, int now) {
         if (!inside(px, py)) return 0f;
         int i = py * pw + px;
         return (now - born[i]) / (float) Math.max(1, life[i]);
     }
 
+    /** Units of blood at a pixel while it is still wet enough to stick to a foot, else 0. */
     int wetDepthAt(int px, int py, int now) {
         if (!inside(px, py)) return 0;
         int i = py * pw + px;
-        if (tone[i] == EMPTY || thin[i] != 0) return 0;
-        if (now - born[i] > life[i] * 0.55f) return 0;
+        if (tone[i] == EMPTY || thin[i] != 0) return 0;      // nothing, or a print/film
+        if (now - born[i] > life[i] * 0.55f) return 0;        // drying: no longer sticky
         return depth[i];
     }
 
@@ -252,6 +310,7 @@ public final class CanvasTile {
         return inside(px, py) && powder[py * pw + px];
     }
 
+    /** A foot takes one unit out of a pooled pixel (depth 2+). */
     boolean scoop(int px, int py) {
         if (!inside(px, py)) return false;
         int i = py * pw + px;
@@ -260,24 +319,35 @@ public final class CanvasTile {
         return true;
     }
 
+    /**
+     * Paints one footprint pixel: only onto bare surface, as a thin film that never pools
+     * (so a trail cannot start runs), or as a powder pixel for snow.
+     */
     void paintPrint(int px, int py, int colour, int now, int lifetime, RandomSource rng, boolean pattern, boolean powder) {
         if (!inside(px, py) || tone[py * pw + px] != EMPTY) return;
         if (powder) {
             paintPowder(px, py, colour, now, lifetime, rng);
         } else {
             paintThin(px, py, colour, now, lifetime, rng, pattern, 1);
-            active = false;
+            active = false; // a film cannot flow: no need to relax the tile for it
         }
     }
 
+    /** The block underneath changed but still offers this face: keep painting on it. */
     void rebind(BlockState newState) {
         this.state = newState;
     }
 
+    /** Whether blood can be at (px, py): on the tile, and not hidden behind something solid. */
     boolean paintable(int px, int py) {
         return inside(px, py) && (mask == null || mask[py * pw + px]);
     }
 
+    /**
+     * Restricts a block face to the pixels that can be seen ({@code visible}, null = all):
+     * the rest is covered by another part of the same block or a block pressed against it.
+     * Blood already painted on a covered pixel is gone. Custom planes keep their texture mask.
+     */
     void applyVisibility(boolean[] visible) {
         if (custom) return;
         if (visible != null && visible.length != tone.length) return;
@@ -293,16 +363,27 @@ public final class CanvasTile {
         }
     }
 
+    /** Turns a custom plane around (its front becomes its back). */
     void flipNormal() {
         nx = -nx; ny = -ny; nz = -nz;
     }
 
     boolean hasRipples() { return !ripples.isEmpty(); }
 
+    /** Whether this surface lies flat and faces up, so liquid can pool on it. */
     boolean facesUp() {
+        // Custom planes (boards, banners, model faces) are all filed under UP; their real
+        // orientation is the normal.
         return custom ? ny > 0.9 : face == Direction.UP;
     }
 
+    /**
+     * Starts a ripple ring expanding from (cx, cy) where {@code units} of blood landed in the
+     * pool; keeps at most a few alive per tile. Only pools lying flat ripple (a wave on a wall
+     * or a ceiling makes no sense), and only when both the pool and the drop are big enough:
+     * a drip into a speck does nothing, a splash into a wide pool sends out a ring that
+     * reaches further and shows a little more. Kept faint either way.
+     */
     void addRipple(int cx, int cy, int now, int units) {
         if (!facesUp()) return;
         int area = pw * ph;
@@ -311,12 +392,14 @@ public final class CanvasTile {
         float pool = Math.min(1f, count / (area * 0.5f));
         float drop = Math.min(1f, units / (area / 12f));
         float strength = pool * (0.5f + 0.5f * drop);
+        // The ring dies out at the rim of the pool, not somewhere past it.
         double reach = Math.sqrt(count / Math.PI) * 1.1 + 1.0;
         if (ripples.size() >= 3) ripples.remove(0);
         ripples.add(new int[]{cx, cy, now, Math.round(strength * 1000), (int) Math.round(reach * 10)});
         dirty = true;
     }
 
+    /** Snapshot of every painted pixel as {px, py, colour, depth}, e.g. to move the shape. */
     List<int[]> snapshot() {
         List<int[]> out = new ArrayList<>(count);
         for (int i = 0; i < tone.length; i++) {
@@ -325,8 +408,10 @@ public final class CanvasTile {
         return out;
     }
 
+    /** One painted pixel with everything it carries, lifted off to be set down elsewhere. */
     record Lifted(int px, int py, byte tone, byte depth, int rgb, int born, int life, byte thin, boolean powder) {}
 
+    /** Every painted pixel, as it is: depth, colour, age, film. */
     List<Lifted> lift() {
         List<Lifted> out = new ArrayList<>(count);
         for (int i = 0; i < tone.length; i++) {
@@ -337,6 +422,10 @@ public final class CanvasTile {
         return out;
     }
 
+    /**
+     * Sets a lifted pixel down at (px, py) as it was (a door swung, the blood went with it).
+     * Two landing on one pixel pool together. False when the pixel cannot take blood.
+     */
     boolean place(Lifted l, int px, int py, int now) {
         if (!paintable(px, py)) return false;
         int i = py * pw + px;
@@ -359,6 +448,7 @@ public final class CanvasTile {
         return true;
     }
 
+    /** Number of painted 4-neighbours of (px, py). */
     int filledNeighbours(int px, int py) {
         int n = 0;
         if (filled(px + 1, py)) n++;
@@ -374,14 +464,32 @@ public final class CanvasTile {
         }
     }
 
+    // ------------------------------------------------------------------ painting
+
+    /**
+     * Deposits {@code n} units of blood at (px, py). On an empty spot the units become a splat
+     * of depth-1 pixels laid out by Eden growth: an empty pixel next to the blob is chosen with
+     * probability proportional to the square of its filled neighbours and its closeness to the
+     * impact point, which gives a dense core with a ragged stepped edge. Landing in an existing
+     * puddle instead adds the units as depth around the impact; {@link #relax} spreads them.
+     *
+     * @param spill receives pixels the growth wanted to place outside this tile
+     * @return the number of units placed into this tile
+     */
     int stamp(int px, int py, int n, int colour, int now, int lifetime, RandomSource rng,
               boolean pattern, List<int[]> spill) {
         return stamp(px, py, n, colour, now, lifetime, rng, pattern, spill, 0, 0);
     }
 
+    /**
+     * As {@link #stamp(int, int, int, int, int, int, RandomSource, boolean, List)}, with the
+     * blob stretched along (bu, bv) in pixel space: blood that lands while moving spatters
+     * further in the direction it travelled, the way real drops do.
+     */
     int stamp(int px, int py, int n, int colour, int now, int lifetime, RandomSource rng,
               boolean pattern, List<int[]> spill, double bu, double bv) {
         if (face == Direction.UP && filled(px, py)) {
+            // Into the puddle: volume, not new outline.
             addRipple(px, py, now, n);
             addVolume(px, py, n, colour, now, lifetime, rng, pattern);
             return n;
@@ -398,6 +506,7 @@ public final class CanvasTile {
             addRipple(px, py, now, n);
         }
 
+        // Seed pixel first (if free).
         if (!blob.contains(pack(px, py))) {
             blob.add(pack(px, py));
             chosen.add(new int[]{px, py});
@@ -410,6 +519,7 @@ public final class CanvasTile {
         int guard = 0;
         while (chosen.size() < n && guard++ < n * 8) {
             cand.clear();
+            // Only grow from cells near the impact point so old puddle edges do not keep spreading.
             for (int[] c : chosen) addCandidates(c[0], c[1], blob, cand);
             if (cand.isEmpty()) addCandidates(px, py, blob, cand);
             if (cand.isEmpty()) break;
@@ -423,15 +533,17 @@ public final class CanvasTile {
                 double dx = cx - px, dy = cy - py;
                 double dist2 = dx * dx + dy * dy;
                 if (bias > 0.05) {
+                    // Anisotropic: distance along the travel direction counts for less, so the
+                    // blob elongates that way (and prefers the "ahead" side).
                     double par = dx * bu + dy * bv;
                     double perp2 = Math.max(0, dist2 - par * par);
                     double stretch = 1.0 + 2.0 * bias;
                     dist2 = (par / stretch) * (par / stretch) + perp2;
-                    if (par < 0) dist2 *= 1.0 + bias;
+                    if (par < 0) dist2 *= 1.0 + bias; // behind the impact: shorter tail
                 }
                 double wgt = e.getValue() * e.getValue() * Math.exp(-dist2 / (R * R) * 0.8);
-                if (vertical) wgt *= dy > 0 ? 1.8 : (dy < 0 ? 0.45 : 1.0);
-                if (!inside(cx, cy)) wgt *= 0.6;
+                if (vertical) wgt *= dy > 0 ? 1.8 : (dy < 0 ? 0.45 : 1.0); // blood runs down walls
+                if (!inside(cx, cy)) wgt *= 0.6;                            // prefer staying on this face
                 keys[k] = e.getKey();
                 weights[k] = wgt;
                 total += wgt;
@@ -469,7 +581,7 @@ public final class CanvasTile {
             int ny = y + (d == 2 ? 1 : d == 3 ? -1 : 0);
             long k = pack(nx, ny);
             if (blob.contains(k)) continue;
-            if (inside(nx, ny) && !paintable(nx, ny)) continue;
+            if (inside(nx, ny) && !paintable(nx, ny)) continue; // hidden: a wall, not a way through
             int neighbours = 0;
             if (blob.contains(pack(nx + 1, ny))) neighbours++;
             if (blob.contains(pack(nx - 1, ny))) neighbours++;
@@ -479,6 +591,10 @@ public final class CanvasTile {
         }
     }
 
+    /**
+     * Adds {@code units} of depth at and around (px, py): the impact pixel takes the first,
+     * the rest go to painted pixels within one step (or the impact again when it is alone).
+     */
     void addVolume(int px, int py, int units, int colour, int now, int lifetime, RandomSource rng, boolean pattern) {
         if (!inside(px, py)) return;
         for (int u = 0; u < units; u++) {
@@ -493,14 +609,21 @@ public final class CanvasTile {
         }
     }
 
+    /** Paints a single pixel (no growth). Used for patterns such as footprints and drips. */
     void paint(int px, int py, int colour, int now, int lifetime, RandomSource rng, boolean pattern) {
         paintThin(px, py, colour, now, lifetime, rng, pattern, 0);
     }
 
+    /**
+     * Paints one pixel: an empty pixel becomes a depth-1 film, a painted one gains a unit of
+     * depth. {@code thinLevel} 1..3 renders increasingly transparent, so a trickle looks
+     * thinner than a pooled puddle.
+     */
     void paintThin(int px, int py, int colour, int now, int lifetime, RandomSource rng, boolean pattern, int thinLevel) {
         if (!inside(px, py)) return;
         int i = py * pw + px;
         if (twin != null && !propagating) {
+            // Both faces of a cross plane show blood at the same spot, each through its own mask.
             propagating = true;
             try {
                 Vec3 p = pixelCenter(px, py);
@@ -509,7 +632,7 @@ public final class CanvasTile {
                 propagating = false;
             }
         }
-        if (mask != null && !mask[i]) return;
+        if (mask != null && !mask[i]) return; // off the stone: nothing to cling to
         if (tone[i] == EMPTY) {
             count++;
             depth[i] = 1;
@@ -517,12 +640,14 @@ public final class CanvasTile {
             life[i] = (int) (lifetime * (0.8f + rng.nextFloat() * 0.4f));
         } else {
             depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + 1);
+            // Fresh blood on old blood: age it back to at most a quarter of its life.
             born[i] = Math.max(born[i], now - life[i] / 4);
         }
         thin[i] = (byte) Math.max(0, Math.min(3, thinLevel));
         powder[i] = false;
         byte t = baseTone[i];
         if (pattern) {
+            // Flat look: a few hashed darker pixels, nothing else.
             int hsh = (px * 73856093) ^ (py * 19349663) ^ (pos.hashCode() * 83492791);
             t = ((hsh >>> 4) % 8) == 0 ? DARK : BASE;
         }
@@ -533,6 +658,7 @@ public final class CanvasTile {
         lastTouched = now;
     }
 
+    /** Paints one pixel of powder (snow): a flat pile pixel that never flows. */
     void paintPowder(int px, int py, int colour, int now, int lifetime, RandomSource rng) {
         if (!inside(px, py)) return;
         paintThin(px, py, colour, now, lifetime, rng, true, 0);
@@ -543,6 +669,7 @@ public final class CanvasTile {
         active = false;
     }
 
+    /** Powder splat: Eden growth like {@link #stamp}, but every pixel is a flat pile pixel. */
     int stampPowder(int px, int py, int n, int colour, int now, int lifetime, RandomSource rng, List<int[]> spill) {
         int before = count;
         List<int[]> cells = new ArrayList<>();
@@ -575,6 +702,10 @@ public final class CanvasTile {
         return count - before;
     }
 
+    /**
+     * Lets one random painted pixel give up a unit of blood, returning {px, py, colour} or
+     * null when the tile is empty. Used for drips off ceilings.
+     */
     int[] releaseUnit(RandomSource rng) {
         if (count == 0) return null;
         int start = rng.nextInt(tone.length);
@@ -589,6 +720,13 @@ public final class CanvasTile {
         return null;
     }
 
+    // ------------------------------------------------------------------ pools
+
+    /**
+     * The pool - the 4-connected patch of liquid pixels - that contains (px, py), or touches
+     * it when that pixel itself is empty (the pixel just inside an edge a run pours over).
+     * Powder piles are not liquid and never join. Returns pixel indices, or an empty array.
+     */
     private int[] pool(int px, int py) {
         int seed = -1;
         if (liquid(px, py)) {
@@ -625,10 +763,16 @@ public final class CanvasTile {
         return tone[i] != EMPTY && !powder[i];
     }
 
+    /**
+     * One body of liquid: the pool at a pixel together with every pool it joins across block
+     * seams. A run over an edge drains the whole body - a basin with several sections empties
+     * as one - so neighbouring puddles sink too, if they are actually connected.
+     */
     static final class Body {
         final List<CanvasTile> tiles = new ArrayList<>();
         final List<int[]> pools = new ArrayList<>();
 
+        /** Volume (sum of depth) of the whole body. */
         int mass() {
             int m = 0;
             for (int k = 0; k < tiles.size(); k++) {
@@ -642,6 +786,12 @@ public final class CanvasTile {
             return tiles.contains(t);
         }
 
+        /**
+         * Takes one unit off the body's deepest level, at the pixel nearest the lip it pours
+         * over - with a couple of pixels of jitter, so the falling level frays outward from the
+         * outlet instead of sweeping across in a hard line. Returns false when nothing deeper
+         * than a film is left anywhere in the body.
+         */
         boolean draw(Vec3 lip, RandomSource rng) {
             int deepest = 1, best = -1;
             CanvasTile bestTile = null;
@@ -663,11 +813,15 @@ public final class CanvasTile {
             }
             if (bestTile == null) return false;
             bestTile.takeUnit(best);
-            bestTile.active = true;
+            bestTile.active = true; // let the relaxation even the surface out again
             return true;
         }
     }
 
+    /**
+     * The body of liquid at (px, py) on {@code start}: its pool plus, through {@code ctx}, the
+     * pools on neighbouring tiles that touch it across the seams, up to {@code maxTiles}.
+     */
     static Body body(CanvasTile start, int px, int py, FlowContext ctx, int maxTiles) {
         Body body = new Body();
         List<CanvasTile> seen = new ArrayList<>();
@@ -701,6 +855,7 @@ public final class CanvasTile {
         queue.add(new Object[]{n, xy[0], xy[1]});
     }
 
+    /** Whether water stands over the painted pixel (px, py): the spot just in front of it is below a fluid's surface. */
     boolean underWater(net.minecraft.client.multiplayer.ClientLevel level, int px, int py) {
         Vec3 c = pixelCenter(px, py);
         double fx = c.x + nx * 0.05, fy = c.y + ny * 0.05, fz = c.z + nz * 0.05;
@@ -709,6 +864,12 @@ public final class CanvasTile {
         return !fluid.isEmpty() && fy < bp.getY() + fluid.getHeight(level, bp);
     }
 
+    /**
+     * Water has come over part of this surface (a flooded hole, a waterlogged block): every
+     * painted pixel under its surface is washed off.
+     *
+     * @return the washed pixels as {px, py, colour}, for the caller to cloud up
+     */
     List<int[]> washUnderWater(net.minecraft.client.multiplayer.ClientLevel level) {
         List<int[]> washed = null;
         for (int i = 0; i < tone.length; i++) {
@@ -727,6 +888,7 @@ public final class CanvasTile {
         return washed;
     }
 
+    /** Takes one unit of depth from a pixel (removing it when the last unit goes). */
     private void takeUnit(int i) {
         if (depth[i] <= 1) {
             depth[i] = 0;
@@ -742,6 +904,17 @@ public final class CanvasTile {
     private static int unpackX(long k) { return (int) (k >> 32); }
     private static int unpackY(long k) { return (int) k; }
 
+    // ------------------------------------------------------------------ flow
+
+    /**
+     * One relaxation step of the puddle on a top face. Every pixel may move one unit to a
+     * neighbour: to a painted neighbour at least two units shallower (levelling), to an empty
+     * pixel when the source is deep enough (spreading), across a block seam to the tile that
+     * continues this surface, or over an open block edge (draining into a run down the side).
+     * Blood that is fenced in by walls simply gets deeper, and pours out once a wall goes.
+     *
+     * @return true when any blood moved (the tile stays active)
+     */
     boolean relax(FlowContext ctx, RandomSource rng, int now, int lifetime, boolean pattern) {
         if (custom || face != Direction.UP || count == 0) return false;
         boolean anyMoved = false;
@@ -757,6 +930,7 @@ public final class CanvasTile {
             if (d < 2 || moved[i] || powder[i]) continue;
             int x = i % pw, y = i / pw;
 
+            // Pick the lowest target among the four neighbours, in a random order for ties.
             int firstDir = rng.nextInt(4);
             int bestKind = -1, bestDepth = Integer.MAX_VALUE, bestIdx = -1, bestX = 0, bestY = 0;
             CanvasTile bestTile = null;
@@ -765,13 +939,14 @@ public final class CanvasTile {
                 int nx = x + (dir == 0 ? 1 : dir == 1 ? -1 : 0);
                 int ny = y + (dir == 2 ? 1 : dir == 3 ? -1 : 0);
                 if (inside(nx, ny)) {
-                    if (!paintable(nx, ny)) continue;
+                    if (!paintable(nx, ny)) continue; // covered by more of the block: blood stops there
                     int j = ny * pw + nx;
                     int nd = depth[j];
                     if (nd == 0 ? d >= SPREAD_DEPTH : d - nd >= 2) {
                         if (nd < bestDepth) { bestDepth = nd; bestKind = 0; bestIdx = j; }
                     }
                 } else if (ctx != null) {
+                    // Only deep enough blood may open a fresh tile on the neighbouring block.
                     CanvasTile other = ctx.across(this, nx, ny, xy, d >= SPREAD_DEPTH);
                     if (other != null && !other.paintable(xy[0], xy[1])) other = null;
                     if (other != null) {
@@ -780,6 +955,7 @@ public final class CanvasTile {
                             bestDepth = nd; bestKind = 1; bestTile = other; bestX = xy[0]; bestY = xy[1];
                         }
                     } else if (ctx.canDrain(this, nx, ny)) {
+                        // Over the edge counts as the lowest place there is.
                         if (-1 < bestDepth) { bestDepth = -1; bestKind = 2; bestX = nx; bestY = ny; }
                     }
                 }
@@ -788,6 +964,7 @@ public final class CanvasTile {
 
             int colour = rgb[i];
             if (bestKind == 2) {
+                // The run down the side may refuse (cooldown); then the blood stays put.
                 if (!ctx.drain(this, bestX, bestY, colour)) continue;
                 takeUnit(i);
             } else if (bestKind == 1) {
@@ -804,6 +981,7 @@ public final class CanvasTile {
         return anyMoved;
     }
 
+    /** A stride coprime with n, so a strided walk visits every pixel in a scrambled order. */
     private static int strideFor(int n, RandomSource rng) {
         int[] options = {1, 3, 5, 7, 11, 13, 17, 19};
         for (int tries = 0; tries < 8; tries++) {
@@ -815,6 +993,9 @@ public final class CanvasTile {
 
     private static int gcd(int a, int b) { return b == 0 ? a : gcd(b, a % b); }
 
+    // ------------------------------------------------------------------ aging
+
+    /** Shifts every pixel's birth tick back so the tile ages faster (rain). */
     void accelerateAging(int ticks) {
         for (int i = 0; i < born.length; i++) {
             if (tone[i] != EMPTY) born[i] -= ticks;
@@ -822,6 +1003,11 @@ public final class CanvasTile {
         dirty = true;
     }
 
+    /**
+     * Ages the pixels: deep blood dries shallower, expired pixels vanish, and thin film is
+     * eroded from the edge inward during the last part of its life. Returns true when the
+     * image needs re-uploading.
+     */
     boolean age(int now, RandomSource rng) {
         boolean changed = dirty;
         for (int i = 0; i < tone.length; i++) {
@@ -833,15 +1019,16 @@ public final class CanvasTile {
                 count--;
                 changed = true;
             } else if (depth[i] > 1 && agePct > (depth[i] > 2 ? 50 : 70)) {
-                depth[i]--;
+                depth[i]--; // drying: the pool sinks into a film before it fades
                 changed = true;
             } else if (agePct > 60 && depth[i] == 1 && isEdge(i) && rng.nextInt(100) < (agePct - 60) / 2) {
+                // Erode edge pixels progressively so a puddle shrinks instead of blinking out.
                 depth[i] = 0;
                 tone[i] = EMPTY;
                 count--;
                 changed = true;
             } else if (agePct > 30 && ((now + slot) & 63) == 0) {
-                changed = true;
+                changed = true; // tone/alpha keeps evolving with age; refresh every ~3 s, staggered per tile
             }
         }
         return changed;
@@ -854,6 +1041,14 @@ public final class CanvasTile {
                 || tone[i - pw] == EMPTY || tone[i + pw] == EMPTY;
     }
 
+    // ------------------------------------------------------------------ upload
+
+    /**
+     * Edge class per pixel for puddle lighting: 0 empty, 1 rim with one open side (shadowed),
+     * 4 rim with two or more open sides (a corner or a thin tip: left plain so corners do not
+     * go dark), 2 one pixel in from the rim (highlight), 3 interior. Pixels on the tile
+     * border consult the neighbouring tile so a puddle crossing a block seam has no false rim.
+     */
     private byte[] edgeClasses(NeighbourLookup lookup) {
         byte[] cls = new byte[tone.length];
         for (int i = 0; i < tone.length; i++) {
@@ -877,7 +1072,7 @@ public final class CanvasTile {
     }
 
     private boolean isRim(byte[] cls, int x, int y) {
-        if (!inside(x, y)) return false;
+        if (!inside(x, y)) return false; // beyond the seam: assume interior
         byte c = cls[y * pw + x];
         return c == 1 || c == 4;
     }
@@ -887,6 +1082,8 @@ public final class CanvasTile {
         return lookup != null && lookup.filledAcross(this, x, y);
     }
 
+    /** Rewrites the tile image from the pixel state and uploads it into the atlas. */
+    /** Depth averaged over the liquid pixels within two of (x, y), nearer ones weighing more. */
     private float smoothDepth(int x, int y) {
         float sum = 0, weight = 0;
         for (int dy = -2; dy <= 2; dy++) {
@@ -905,6 +1102,7 @@ public final class CanvasTile {
         return weight == 0 ? depth[y * pw + x] : sum / weight;
     }
 
+    /** Age fraction averaged over the liquid pixels within one of (x, y). */
     private float smoothAge(float[] ages, int x, int y) {
         float sum = 0, weight = 0;
         for (int dy = -1; dy <= 1; dy++) {
@@ -926,7 +1124,7 @@ public final class CanvasTile {
     void refresh(BloodCanvasAtlas atlas, int now, float opacity, NeighbourLookup lookup) {
         if (slot < 0) {
             slot = atlas.acquireSlot();
-            if (slot < 0) return;
+            if (slot < 0) return; // atlas full; tile stays invisible until a slot frees up
         }
         if (image == null) {
             image = new NativeImage(pw, ph, true);
@@ -934,10 +1132,15 @@ public final class CanvasTile {
         if (spec == null && atlas.wantsSpecular()) {
             spec = new NativeImage(pw, ph, true);
         }
+        // Puddles on top faces get a darker rim and a lighter ring just inside it, which reads
+        // as a thin film of liquid catching the light. Tiny specks stay plain.
         boolean puddle = !custom && face == Direction.UP && count > 2;
         byte[] cls = puddle ? edgeClasses(lookup) : null;
         ripples.removeIf(r -> now - r[2] >= RIPPLE_TICKS);
 
+        // Every pixel was painted at its own moment and lives its own jittered life; taken raw
+        // that shows as specks drying and fading at random all over a puddle. The age used
+        // for shading is blended over the neighbourhood so the whole pool dries together.
         float[] ages = new float[tone.length];
         for (int i = 0; i < tone.length; i++) {
             ages[i] = tone[i] == EMPTY || powder[i] ? -1 : (now - born[i]) / (float) Math.max(1, life[i]);
@@ -946,7 +1149,7 @@ public final class CanvasTile {
         float glowSum = 0f;
         for (int i = 0; i < tone.length; i++) {
             int x = i % pw, y = i / pw;
-            if (spec != null) Pixels.setAbgr(spec, x, y, 0);
+            if (spec != null) Pixels.setAbgr(spec, x, y, 0); // matte unless wet liquid below
             if (tone[i] == EMPTY) {
                 Pixels.setAbgr(image, x, y, 0);
                 continue;
@@ -954,6 +1157,7 @@ public final class CanvasTile {
             int age = now - born[i];
             float agePct = age / (float) Math.max(1, life[i]);
             if (powder[i]) {
+                // Snow: one flat tone, fully opaque, just melts away at the end of its life.
                 int c = rgb[i];
                 float alpha = opacity;
                 if (agePct > 0.6f) alpha *= 1.0f - (agePct - 0.6f) / 0.4f;
@@ -962,20 +1166,27 @@ public final class CanvasTile {
             }
             int t = tone[i];
             float shade = smoothAge(ages, x, y);
-            float dry = Math.max(0f, Math.min(1f, (shade - 0.35f) / 0.35f));
+            float dry = Math.max(0f, Math.min(1f, (shade - 0.35f) / 0.35f)); // 0 fresh .. 1 dried
             if ((rgb[i] & BloodColor.GLOW_BIT) != 0) glowSum += 1f - dry;
+            // Depth drives everything: a film has no relief and shows the block through it,
+            // a deep pool has a clear dark edge, a bright ring and is opaque. The depth is
+            // blended over the neighbourhood so a level that drops in a front, as a draining
+            // puddle's does, shades as a soft gradient rather than a step.
             float sd = smoothDepth(x, y);
             float deep = Math.min(1.0f, (sd - 1) / 3.0f);
             float f;
             if (puddle && cls[i] != 3) {
-                float k = deep * (1.0f - 0.5f * dry);
+                float k = deep * (1.0f - 0.5f * dry); // drying flattens the relief
                 if (cls[i] == 1) f = 1.0f - 0.22f * k;
                 else if (cls[i] == 2) f = 1.0f + 0.30f * k;
                 else f = 1.0f;
             } else {
                 f = TONE_FACTOR[t];
             }
-            f *= 1.0f - 0.16f * dry;
+            f *= 1.0f - 0.16f * dry; // dried blood is darker, evenly across the pool
+            // A landing ripple: a ring that expands, widens slightly and fades out, weaker as
+            // it nears the rim of the pool. Faint - a shade lighter and barely more see-through -
+            // so it reads as a wave on the surface rather than a band.
             float rippleAlpha = 1.0f;
             for (int[] r : ripples) {
                 double radius = (now - r[2]) * 0.45 + 0.5;
@@ -995,20 +1206,29 @@ public final class CanvasTile {
             int g = clamp((int) (((c >> 8) & 0xFF) * f));
             int b = clamp((int) ((c & 0xFF) * f));
             float alpha = opacity;
-            alpha *= 0.62f + 0.38f * Math.min(1.0f, (sd - 1) / 2.0f);
-            alpha *= 1.0f - 0.18f * thin[i];
+            alpha *= 0.62f + 0.38f * Math.min(1.0f, (sd - 1) / 2.0f);       // film shows the surface through
+            alpha *= 1.0f - 0.18f * thin[i];                                 // a running film even more so
             alpha *= rippleAlpha;
             if (shade > 0.75f) alpha *= 1.0f - Math.min(1f, (shade - 0.75f) / 0.25f);
             Pixels.setAbgr(image, x, y, Pixels.packAbgr(r, g, b, clamp((int) (alpha * 255))));
+            // Banner cloth soaks the blood up: it stays matte.
             if (spec != null && swayPivot == null) Pixels.setAbgr(spec, x, y, wetSpecular(deep, thin[i], dry));
         }
+        // The tile lights itself by the share of fresh glowing blood on it: full for a fresh
+        // glowing puddle, nothing once it has dried.
         glow = count == 0 ? 0 : Math.round(15f * Math.min(1f, glowSum / count));
         atlas.upload(slot, image, spec);
         dirty = false;
     }
 
+    /** labPBR F0 of blood: a plain dielectric liquid, about water's 0.02. */
     private static final int F0_BLOOD = 6;
 
+    /**
+     * labPBR specular texel of a liquid pixel (R smoothness, G F0, B porosity, A 255 = no
+     * emission): glossy while wet, deep pools most and running films a little less, going
+     * matte as the pool dries.
+     */
     private static int wetSpecular(float deep, int thinLevel, float dry) {
         float smooth = (0.78f + 0.20f * deep - 0.06f * thinLevel) * (1.0f - dry);
         return Pixels.packAbgr(clamp((int) (smooth * 255)), F0_BLOOD, 0, 255);
@@ -1016,6 +1236,7 @@ public final class CanvasTile {
 
     private static int clamp(int v) { return v < 0 ? 0 : Math.min(255, v); }
 
+    /** Releases GPU slot and native memory. */
     void dispose(BloodCanvasAtlas atlas) {
         if (atlas != null) atlas.releaseSlot(slot);
         slot = -1;

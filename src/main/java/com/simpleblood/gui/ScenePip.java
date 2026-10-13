@@ -1,3 +1,7 @@
+// Picture-in-picture plumbing for the 3D preview. The GUI generations differ enough that each
+// is a complete top-level block (Stonecutter cannot nest commented-out blocks). Nothing on
+// 1.21.1, which draws the scene directly.
+
 //? if >=1.21.11 && <26.1 {
 /*package com.simpleblood.gui;
 
@@ -62,6 +66,8 @@ public final class ScenePip {
         }
     }
 
+    // ------------------------------------------------------------------ buffers
+
     /^* Vertices go straight into the buffer source the game hands the PIP renderer. ^/
     public static SceneRenderer.Buffers bufferSourceBuffers(net.minecraft.client.renderer.MultiBufferSource.BufferSource source, PoseStack pose) {
         return new SceneRenderer.Buffers() {
@@ -90,10 +96,17 @@ import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * The picture-in-picture element that carries a {@link PreviewScene} through the deferred GUI
+ * renderer of 1.21.11 and later: a render state describing the box and view, and a renderer
+ * that draws the scene into the offscreen texture the game blits into the screen. (1.21.1
+ * draws the scene straight into the GUI instead; see {@link Gfx#scene}.)
+ */
 public final class ScenePip {
 
     private ScenePip() {}
 
+    /** One diorama to draw: which scene, the view, and the screen box it fills. */
     public record State(PreviewScene scene, float yaw, float pitch, Vec3 focus,
                         int x0, int y0, int x1, int y1, float scale,
                         ScreenRectangle scissorArea, ScreenRectangle bounds)
@@ -106,6 +119,7 @@ public final class ScenePip {
         }
     }
 
+    /** Draws the scene into the PIP texture. */
     public static final class Renderer extends net.minecraft.client.gui.render.pip.PictureInPictureRenderer<State> {
 
         public Renderer(net.minecraft.client.renderer.MultiBufferSource.BufferSource bufferSource) {
@@ -119,6 +133,7 @@ public final class ScenePip {
             SceneRenderer.draw(state.scene(), pose, bufferSourceBuffers(bufferSource, pose), state.yaw(), state.pitch(), state.focus());
         }
 
+        /** The pose arrives at the bottom centre of the texture; move the focus to the middle. */
         private static void centre(State state, PoseStack pose) {
             float halfHeight = (state.y1() - state.y0()) / 2f / Math.max(0.001f, state.scale());
             pose.translate(0f, -halfHeight, 0f);
@@ -135,6 +150,9 @@ public final class ScenePip {
         }
     }
 
+    // ------------------------------------------------------------------ buffers
+
+    /** Vertices go straight into the buffer source the game hands the PIP renderer. */
     public static SceneRenderer.Buffers bufferSourceBuffers(net.minecraft.client.renderer.MultiBufferSource.BufferSource source, PoseStack pose) {
         return new SceneRenderer.Buffers() {
             @Override
@@ -216,6 +234,8 @@ public final class ScenePip {
             return "simpleblood_scene";
         }
     }
+
+    // ------------------------------------------------------------------ buffers
 
     /^* Vertices are handed to the submit-node collector as custom geometry. ^/
     public static SceneRenderer.Buffers collectorBuffers(net.minecraft.client.renderer.SubmitNodeCollector collector, PoseStack pose) {

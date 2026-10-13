@@ -16,12 +16,14 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
+// NeoForge client entrypoint. Wiring only; behaviour lives in the shared SimpleBloodClient.
 @Mod(value = "simpleblood", dist = Dist.CLIENT)
 public class SimpleBloodNeoForge {
 
     public SimpleBloodNeoForge(IEventBus modBus, ModContainer container) {
         SimpleBlood.LOGGER.info("Simple Blood (NeoForge) initializing...");
 
+        // Particle types register onto the mod event bus.
         BloodParticles.REGISTRY.register(modBus);
 
         modBus.addListener(this::onClientSetup);
@@ -31,6 +33,7 @@ public class SimpleBloodNeoForge {
         NeoForgePreviewHook.register(modBus);
         NeoForgeConfigAccessHook.register();
 
+        // In-game settings screen (the mods list "Config" button).
         container.registerExtensionPoint(
                 net.neoforged.neoforge.client.gui.IConfigScreenFactory.class,
                 (mc, parent) -> new com.simpleblood.gui.BloodConfigScreen(parent));
@@ -43,6 +46,7 @@ public class SimpleBloodNeoForge {
     }
 
     private void onRegisterParticleProviders(RegisterParticleProvidersEvent event) {
+        // Bind the direct SimpleParticleType handles now that the registry is frozen.
         BloodParticles.bind();
         event.registerSpriteSet(BloodParticles.BLOOD_DRIP, BloodParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BLOOD_SPLASH, sprites -> new BloodParticle.Factory(sprites, true));
@@ -87,14 +91,18 @@ import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLEnvironment;
 
+// NeoForge 1.20.1 client entrypoint. NeoForge 1.20.1 is the Forge 47.1 fork, so this is Forge
+// code and runs on MinecraftForge 1.20.1 too. Wiring only; behaviour lives in SimpleBloodClient.
 @Mod("simpleblood")
 public class SimpleBloodNeoForge {
 
     public SimpleBloodNeoForge() {
+        // @Mod has no dist here: on a dedicated server the mod just stays out of the way.
         if (FMLEnvironment.dist != Dist.CLIENT) return;
         SimpleBlood.LOGGER.info("Simple Blood (NeoForge) initializing...");
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
 
+        // Particle types register onto the mod event bus.
         BloodParticles.REGISTRY.register(modBus);
 
         modBus.addListener(this::onClientSetup);
@@ -104,6 +112,7 @@ public class SimpleBloodNeoForge {
         NeoForgePreviewHook.register(modBus);
         NeoForgeConfigAccessHook.register();
 
+        // In-game settings screen (the mods list "Config" button).
         ModLoadingContext.get().registerExtensionPoint(ConfigScreenHandler.ConfigScreenFactory.class,
                 () -> new ConfigScreenHandler.ConfigScreenFactory((mc, parent) -> new com.simpleblood.gui.BloodConfigScreen(parent)));
 
@@ -115,6 +124,7 @@ public class SimpleBloodNeoForge {
     }
 
     private void onRegisterParticleProviders(RegisterParticleProvidersEvent event) {
+        // Bind the direct SimpleParticleType handles now that the registry is frozen.
         BloodParticles.bind();
         event.registerSpriteSet(BloodParticles.BLOOD_DRIP, BloodParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BLOOD_SPLASH, sprites -> new BloodParticle.Factory(sprites, true));

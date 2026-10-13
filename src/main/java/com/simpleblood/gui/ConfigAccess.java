@@ -15,6 +15,16 @@ import net.minecraft.network.chat.contents.TranslatableContents;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Ways into the settings screen that need no mod-list mod and no key: the client command
+ * {@code /simpleblood}, and a small "Blood" button on the title and pause screens.
+ *
+ * The button can be switched off in the settings (General); the command stays. It finds its
+ * own spot. One tick after a screen has finished building - by which
+ * time every other mod has added whatever it adds - it tries a few places around the vanilla
+ * button grid and takes the first one that touches nothing already there. If every spot is
+ * taken it simply stays away; the command always works.
+ */
 public final class ConfigAccess {
 
     private ConfigAccess() {}
@@ -27,16 +37,19 @@ public final class ConfigAccess {
     private static Screen pending;
     private static Button placed;
 
+    /** The command asked for the screen; it opens on the next tick, once the chat has closed. */
     public static void requestOpen() {
         openRequested = true;
     }
 
+    /** A screen finished building; the title and pause screens get the button on the next tick. */
     public static void screenInitialised(Screen screen) {
         com.simpleblood.SimpleBloodConfig cfg = com.simpleblood.SimpleBloodClient.getConfig();
         if (cfg != null && !cfg.general.menuButton) return;
         if (screen instanceof TitleScreen || screen instanceof PauseScreen) pending = screen;
     }
 
+    /** From the client tick, paused or not. */
     public static void tick(Minecraft mc) {
         if (openRequested) {
             openRequested = false;
@@ -61,6 +74,8 @@ public final class ConfigAccess {
             }
         }
         int sw = screen.width, sh = screen.height;
+        // Vanilla's button grid is 200-204 px wide and centred; the rows that matter are found
+        // from the Options button so the button lines up with them at any size.
         int gridLeft = sw / 2 - 102, gridRight = sw / 2 + 102;
         int top = Integer.MAX_VALUE;
         for (AbstractWidget w : widgets) if (w.getY() > 20 && w.getX() >= gridLeft - 10 && w.getX() <= gridRight) top = Math.min(top, w.getY());
@@ -91,7 +106,10 @@ public final class ConfigAccess {
     }
 
     //? if neoforge && 1.20.1 {
-    /*    private static java.lang.reflect.Method addRenderableWidget;
+    /*// Forge 1.20.1: the Mixin annotation processor cannot map the generic addRenderableWidget
+    // for ScreenInvoker (no refmap entry), so that mixin is left out there and the method is
+    // found by its SRG name, which Forge maps to whatever names the game runs with.
+    private static java.lang.reflect.Method addRenderableWidget;
 
     private static void addWidget(Screen screen, Button b) {
         try {
@@ -106,6 +124,7 @@ public final class ConfigAccess {
     }
 
     *///?}
+    /** Nothing already on the screen within two pixels of the rectangle. */
     private static boolean free(List<AbstractWidget> widgets, int x, int y) {
         for (AbstractWidget w : widgets) {
             if (x < w.getX() + w.getWidth() + 2 && x + W + 2 > w.getX()

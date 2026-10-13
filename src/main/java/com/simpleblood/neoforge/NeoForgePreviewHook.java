@@ -1,3 +1,7 @@
+// Registers the settings screen's 3D diorama as a picture-in-picture GUI element on NeoForge.
+// Each game generation is a complete top-level block (Stonecutter cannot nest commented-out
+// blocks). 1.20.1 and 1.21.1 draw the scene directly and need nothing here.
+
 //? if neoforge && 1.20.1 {
 /*package com.simpleblood.neoforge;
 

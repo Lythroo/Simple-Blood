@@ -9,6 +9,7 @@ import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
 import net.minecraft.network.chat.Component;
 
+/** Fabric wiring for {@link ConfigAccess}: the screen-built event and the client command. */
 final class FabricConfigAccessHook {
     private FabricConfigAccessHook() {}
 
@@ -23,6 +24,7 @@ final class FabricConfigAccessHook {
                             return 1;
                         }))
                         .then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("reset").executes(ctx -> {
+                            // Every part that an error switched off comes back.
                             com.simpleblood.Guard.reset();
                             ctx.getSource().sendFeedback(Component.literal("Simple Blood: everything back on."));
                             return 1;

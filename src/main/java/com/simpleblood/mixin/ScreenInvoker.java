@@ -7,6 +7,7 @@ import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
+/** Lets the mod drop its settings button onto another screen the way that screen adds its own widgets. */
 @Mixin(Screen.class)
 public interface ScreenInvoker {
     @Invoker("addRenderableWidget")

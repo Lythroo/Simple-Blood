@@ -1,3 +1,5 @@
+// One variant per render API generation; Stonecutter cannot nest conditions in a commented-out block.
+
 //? if >=26.1 && <26.2 {
 package com.simpleblood.particle;
 
@@ -7,6 +9,10 @@ import com.mojang.blaze3d.pipeline.DepthStencilState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
 import net.minecraft.client.renderer.RenderPipelines;
 
+/**
+ * The game pipeline for see-through entities ({@code RenderPipelines.ENTITY_TRANSLUCENT}) rebuilt
+ * for {@link UnderwaterParticles}: the same, except that it writes no depth.
+ */
 final class CloudPipeline {
     private CloudPipeline() {}
 
@@ -21,6 +27,7 @@ final class CloudPipeline {
                     .withSampler("Sampler1")
                     .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
                     .withCull(false)
+                    // Written depth would cut the water surface out wherever it lies behind a cloud.
                     .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false))
                     .build();
         }
@@ -57,6 +64,7 @@ final class CloudPipeline {
                     .withBindGroupLayout(BindGroupLayouts.SAMPLER1)
                     .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
                     .withCull(false)
+                    // Written depth would cut the water surface out wherever it lies behind a cloud.
                     .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false))
                     .build();
         }
@@ -93,6 +101,7 @@ final class CloudPipeline {
                     .withBindGroupLayout(BindGroupLayouts.SAMPLER1)
                     .withColorTargetState(new ColorTargetState(BlendFunction.TRANSLUCENT))
                     .withCull(false)
+                    // Written depth would cut the water surface out wherever it lies behind a cloud.
                     .withDepthStencilState(new DepthStencilState(DepthStencilState.DEFAULT.depthTest(), false))
                     .build();
         }

@@ -25,8 +25,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
+/**
+ * Keeps the game alive when something in this mod breaks. Every way into the mod (the render
+ * hooks, the ticks, the particles, the mixins, the settings screen, the API) runs through
+ * here: an exception is caught, the part it came from is switched off, a report with the
+ * full stack trace goes to the log, to {@code logs/simpleblood-error.txt} and into the chat
+ * as a click-to-copy message, and the game carries on without that part. Other mods can
+ * reach us from any thread, so everything here is thread-safe, and nothing here throws.
+ */
 public final class Guard {
 
+    /** The parts of the mod that can be switched off on their own. */
     public enum Part {
         HITS("hit and death detection", true),
         PARTICLES("blood particles", true),
@@ -36,6 +45,7 @@ public final class Guard {
         OTHER("Simple Blood", false);
 
         public final String label;
+        /** Whether a failure switches the part off until {@link #reset} (the screen: until it is opened again). */
         final boolean fuse;
 
         Part(String label, boolean fuse) {
@@ -46,6 +56,7 @@ public final class Guard {
 
     public static final String ISSUES_URL = "https://github.com/Lythroo/Simple-Blood/issues";
     private static final String REPORT_FILE = "logs/simpleblood-error.txt";
+    /** Full reports for the same part are logged at most this often; the rest get one line. */
     private static final long LOG_INTERVAL_MS = 10_000;
 
     private static final AtomicBoolean[] OFF = new AtomicBoolean[Part.values().length];
@@ -58,16 +69,20 @@ public final class Guard {
             LAST_LOG[i] = new AtomicLong(Long.MIN_VALUE / 2);
         }
     }
+    /** Chat lines waiting for a player to show them to. */
     private static final Queue<Component> PENDING = new ConcurrentLinkedQueue<>();
+    /** Every report of this session, for the file. */
     private static final List<String> REPORTS = new ArrayList<>();
     private static volatile boolean closeScreen;
 
     private Guard() {}
 
+    /** Whether a part is still allowed to run. */
     public static boolean ok(Part part) {
         return !OFF[part.ordinal()].get();
     }
 
+    /** Runs {@code task} unless its part is off; a throw switches the part off and reports it. */
     public static void run(Part part, String doing, Runnable task) {
         if (!ok(part)) return;
         try {
@@ -77,6 +92,7 @@ public final class Guard {
         }
     }
 
+    /** Like {@link #run}, returning {@code fallback} when the part is off or the task throws. */
     public static <T> T call(Part part, String doing, Supplier<T> task, T fallback) {
         if (!ok(part)) return fallback;
         try {
@@ -87,8 +103,14 @@ public final class Guard {
         }
     }
 
+    /**
+     * Records a failure: switches the part off when it is one that can be, writes the report
+     * everywhere and tells the player once per part and session.
+     *
+     * @param doing what was going on, e.g. "drawing blood on blocks"
+     */
     public static void fail(Part part, String doing, Throwable t) {
-        if (t instanceof OutOfMemoryError oom) throw oom;
+        if (t instanceof OutOfMemoryError oom) throw oom; // nothing sensible left to do
         try {
             int i = part.ordinal();
             if (part.fuse) OFF[i].set(true);
@@ -112,18 +134,22 @@ public final class Guard {
                 RenderThread.run(Guard::toast);
             }
         } catch (Throwable ignored) {
+            // The guard itself must never take the game down.
         }
     }
 
+    /** Puts every part back into service (a new world, or {@code /simpleblood reset}). */
     public static void reset() {
         for (AtomicBoolean off : OFF) off.set(false);
     }
 
+    /** The settings screen was opened by hand: let it try again. */
     public static void retryScreen() {
         OFF[Part.SCREEN.ordinal()].set(false);
         closeScreen = false;
     }
 
+    /** From the client tick: hands waiting chat lines to the player, closes a broken screen. */
     public static void tick(Minecraft mc) {
         try {
             selfTest(mc);
@@ -139,11 +165,13 @@ public final class Guard {
                 Chat.say(line);
             }
         } catch (Throwable ignored) {
+            // Never from here.
         }
     }
 
     private static boolean tested;
 
+    /** {@code -Dsimpleblood.testError=surfaces} (or hits, particles, screen) raises one made-up error once a player exists, to see all of this at work. */
     private static void selfTest(Minecraft mc) {
         if (tested || mc.player == null) return;
         String want = System.getProperty("simpleblood.testError");
@@ -155,6 +183,8 @@ public final class Guard {
             }
         }
     }
+
+    // ------------------------------------------------------------------ the report
 
     private static String report(Part part, String doing, Throwable t) {
         StringBuilder sb = new StringBuilder(4096);
@@ -186,6 +216,7 @@ public final class Guard {
         return sw.toString().replace("\r\n", "\n").stripTrailing();
     }
 
+    /** The settings without the two mob tables, on one line. */
     private static String settings() {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (cfg == null) return "(none)";
@@ -220,8 +251,11 @@ public final class Guard {
             }
             Files.writeString(path, all + "\n");
         } catch (Throwable ignored) {
+            // The log has it.
         }
     }
+
+    // ------------------------------------------------------------------ telling the player
 
     private static List<Component> message(Part part, String report) {
         MutableComponent head = Component.literal("Simple Blood: error in " + part.label + ". ").withStyle(ChatFormatting.RED);
@@ -254,10 +288,11 @@ public final class Guard {
         return lines;
     }
 
+    /** A small toast as well, for errors outside a world (the title screen, the settings screen). */
     private static void toast() {
         try {
             Minecraft mc = Minecraft.getInstance();
-            if (mc == null || mc.player != null) return;
+            if (mc == null || mc.player != null) return; // the chat has it
             Component title = Component.literal("Simple Blood: error");
             Component text = Component.literal("See " + REPORT_FILE);
             //? if 1.20.1 {
@@ -270,6 +305,7 @@ public final class Guard {
             /*SystemToast.add(mc.gui.toastManager(), new SystemToast.SystemToastId(8000L), title, text);
             *///?}
         } catch (Throwable ignored) {
+            // Never from here.
         }
     }
 }

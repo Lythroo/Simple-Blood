@@ -9,6 +9,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * Notices critical-hit animations (the vanilla crit particles) so the following damage
+ * burst can be sharper. Injected at the tail: the packet handler re-dispatches itself onto
+ * the render thread at its head, and only the on-thread call reaches the end.
+ */
 @Mixin(ClientPacketListener.class)
 public class ClientPacketListenerMixin {
 

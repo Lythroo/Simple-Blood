@@ -3,6 +3,12 @@ package com.simpleblood.mixin;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
+/**
+ * Reaches the GUI render state behind the graphics object, so the settings screen can queue
+ * its 3D diorama as a picture-in-picture element (there is no public way to submit a custom
+ * one). On 1.21.1 the GUI is drawn immediately and no such state exists; the accessor then
+ * just points at a harmless field so the mixin still applies.
+ */
 //? if <=1.21.1 {
 /*@Mixin(net.minecraft.client.gui.GuiGraphics.class)
 public interface GuiRenderStateAccessor {

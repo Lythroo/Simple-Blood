@@ -16,6 +16,11 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * Blood left on the thing that hurt you: the stalagmite you landed on, the cactus you
+ * brushed, the ground under the berry bush that scratched you. Called from the damage
+ * mixin with the client-side damage source.
+ */
 public final class EnvironmentalStains {
 
     private EnvironmentalStains() {}
@@ -38,6 +43,7 @@ public final class EnvironmentalStains {
         }
     }
 
+    /** Every pointed dripstone tip under the entity's feet gets coated and starts running. */
     private static void stalagmites(ClientLevel level, LivingEntity entity, int colour, float amount) {
         AABB box = entity.getBoundingBox();
         int y0 = (int) Math.floor(box.minY - 0.05);
@@ -55,6 +61,7 @@ public final class EnvironmentalStains {
         }
     }
 
+    /** Splat on the cactus face the entity is pressed against, running down it. */
     private static void cactus(ClientLevel level, LivingEntity entity, int colour, float amount) {
         AABB box = entity.getBoundingBox().inflate(0.15, 0, 0.15);
         for (int x = (int) Math.floor(box.minX); x <= (int) Math.floor(box.maxX); x++) {
@@ -62,6 +69,7 @@ public final class EnvironmentalStains {
                 for (int z = (int) Math.floor(box.minZ); z <= (int) Math.floor(box.maxZ); z++) {
                     BlockPos pos = new BlockPos(x, y, z);
                     if (!level.getBlockState(pos).is(Blocks.CACTUS)) continue;
+                    // Which face looks at the entity?
                     Vec3 centre = entity.position().add(0, entity.getBbHeight() * 0.5, 0);
                     double dx = centre.x - (x + 0.5), dz = centre.z - (z + 0.5);
                     Direction face = Math.abs(dx) > Math.abs(dz)
@@ -79,6 +87,7 @@ public final class EnvironmentalStains {
         }
     }
 
+    /** A few drops on the ground beneath the bush (the bush itself has no surfaces). */
     private static void berryBush(ClientLevel level, LivingEntity entity, int colour, float amount) {
         Vec3 feet = entity.position();
         BloodSurfaces.Hit hit = BloodSurfaces.trace(level, feet.add(0, 0.2, 0), feet.add(0, -1.0, 0));

@@ -3,6 +3,7 @@ package com.simpleblood;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 
+/** A line in the player's chat, from the render thread (the call is handed over from anywhere else). */
 public final class Chat {
 
     private Chat() {}

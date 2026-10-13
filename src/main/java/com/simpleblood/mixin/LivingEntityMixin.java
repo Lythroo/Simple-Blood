@@ -18,6 +18,19 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * Client-side hit/death detection.
+ *
+ * Per-entity tracking is stored in {@code @Unique} instance fields rather than static
+ * maps keyed by entity id. Because each {@link LivingEntity} carries its own mixin
+ * state, the data is garbage-collected with the entity - no manual cleanup and no
+ * unbounded growth when entities unload or change dimensions.
+ *
+ * Damage is detected from the synced health value (which carries the amount, for burst
+ * scaling), while {@code handleDamageEvent} - fired just before the health sync - gives
+ * us the {@link DamageSource}. Correlating the two lets a fish bleed when it is *hit*
+ * out of water, yet stay dry when it is merely drowning / suffocating / drying out.
+ */
 @Mixin(LivingEntity.class)
 public class LivingEntityMixin implements BloodEntityAccess {
 
@@ -58,6 +71,8 @@ public class LivingEntityMixin implements BloodEntityAccess {
         return age >= 0 && age <= 3;
     }
 
+    // The wound is kept in body space (relative to the feet, unrotated by the body yaw) so
+    // it stays on the same patch of skin while the mob walks and turns.
     @Unique
     private net.minecraft.world.phys.Vec3 simpleblood$woundLocal = null;
 
@@ -79,16 +94,28 @@ public class LivingEntityMixin implements BloodEntityAccess {
         return self.position().add(simpleblood$woundLocal.yRot((float) -Math.toRadians(self.yBodyRot)));
     }
 
+    /**
+     * Capture the damage source client-side. This fires when the server's damage event
+     * packet arrives (for the hurt animation/sound), just before the health sync.
+     */
     @Inject(method = "handleDamageEvent", at = @At("HEAD"))
     private void simpleblood$captureDamageSource(DamageSource source, CallbackInfo ci) {
         simpleblood$recentSource = source;
         simpleblood$recentSourceTick = ((LivingEntity) (Object) this).tickCount;
     }
 
+    /**
+     * Detect a health decrease and emit a hit burst. Comparing the tracked health value
+     * is more robust than watching a specific data-accessor id.
+     *
+     * Runs inside vanilla's packet handling, so nothing in here may throw: an error is
+     * caught, reported, and hit detection is switched off.
+     */
     @Inject(method = "onSyncedDataUpdated", at = @At("HEAD"))
     private void onTrackedDataSet(EntityDataAccessor<?> data, CallbackInfo ci) {
         if (!com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.HITS)) return;
         if (!com.simpleblood.RenderThread.on()) {
+            // Some mod handed us entity data off the render thread: everything we do belongs there.
             com.simpleblood.RenderThread.run(() -> onTrackedDataSet(data, ci));
             return;
         }
@@ -113,6 +140,7 @@ public class LivingEntityMixin implements BloodEntityAccess {
         float currentHealth = entity.getHealth();
         float previous = simpleblood$lastHealth;
 
+        // First observation or health did not drop: just record and bail.
         if (Float.isNaN(previous) || currentHealth >= previous) {
             simpleblood$lastHealth = currentHealth;
             return;
@@ -121,16 +149,23 @@ public class LivingEntityMixin implements BloodEntityAccess {
         float damage = previous - currentHealth;
         simpleblood$lastHealth = currentHealth;
 
+        // Ignore health "drops" that are really the entity's health initialising on
+        // spawn (staged max-health sync, e.g. horses/donkeys/llamas). Genuine damage
+        // always leaves the entity below its max health.
         if (entity.tickCount < 10 || currentHealth >= entity.getMaxHealth()) {
             return;
         }
 
+        // Prefer the authoritative DamageSource captured from handleDamageEvent so a
+        // combat hit still bleeds even out of water. Fall back to the positional
+        // heuristic only when no fresh damage event is available.
         int sourceAge = entity.tickCount - simpleblood$recentSourceTick;
         boolean freshSource = simpleblood$recentSource != null && sourceAge >= 0 && sourceAge <= 2;
         if (freshSource) {
             if (!SimpleBlood.shouldBleedFrom(entity, simpleblood$recentSource)) {
-                return;
+                return; // asphyxiation / suppressed damage type - no blood
             }
+            // Blood on whatever did the hurting: stalagmites, cactus, berry bushes.
             if (SimpleBlood.shouldEntityBleed(entity)) {
                 com.simpleblood.surface.EnvironmentalStains.onDamage(clientWorld, entity, simpleblood$recentSource, damage);
             }
@@ -138,6 +173,8 @@ public class LivingEntityMixin implements BloodEntityAccess {
             return;
         }
 
+        // Spam prevention using the configured cooldown. A player's killing blow is never
+        // held back by it: that one has to show.
         boolean playerDied = entity instanceof Player && currentHealth <= 0.0f && previous > 0.0f;
         long now = System.currentTimeMillis();
         if (!playerDied && now - simpleblood$lastDamageTime < SimpleBloodClient.getConfig().damageCooldownMs()) {
@@ -160,15 +197,21 @@ public class LivingEntityMixin implements BloodEntityAccess {
                     simpleblood$critRecently(), previous);
             simpleblood$lastContext = ctx;
             simpleblood$lastContextTick = entity.tickCount;
-            simpleblood$setWound(ctx.wound);
+            simpleblood$setWound(ctx.wound); // later drips come from here too
             SimpleBloodClient.addBurstTask(new ClientBloodBurstTask(clientWorld, entity, ctx));
-            if (!playerDied) com.simpleblood.Giblets.hit(clientWorld, entity, ctx);
+            if (!playerDied) com.simpleblood.Giblets.hit(clientWorld, entity, ctx); // a death throws its own
+            if (!playerDied) com.simpleblood.mob.MobBlood.hit(entity, ctx);
+            // The client never calls die() for players (its own or anyone else's), so a
+            // player's killing blow is recognised here instead: health gone, death burst.
             if (playerDied && cfg.deathBurstEnabled()) {
                 ClientBloodParticleSpawner.spawnBloodOnDeath(clientWorld, entity, ctx);
             }
         }
     }
 
+    /**
+     * Client-side death detection: triggers the death burst.
+     */
     @Inject(method = "die", at = @At("HEAD"))
     private void onDeath(DamageSource damageSource, CallbackInfo ci) {
         if (!com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.HITS)) return;
@@ -194,6 +237,7 @@ public class LivingEntityMixin implements BloodEntityAccess {
             return;
         }
 
+        // No death blood from suffocation / drowning / drying out / suppressed types.
         if (!SimpleBlood.shouldBleedFrom(entity, damageSource)) {
             return;
         }
@@ -207,6 +251,7 @@ public class LivingEntityMixin implements BloodEntityAccess {
         }
 
         if (SimpleBlood.shouldEntityBleed(entity)) {
+            // Reuse the killing blow's context when it is fresh, so the death spray follows it.
             HitContext ctx = simpleblood$lastContext != null && entity.tickCount - simpleblood$lastContextTick <= 2
                     ? simpleblood$lastContext
                     : HitContext.of(entity, Math.max(1.0f, simpleblood$lastHealth), damageSource, simpleblood$critRecently(),

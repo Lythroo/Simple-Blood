@@ -3,6 +3,7 @@ package com.simpleblood.gui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 
+/** Where the current screen lives: on {@code Minecraft} up to 26.1, on {@code Gui} from 26.2. */
 public final class Screens {
 
     private Screens() {}

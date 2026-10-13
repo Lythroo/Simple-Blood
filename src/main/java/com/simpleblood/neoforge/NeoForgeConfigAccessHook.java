@@ -9,6 +9,7 @@ import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
+// NeoForge wiring for ConfigAccess: the screen-built event and the client command.
 final class NeoForgeConfigAccessHook {
     private NeoForgeConfigAccessHook() {}
 
@@ -23,6 +24,7 @@ final class NeoForgeConfigAccessHook {
                             return 1;
                         }))
                         .then(Commands.literal("reset").executes(ctx -> {
+                            // Every part that an error switched off comes back.
                             com.simpleblood.Guard.reset();
                             ctx.getSource().sendSuccess(() -> Component.literal("Simple Blood: everything back on."), false);
                             return 1;
@@ -42,6 +44,7 @@ import net.minecraftforge.client.event.RegisterClientCommandsEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.common.MinecraftForge;
 
+// NeoForge 1.20.1 (Forge API) wiring for ConfigAccess: the screen-built event and the client command.
 final class NeoForgeConfigAccessHook {
     private NeoForgeConfigAccessHook() {}
 
@@ -56,6 +59,7 @@ final class NeoForgeConfigAccessHook {
                             return 1;
                         }))
                         .then(Commands.literal("reset").executes(ctx -> {
+                            // Every part that an error switched off comes back.
                             com.simpleblood.Guard.reset();
                             ctx.getSource().sendSuccess(() -> Component.literal("Simple Blood: everything back on."), false);
                             return 1;

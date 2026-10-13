@@ -14,8 +14,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * "Follow the block" highlights: derives a dark / base / light tone for every canvas pixel
+ * from the luminance of the block texture underneath it, so blood on stone picks up the
+ * stone's speckle and blood on planks follows the grain. Results are cached per sprite and
+ * resolution because reading sprite pixels is comparatively slow.
+ */
 final class BlockToneSampler {
 
+    // The caches are read from particle threads too (AsyncParticles), so the maps take that;
+    // a sprite that cannot be read is remembered as an empty grid (the map holds no nulls).
     private static final Map<TextureAtlasSprite, byte[]> CACHE = new ConcurrentHashMap<>();
     private static final byte[] UNREADABLE = new byte[0];
     private static volatile int cachedRes = -1;
@@ -30,6 +38,10 @@ final class BlockToneSampler {
         ALL_QUADS.clear();
     }
 
+    /**
+     * Tone map for a tile: {@code pw*ph} entries. Pixels of a partial face (slab, stair) sample
+     * the matching sub-region of the block texture.
+     */
     static byte[] sample(CanvasTile tile, RandomSource rng) {
         if (cachedRes != tile.res) {
             CACHE.clear();
@@ -39,7 +51,7 @@ final class BlockToneSampler {
         try {
             sprite = faceSprite(tile.state, tile.face, rng);
         } catch (Throwable t) {
-            return null;
+            return null; // model lookup differs per mod/version; fall back to flat tones
         }
         if (sprite == null) return null;
 
@@ -49,13 +61,14 @@ final class BlockToneSampler {
             try {
                 full = toneGrid(sprite, tile.res);
             } catch (Throwable t) {
-                full = null;
+                full = null; // a sprite another mod replaced or already closed: flat tones
             }
             if (full == null) full = UNREADABLE;
             CACHE.put(sprite, full);
         }
         if (full.length == 0) return null;
 
+        // Map the tile's pixel rectangle onto the full-block grid.
         int res = tile.res;
         byte[] out = new byte[tile.pw * tile.ph];
         int offU = (int) Math.round(faceOffsetU(tile) * res);
@@ -70,8 +83,11 @@ final class BlockToneSampler {
         return out;
     }
 
+    /** Distance (blocks) from the block's own face origin to this tile's origin along u. */
     private static double faceOffsetU(CanvasTile t) {
         double bx = t.pos.getX(), by = t.pos.getY(), bz = t.pos.getZ();
+        // The block-level origin for this face orientation is the corner the tile origin would
+        // have for a full cube; measure how far the tile origin moved from it along u.
         double cx = t.ux < 0 ? bx + 1 : bx, cy = by, cz = t.uz < 0 ? bz + 1 : bz;
         return (t.ox - cx) * t.ux + (t.oy - cy) * t.uy + (t.oz - cz) * t.uz;
     }
@@ -82,6 +98,10 @@ final class BlockToneSampler {
         return (t.ox - cx) * t.vx + (t.oy - cy) * t.vy + (t.oz - cz) * t.vz;
     }
 
+    /**
+     * Downsamples the first animation frame of a sprite to {@code res x res} and classifies
+     * each cell against the frame's mean luminance.
+     */
     private static byte[] toneGrid(TextureAtlasSprite sprite, int res) {
         SpriteContents contents = sprite.contents();
         NativeImage img = ((SpriteContentsAccessor) contents).simpleblood$originalImage();
@@ -121,10 +141,13 @@ final class BlockToneSampler {
             if (v < 0 || mean <= 0) {
                 tones[i] = CanvasTile.BASE;
             } else {
+                // Only clearly darker texels (cracks, grain) show through; the rest stays one tone.
                 float rel = v / mean;
                 tones[i] = rel < 0.80f ? CanvasTile.DARK : CanvasTile.BASE;
             }
         }
+        // A lone dark texel is noise, not a feature: keep only dark texels that continue into a
+        // neighbour, so cracks and grain lines survive and speckle does not.
         byte[] out = tones.clone();
         for (int gy = 0; gy < res; gy++) {
             for (int gx = 0; gx < res; gx++) {
@@ -138,19 +161,25 @@ final class BlockToneSampler {
         return out;
     }
 
+    /** One baked quad of a block model: block-local corners, sprite-space UVs (0..1), sprite. */
     record QuadInfo(Vec3[] corners, float[] u, float[] v, TextureAtlasSprite sprite) {}
 
+    /** Size of a sprite's first frame in texels: {width, height}. */
     static int[] spriteSize(TextureAtlasSprite sprite) {
         SpriteContents c = sprite.contents();
         return new int[]{Math.max(1, c.width()), Math.max(1, c.height())};
     }
 
+    /**
+     * Which pixels of a {@code pw x ph} grid laid over the sprite rectangle [u0,u1]x[v0,v1]
+     * (sprite space, 0..1) are opaque. Null when the sprite cannot be read.
+     */
     static boolean[] alphaMask(TextureAtlasSprite sprite, float u0, float u1, float v0, float v1, int pw, int ph) {
         if (sprite == null) return null;
         try {
             return readAlphaMask(sprite, u0, u1, v0, v1, pw, ph);
         } catch (Throwable t) {
-            return null;
+            return null; // a sprite another mod replaced or already closed
         }
     }
 
@@ -181,12 +210,17 @@ final class BlockToneSampler {
         return mask;
     }
 
+    /** The unculled (face-less) quads of a block model, with sprite-space UVs. */
     static List<QuadInfo> unculledQuads(BlockState state) {
         return quads(state, false);
     }
 
     private static final Map<BlockState, List<QuadInfo>> ALL_QUADS = new ConcurrentHashMap<>();
 
+    /**
+     * Every quad of a block model, culled faces included, with sprite-space UVs: the faces
+     * you actually see on a fence, a wall, a stair or a trapdoor. Cached per state.
+     */
     static List<QuadInfo> allQuads(BlockState state) {
         List<QuadInfo> cached = ALL_QUADS.get(state);
         if (cached == null) {
@@ -269,6 +303,10 @@ final class BlockToneSampler {
         return out;
     }
 
+    /**
+     * The axis direction a quad faces (from its winding), or null when it is not flat on an
+     * axis (a rotated element, a diagonal plane).
+     */
     static Direction quadFacing(QuadInfo q) {
         Vec3[] c = q.corners();
         Vec3 n = c[1].subtract(c[0]).cross(c[2].subtract(c[0]));
@@ -281,6 +319,7 @@ final class BlockToneSampler {
         return null;
     }
 
+    /** The block-local box a flat quad spans (zero thickness along its facing axis). */
     static net.minecraft.world.phys.AABB quadBox(QuadInfo q) {
         double minX = 1e9, minY = 1e9, minZ = 1e9, maxX = -1e9, maxY = -1e9, maxZ = -1e9;
         for (Vec3 c : q.corners()) {
@@ -291,6 +330,7 @@ final class BlockToneSampler {
         return new net.minecraft.world.phys.AABB(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
+    /** Atlas UVs -> sprite-space 0..1. */
     private static QuadInfo normalised(Vec3[] corners, float[] u, float[] v, TextureAtlasSprite sprite) {
         float su0 = sprite.getU0(), su1 = sprite.getU1(), sv0 = sprite.getV0(), sv1 = sprite.getV1();
         float du = Math.max(1.0e-6f, su1 - su0), dv = Math.max(1.0e-6f, sv1 - sv0);
@@ -305,6 +345,10 @@ final class BlockToneSampler {
     private static final Map<BlockState, Boolean> CROSS_CACHE = new ConcurrentHashMap<>();
     private static final Map<BlockState, Boolean> SEE_THROUGH_CACHE = new ConcurrentHashMap<>();
 
+    /**
+     * Whether a block is drawn with the see-through terrain (ice, stained glass, slime,
+     * honey), which the game draws after the blood on blocks.
+     */
     static boolean isSeeThrough(BlockState state) {
         Boolean cached = SEE_THROUGH_CACHE.get(state);
         if (cached != null) return cached;
@@ -319,7 +363,7 @@ final class BlockToneSampler {
         return seeThrough;
     }
 
-    @SuppressWarnings("deprecation")
+    @SuppressWarnings("deprecation") // the game's layer table: blocks whose model picks its own layer are rare
     private static boolean detectSeeThrough(BlockState state) {
         //? if <=1.21.1 {
         /*return net.minecraft.client.renderer.ItemBlockRenderTypes.getChunkRenderType(state)
@@ -328,6 +372,7 @@ final class BlockToneSampler {
         /*return net.minecraft.client.renderer.ItemBlockRenderTypes.getChunkRenderType(state)
                 == net.minecraft.client.renderer.chunk.ChunkSectionLayer.TRANSLUCENT;
         *///?} else {
+        // The layer now comes with each quad of the model.
         net.minecraft.client.renderer.block.dispatch.BlockStateModel model =
                 Minecraft.getInstance().getModelManager().getBlockStateModelSet().get(state);
         List<net.minecraft.client.renderer.block.dispatch.BlockStateModelPart> parts = new java.util.ArrayList<>();
@@ -343,6 +388,10 @@ final class BlockToneSampler {
         //?}
     }
 
+    /**
+     * Whether the block is drawn as crossed diagonal planes (flowers, grass, saplings, sugar
+     * cane, pointed dripstone...): its model has only unculled quads, none on any face.
+     */
     static boolean isCrossModel(BlockState state) {
         Boolean cached = CROSS_CACHE.get(state);
         if (cached != null) return cached;
@@ -396,6 +445,7 @@ final class BlockToneSampler {
         //?}
     }
 
+    /** The sprite the block model uses on the given face, or its particle sprite. */
     static TextureAtlasSprite faceSprite(BlockState state, Direction face, RandomSource rng) {
         //? if <=1.21.1 {
         /*net.minecraft.client.resources.model.BakedModel model =

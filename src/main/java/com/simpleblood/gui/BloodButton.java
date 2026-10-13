@@ -4,6 +4,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 
+/**
+ * The vanilla button that opens the settings, with a bit of blood on it: a splat in one
+ * corner, a couple of specks, and a drip down the right edge that runs a little further
+ * while the mouse is on it. All flat pixel art in the mod's three tones.
+ */
 //? if <=1.21.1 {
 /*public final class BloodButton extends Button {
 *///?} else {
@@ -37,14 +42,19 @@ public final class BloodButton extends Button.Plain {
     //?}
 
     private void splatter(Gfx g) {
+        // Fade with the button: the title screen eases its buttons in, and the blood must not
+        // show up before the button it sits on.
         int a = Math.round(Math.max(0f, Math.min(1f, alpha)) * 255f);
         if (a < 8) return;
         int x = getX(), y = getY(), w = getWidth(), h = getHeight();
+        // A splat in the top-left corner.
         px(g, x + 3, y + 2, BASE); px(g, x + 4, y + 2, LIGHT);
         px(g, x + 2, y + 3, DARK); px(g, x + 3, y + 3, BASE); px(g, x + 4, y + 3, BASE); px(g, x + 5, y + 3, DARK);
         px(g, x + 3, y + 4, DARK); px(g, x + 4, y + 4, BASE);
         px(g, x + 7, y + 2, DARK);
+        // Specks along the bottom-left.
         px(g, x + 6, y + h - 5, DARK); px(g, x + 8, y + h - 4, BASE); px(g, x + 7, y + h - 3, DARK);
+        // A drip down the right edge, a little longer under the mouse.
         int dx = x + w - 5;
         int len = isHoveredOrFocused() ? 10 : 6;
         for (int i = 1; i <= len; i++) px(g, dx, y + i, i < 3 ? DARK : BASE);

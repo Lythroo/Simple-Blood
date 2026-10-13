@@ -10,23 +10,47 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * Everything the client can tell about one hit, computed once and read by every spawner:
+ * how hard it was, where it came from, whether it was a critical, and what kind of weapon
+ * did it. All of it is derived from data the client already has (the damage event packet,
+ * the hurt animation, the attacker's held item) so it stays 100% client-side.
+ */
 public final class HitContext {
 
+    /** Broad weapon families that change how blood leaves the body. */
     public enum Weapon { NONE, BLADE, AXE, MACE, ARROW, EXPLOSION, FALL, OTHER }
 
     public final LivingEntity entity;
     public final float damage;
+    /** 0..1: mixes absolute damage (a 10-damage hit is big on anything) with the share of max health lost. */
     public final float severity;
+    /** Unit vector the blow travelled along (attacker to victim), or null when unknown. */
     public final Vec3 direction;
+    /** Where the blow came from, or null. */
     public final Vec3 sourcePos;
     public final boolean crit;
     public final Weapon weapon;
+    /** The hit killed with more than twice the health that was left. */
     public final boolean overkill;
+    /** Attack charge (0..1) of the swing, known for the local player's own hits; 1 otherwise. */
     public final float charge;
+    /**
+     * Where on the body the blow landed, in world space: the crosshair hit for your own
+     * swings, the arrow's position for projectiles, the near side of the hitbox otherwise.
+     * Null when the whole body is hurt at once (falls, explosions, unknown sources).
+     */
     public final Vec3 wound;
+    /**
+     * A mace smash (the falling blow that throws block debris everywhere). Known for sure for
+     * your own hits; for anyone else it is read off the damage they dealt, since a smash lands
+     * at least the mace's 6 plus 4 per block of the 1.5 blocks it needs to fall.
+     */
     public final boolean smash;
     private static final float SMASH_DAMAGE = 11.0f;
 
+    // The local player's last swing: target id, charge, where the crosshair hit, time. Read
+    // by of() when the damage packet for that target arrives a tick later.
     private static int lastChargeTarget = -1;
     private static float lastCharge = 1.0f;
     private static Vec3 lastHitPoint = null;
@@ -37,6 +61,7 @@ public final class HitContext {
         rememberLocalCharge(targetId, charge, null, false);
     }
 
+    /** @param smash the swing was a mace smash (falling from 1.5 blocks or more) */
     public static void rememberLocalCharge(int targetId, float charge, Vec3 hitPoint, boolean smash) {
         lastChargeTarget = targetId;
         lastCharge = charge;
@@ -60,6 +85,11 @@ public final class HitContext {
         this.smash = smash;
     }
 
+    /**
+     * @param source   the damage source if a fresh one was captured, else null
+     * @param crit     whether a critical-hit animation arrived for this entity just now
+     * @param healthBefore the entity's health before the hit (for overkill detection)
+     */
     public static HitContext of(LivingEntity entity, float damage, DamageSource source, boolean crit, float healthBefore) {
         float max = Math.max(1.0f, entity.getMaxHealth());
         float severity = Math.min(1.0f, 0.6f * Math.min(1.0f, damage / 20.0f) + 0.4f * Math.min(1.0f, damage / max));
@@ -77,20 +107,24 @@ public final class HitContext {
             }
             if (sourcePos != null) {
                 Vec3 d = center.subtract(sourcePos);
+                // Projectiles fly nearly level; melee comes from eye height, so flatten a bit.
                 d = new Vec3(d.x, d.y * 0.35, d.z);
                 if (d.lengthSqr() > 0.01) direction = d.normalize();
             }
         }
         if (direction == null && entity.hurtTime > 0) {
+            // Fallback: the hurt animation carries the angle the blow came from, relative to
+            // the entity's own yaw. Convert it back into a world-space direction.
             double angle = Math.toRadians(entity.getYRot() + entity.getHurtDir());
             Vec3 towardAttacker = new Vec3(Math.cos(angle), 0, Math.sin(angle));
             if (towardAttacker.lengthSqr() > 0.5) direction = towardAttacker.scale(-1).normalize();
         }
         if (weapon == Weapon.EXPLOSION || weapon == Weapon.FALL) {
-            direction = null;
+            direction = null; // these spray everywhere / flat, not along a line
         }
         boolean overkill = damage >= healthBefore * 2.0f && damage >= healthBefore + 4.0f && healthBefore > 0;
 
+        // Charge and the exact hit point: only known for the local player's own melee swing.
         float charge = 1.0f;
         Vec3 wound = null;
         boolean smash = false;
@@ -102,12 +136,14 @@ public final class HitContext {
             if (lastHitPoint != null) wound = clampToBody(entity, lastHitPoint);
             smash = weapon == Weapon.MACE && lastSmash;
         } else if (weapon == Weapon.MACE && !ownSwing) {
-            smash = damage >= SMASH_DAMAGE;
+            smash = damage >= SMASH_DAMAGE; // someone else's mace: only the damage tells
         }
         if (wound == null && weapon != Weapon.EXPLOSION && weapon != Weapon.FALL) {
             if (direct != null && direct != attacker) {
+                // A projectile: the client's copy sits right about where it struck.
                 wound = clampToBody(entity, direct.position());
             } else if (direction != null) {
+                // The near side of the body, at the height the blow came from.
                 double hitY = center.y;
                 if (attacker instanceof LivingEntity la) hitY = la.getEyeY() - 0.25;
                 else if (sourcePos != null) hitY = sourcePos.y;
@@ -118,6 +154,7 @@ public final class HitContext {
         return new HitContext(entity, damage, severity, direction, sourcePos, crit, weapon, overkill, charge, wound, smash);
     }
 
+    /** Pulls a point just inside the entity's hitbox (blood starts on the skin, not in the air). */
     private static Vec3 clampToBody(LivingEntity entity, Vec3 p) {
         double hw = entity.getBbWidth() * 0.5, h = entity.getBbHeight();
         double cx = entity.getX(), cz = entity.getZ(), y0 = entity.getY();
@@ -138,6 +175,7 @@ public final class HitContext {
         if (attacker instanceof LivingEntity living) {
             ItemStack held = living.getMainHandItem();
             if (!held.isEmpty()) {
+                // Match by id so modded weapons and every game version behave alike.
                 String id = BuiltInRegistries.ITEM.getKey(held.getItem()).getPath();
                 if (id.endsWith("sword") || id.contains("blade") || id.contains("dagger") || id.contains("katana")) return Weapon.BLADE;
                 if (id.endsWith("_axe") || id.equals("axe") || id.contains("battleaxe") || id.contains("cleaver")) return Weapon.AXE;
@@ -148,10 +186,12 @@ public final class HitContext {
         return Weapon.OTHER;
     }
 
+    /** Point on the near side of the hitbox where the blow enters (along -direction). */
     public Vec3 entryPoint() {
         return boundaryPoint(-1);
     }
 
+    /** Point on the far side of the hitbox where blood exits (along +direction). */
     public Vec3 exitPoint() {
         return boundaryPoint(1);
     }

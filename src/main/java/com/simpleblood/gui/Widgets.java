@@ -11,6 +11,7 @@ import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
+/** The controls: vanilla-looking buttons, toggles, sliders and fields with a little motion. */
 public final class Widgets {
 
     private Widgets() {}
@@ -18,7 +19,7 @@ public final class Widgets {
     public static final int TEXT = 0xFFFFFFFF;
     public static final int TEXT_DIM = 0xFFA0A0A0;
     public static final int TEXT_DARK = 0xFF606060;
-    public static final int ACCENT = 0xFFC8281E;
+    public static final int ACCENT = 0xFFC8281E;     // blood red
     public static final int ACCENT_DARK = 0xFF6E1410;
     public static final int GREEN = 0xFF5DBB4A;
     public static final int RED = 0xFFD54A3F;
@@ -26,6 +27,8 @@ public final class Widgets {
     public static void click() {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0f));
     }
+
+    // ================================================================== label
 
     public static class Label extends Widget {
         public String text;
@@ -42,11 +45,15 @@ public final class Widgets {
         }
     }
 
+    /**
+     * A framed note that keeps itself up to date: a coloured bar for its tone, an optional
+     * colour swatch, and up to three lines of text.
+     */
     public static class Notice extends Widget {
         public static final int GOOD = 0xFF5BBF5B, WARN = 0xFFE0A030, QUIET = 0xFF808080;
         private final Supplier<String> text;
         private final IntSupplier tone;
-        private final IntSupplier swatch;
+        private final IntSupplier swatch; // 0xRRGGBB, or negative for none
 
         public Notice(Supplier<String> text, IntSupplier tone, IntSupplier swatch) {
             this.text = text;
@@ -76,6 +83,7 @@ public final class Widgets {
         }
     }
 
+    /** A section heading with a thin rule under it. */
     public static class Heading extends Widget {
         public final String text;
 
@@ -89,6 +97,8 @@ public final class Widgets {
             g.fill(x, y + 15, x + tw, y + 16, ACCENT);
         }
     }
+
+    // ================================================================== button
 
     public static class Button extends Widget {
         public String text;
@@ -104,7 +114,7 @@ public final class Widgets {
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
             boolean over = enabled && hot(mx, my);
-            int lift = over ? -1 : 0;
+            int lift = over ? -1 : 0; // a hovered button sits a pixel higher
             g.button(x, y + lift, w, h, enabled, over);
             if (accent) g.fill(x + 2, y + lift + h - 3, x + w - 2, y + lift + h - 2, Gfx.alpha(ACCENT, 0.6f + 0.4f * hover));
             int colour = enabled ? TEXT : TEXT_DIM;
@@ -120,6 +130,9 @@ public final class Widgets {
         }
     }
 
+    // ================================================================== toggle
+
+    /** ON/OFF as a vanilla button with a small sliding switch inside. */
     public static class Toggle extends Widget {
         private final Supplier<Boolean> get;
         private final Consumer<Boolean> set;
@@ -139,6 +152,7 @@ public final class Widgets {
             knob = Anim.approach(knob, on ? 1f : 0f, dt * 18f);
             boolean over = enabled && hot(mx, my);
             g.button(x, y, w, h, enabled, over);
+            // The switch: a dark slot with a knob that slides between the ends.
             int slotX = x + 5, slotY = y + 6, slotW = 20, slotH = 8;
             g.fill(slotX, slotY, slotX + slotW, slotY + slotH, 0xFF1C1C1C);
             g.fill(slotX, slotY, slotX + slotW, slotY + 1, 0xFF0A0A0A);
@@ -161,6 +175,7 @@ public final class Widgets {
         }
     }
 
+    /** A small vanilla checkbox. */
     public static class Check extends Widget {
         private final Supplier<Boolean> get;
         private final Consumer<Boolean> set;
@@ -186,6 +201,9 @@ public final class Widgets {
         }
     }
 
+    // ================================================================== slider
+
+    /** An integer slider in vanilla style; the handle eases to the value when it jumps. */
     public static class Slider extends Widget {
         private final IntSupplier get;
         private final IntConsumer set;
@@ -219,6 +237,7 @@ public final class Widgets {
             else shown = Anim.approach(shown, target, dt * 16f);
             boolean over = enabled && hot(mx, my);
             g.sliderTrack(x, y, w, h, over || dragging);
+            // Filled part of the track in blood red, faint.
             int handleX = x + Math.round((w - 8) * shown);
             g.fill(x + 1, y + h - 4, handleX + 4, y + h - 2, Gfx.alpha(ACCENT, 0.35f + 0.25f * hover));
             g.sliderHandle(handleX, y, 8, h, over || dragging);
@@ -268,6 +287,9 @@ public final class Widgets {
         }
     }
 
+    // ================================================================== cycle button
+
+    /** A button that cycles through choices (left click forward, right click back). */
     public static class Cycle extends Widget {
         private final String[] keys;
         private final String[] labels;
@@ -298,6 +320,7 @@ public final class Widgets {
             if (flash > 0.01f) g.fill(x + 2, y + 2, x + w - 2, y + h - 2, Gfx.alpha(0xFFFFFFFF, 0.25f * flash));
             String s = labels[index()];
             g.textClipped(s, x + (w - Math.min(w - 12, g.textWidth(s))) / 2, y + (h - 8) / 2, w - 12, enabled ? TEXT : TEXT_DIM);
+            // Little dots showing where in the cycle we are.
             int n = keys.length, cur = index();
             int dotsW = n * 3 - 1;
             for (int i = 0; i < n; i++) {
@@ -316,6 +339,13 @@ public final class Widgets {
         }
     }
 
+    // ================================================================== text field
+
+    /**
+     * A single-line text input that behaves like the game's own: click to place the caret,
+     * drag or Shift with the arrows to select, Ctrl+A, Ctrl+C, Ctrl+X, Ctrl+V, Ctrl with the
+     * arrows or Backspace for whole words, right-click to clear.
+     */
     public static class TextField extends Widget {
         public String value = "";
         public String hint = "";
@@ -323,6 +353,9 @@ public final class Widgets {
         public Consumer<String> onChange;
         public Runnable onEnter;
         private int cursor;
+        private int anchor = -1;       // the other end of the selection, or -1 for none
+        private int viewStart;         // first character shown (the text scrolls to keep the caret in view)
+        private boolean dragging;
         private float caretBlink;
 
         public TextField() {
@@ -333,11 +366,17 @@ public final class Widgets {
         public TextField set(String v) {
             value = v == null ? "" : v;
             cursor = value.length();
+            anchor = -1;
+            viewStart = 0;
             return this;
         }
 
         @Override
         public boolean wantsFocus() { return true; }
+
+        private boolean hasSelection() { return anchor >= 0 && anchor != cursor; }
+        private int selStart() { return Math.min(anchor, cursor); }
+        private int selEnd() { return Math.max(anchor, cursor); }
 
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
@@ -348,16 +387,24 @@ public final class Widgets {
                 g.textClipped(hint, tx, ty, inner, TEXT_DARK);
                 return;
             }
-            String shown = value;
-            int start = 0;
-            while (start < cursor && g.textWidth(shown.substring(start, cursor)) > inner - 2) start++;
-            shown = shown.substring(start);
-            String vis = g.font.plainSubstrByWidth(shown, inner);
+            // Keep the caret in view: scroll left when it is before the view, right when past it.
+            viewStart = Math.max(0, Math.min(viewStart, Math.min(cursor, value.length())));
+            while (viewStart < cursor && g.textWidth(value.substring(viewStart, cursor)) > inner - 2) viewStart++;
+            String vis = g.font.plainSubstrByWidth(value.substring(viewStart), inner);
+            int visEnd = viewStart + vis.length();
+            if (focused && hasSelection()) {
+                int a = Math.max(selStart(), viewStart), b = Math.min(selEnd(), visEnd);
+                if (b > a) {
+                    int sx = tx + g.textWidth(value.substring(viewStart, a));
+                    int ex = tx + g.textWidth(value.substring(viewStart, b));
+                    g.fill(sx, ty - 1, ex, ty + 9, 0xA03C6EB4);
+                }
+            }
             g.text(vis, tx, ty, enabled ? TEXT : TEXT_DIM);
             if (focused) {
                 caretBlink += dt;
                 if ((int) (caretBlink * 2.5f) % 2 == 0) {
-                    int cx = tx + g.textWidth(value.substring(start, Math.max(start, cursor)));
+                    int cx = tx + g.textWidth(value.substring(viewStart, Math.max(viewStart, Math.min(cursor, visEnd))));
                     g.fill(cx, ty - 1, cx + 1, ty + 9, TEXT);
                 }
             }
@@ -367,41 +414,137 @@ public final class Widgets {
             if (onChange != null) onChange.accept(value);
         }
 
+        /** The character position under a mouse x, in the text as it is shown. */
+        private int indexAt(double mx) {
+            net.minecraft.client.gui.Font font = Minecraft.getInstance().font;
+            int rel = (int) Math.round(mx) - (x + 4);
+            int i = viewStart;
+            while (i < value.length()) {
+                int left = font.width(value.substring(viewStart, i));
+                int right = font.width(value.substring(viewStart, i + 1));
+                if (rel < (left + right) / 2) break;
+                i++;
+            }
+            return i;
+        }
+
         @Override
         public boolean mouseClicked(double mx, double my, int button) {
             if (!enabled || !contains(mx, my)) return false;
-            if (button == Keys.MOUSE_RIGHT) { value = ""; cursor = 0; changed(); }
-            cursor = value.length();
+            if (button == Keys.MOUSE_RIGHT) {
+                set("");
+                changed();
+                return true;
+            }
+            cursor = indexAt(mx);
+            anchor = cursor;
+            dragging = true;
+            caretBlink = 0;
+            return true;
+        }
+
+        @Override
+        public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
+            if (!dragging) return false;
+            cursor = indexAt(mx);
+            return true;
+        }
+
+        @Override
+        public boolean mouseReleased(double mx, double my, int button) {
+            boolean was = dragging;
+            dragging = false;
+            if (anchor == cursor) anchor = -1;
+            return was;
+        }
+
+        /** Moves the caret; with Shift held the selection grows from where it was. */
+        private void moveTo(int to, boolean select) {
+            if (select) {
+                if (anchor < 0) anchor = cursor;
+            } else {
+                anchor = -1;
+            }
+            cursor = Math.max(0, Math.min(value.length(), to));
+            caretBlink = 0;
+        }
+
+        /** The start of the word before {@code from}, or the end of the word after it. */
+        private int wordFrom(int from, int dir) {
+            int i = from;
+            if (dir < 0) {
+                while (i > 0 && value.charAt(i - 1) == ' ') i--;
+                while (i > 0 && value.charAt(i - 1) != ' ') i--;
+            } else {
+                while (i < value.length() && value.charAt(i) == ' ') i++;
+                while (i < value.length() && value.charAt(i) != ' ') i++;
+            }
+            return i;
+        }
+
+        private boolean deleteSelection() {
+            if (!hasSelection()) return false;
+            int a = selStart(), b = selEnd();
+            value = value.substring(0, a) + value.substring(b);
+            cursor = a;
+            anchor = -1;
             return true;
         }
 
         @Override
         public boolean keyPressed(int key, int modifiers) {
             if (!focused) return false;
+            boolean ctrl = (modifiers & Keys.CTRL) != 0, shift = (modifiers & Keys.SHIFT) != 0;
+            if ((modifiers & Keys.SELECT_ALL) != 0) {
+                anchor = 0;
+                cursor = value.length();
+                return true;
+            }
+            if ((modifiers & (Keys.COPY | Keys.CUT)) != 0) {
+                if (hasSelection()) {
+                    Minecraft.getInstance().keyboardHandler.setClipboard(value.substring(selStart(), selEnd()));
+                    if ((modifiers & Keys.CUT) != 0 && deleteSelection()) changed();
+                }
+                return true;
+            }
             if ((modifiers & Keys.PASTE) != 0) {
                 insert(Minecraft.getInstance().keyboardHandler.getClipboard());
                 return true;
             }
             switch (key) {
                 case Keys.BACKSPACE -> {
-                    if (cursor > 0) {
-                        value = value.substring(0, cursor - 1) + value.substring(cursor);
-                        cursor--;
+                    if (deleteSelection()) {
+                        changed();
+                    } else if (cursor > 0) {
+                        int from = ctrl ? wordFrom(cursor, -1) : cursor - 1;
+                        value = value.substring(0, from) + value.substring(cursor);
+                        cursor = from;
                         changed();
                     }
                     return true;
                 }
                 case Keys.DELETE -> {
-                    if (cursor < value.length()) {
-                        value = value.substring(0, cursor) + value.substring(cursor + 1);
+                    if (deleteSelection()) {
+                        changed();
+                    } else if (cursor < value.length()) {
+                        int to = ctrl ? wordFrom(cursor, 1) : cursor + 1;
+                        value = value.substring(0, cursor) + value.substring(to);
                         changed();
                     }
                     return true;
                 }
-                case Keys.LEFT -> { cursor = Math.max(0, cursor - 1); return true; }
-                case Keys.RIGHT -> { cursor = Math.min(value.length(), cursor + 1); return true; }
-                case Keys.HOME -> { cursor = 0; return true; }
-                case Keys.END -> { cursor = value.length(); return true; }
+                case Keys.LEFT -> {
+                    if (!shift && hasSelection()) moveTo(selStart(), false);
+                    else moveTo(ctrl ? wordFrom(cursor, -1) : cursor - 1, shift);
+                    return true;
+                }
+                case Keys.RIGHT -> {
+                    if (!shift && hasSelection()) moveTo(selEnd(), false);
+                    else moveTo(ctrl ? wordFrom(cursor, 1) : cursor + 1, shift);
+                    return true;
+                }
+                case Keys.HOME -> { moveTo(0, shift); return true; }
+                case Keys.END -> { moveTo(value.length(), shift); return true; }
                 case Keys.ENTER, Keys.NUMPAD_ENTER -> { if (onEnter != null) onEnter.run(); return true; }
                 default -> { return false; }
             }
@@ -409,12 +552,14 @@ public final class Widgets {
 
         private void insert(String s) {
             if (s == null || s.isEmpty()) return;
+            deleteSelection();
             StringBuilder sb = new StringBuilder();
             for (char c : s.toCharArray()) if (c >= 32 && c != 127) sb.append(c);
             String ins = sb.toString();
             if (value.length() + ins.length() > maxLength) ins = ins.substring(0, Math.max(0, maxLength - value.length()));
             value = value.substring(0, cursor) + ins + value.substring(cursor);
             cursor += ins.length();
+            anchor = -1;
             changed();
         }
 
@@ -424,8 +569,18 @@ public final class Widgets {
             insert(String.valueOf(c));
             return true;
         }
+
+        @Override
+        public void blur() {
+            super.blur();
+            anchor = -1;
+            dragging = false;
+        }
     }
 
+    // ================================================================== colour swatch
+
+    /** A button showing a colour and its hex code; clicking opens the picker. */
     public static class Swatch extends Widget {
         private final IntSupplier get;
         public Runnable onClick;
@@ -446,6 +601,7 @@ public final class Widgets {
             g.fill(x + 5, y + 5, x + 19, y + h - 5, 0xFF000000 | rgb);
             g.fill(x + 5, y + 5, x + 19, y + 6, Gfx.alpha(0xFFFFFFFF, 0.25f));
             String hex = String.format("#%06X", rgb);
+            // The hex code only when it fits; a narrow swatch is just the colour.
             if (g.textWidth(hex) <= w - 29) g.text(hex, x + 25, y + (h - 8) / 2, enabled ? TEXT : TEXT_DIM);
         }
 
@@ -458,6 +614,12 @@ public final class Widgets {
         }
     }
 
+    // ================================================================== option row
+
+    /**
+     * One setting: name and description on the left, its control on the right, and a small
+     * reset arrow that appears while the value differs from the default.
+     */
     public static class Row extends Widget.Container implements Widget.PreviewSource {
         public final String name;
         public final String desc;
@@ -466,6 +628,7 @@ public final class Widgets {
         private final Runnable reset;
         private float resetShow;
         public boolean even;
+        /** The diorama shown while this row is hovered (null: a plain tooltip instead). */
         public com.simpleblood.surface.PreviewScene.Kind previewKind;
         public IntSupplier previewColour;
         public String previewText;
@@ -524,6 +687,7 @@ public final class Widgets {
                 int rx = x + w - 20, ry = y + (h - 12) / 2;
                 boolean overReset = over && mx >= rx && mx < rx + 14 && my >= ry && my < ry + 12;
                 int c = Gfx.alpha(overReset ? TEXT : TEXT_DIM, resetShow);
+                // A small pixel-art "undo" arrow.
                 g.fill(rx + 3, ry + 3, rx + 10, ry + 4, c);
                 g.fill(rx + 9, ry + 4, rx + 11, ry + 8, c);
                 g.fill(rx + 4, ry + 8, rx + 11, ry + 9, c);

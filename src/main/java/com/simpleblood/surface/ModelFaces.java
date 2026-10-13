@@ -12,11 +12,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * The drawn geometry of a block that is not a full cube: every flat, axis-aligned face of its
+ * model (a fence post's four sides and top, each bar's faces, a stair's step), the cuboids
+ * those faces enclose, and the tilted faces of rotated elements (a lectern's desk, a
+ * lantern's chain). Blood lands on, creeps over and hides behind these instead of the
+ * outline shape, which for fences and the like is a coarse box around the wood. Cached per
+ * block state.
+ */
 final class ModelFaces {
 
+    /** One drawn face: facing and block-local rectangle (flat along the facing axis). */
     record Face(Direction dir, AABB box) {}
 
+    /**
+     * A drawn face that is not on an axis: its quad index (into {@link BlockToneSampler#allQuads}),
+     * one corner, the two edges leaving it, and the unit normal from the quad's winding.
+     */
     record Slanted(int index, Vec3 c0, Vec3 e1, Vec3 e2, Vec3 n) {
+        /** Distance from a point to the face: off the plane (weighted) plus outside the rectangle. */
         double score(Vec3 lp) {
             Vec3 d = lp.subtract(c0);
             double a = d.dot(e1) / e1.lengthSqr(), b = d.dot(e2) / e2.lengthSqr();
@@ -25,14 +39,20 @@ final class ModelFaces {
         }
     }
 
+    // Read from particle threads too (AsyncParticles), so the map has to take that.
     private static final Map<BlockState, ModelFaces> CACHE = new ConcurrentHashMap<>();
     private static final int MAX_CACHE = 2048;
+    /** Models with more quads than this are not worth the cost (and are rarely simple boxes anyway). */
     private static final int MAX_QUADS = 64;
+    /** Drawn faces may poke this far outside the outline shape before the model is distrusted. */
     private static final double SLACK = 1.0 / 16 + 1.0e-3;
 
     final List<Face> faces;
+    /** Faces of rotated elements. */
     final List<Slanted> slanted;
+    /** Block-local boxes of the drawn cuboids, rebuilt from their top and bottom faces. */
     final List<AABB> solids;
+    /** Whether the model is simple and agrees with the outline well enough to follow it. */
     final boolean usable;
 
     private ModelFaces(List<Face> faces, List<Slanted> slanted, List<AABB> solids, boolean usable) {
@@ -46,6 +66,7 @@ final class ModelFaces {
         CACHE.clear();
     }
 
+    /** @param outline the block's outline shape, used once to check the model against it */
     static ModelFaces of(BlockState state, VoxelShape outline) {
         ModelFaces f = CACHE.get(state);
         if (f == null) {
@@ -61,6 +82,8 @@ final class ModelFaces {
         if (quads.isEmpty() || quads.size() > MAX_QUADS || outline.isEmpty()) {
             return new ModelFaces(List.of(), List.of(), List.of(), false);
         }
+        // An open fence gate keeps the outline of the closed one (a slab across the middle)
+        // while its halves stand out to the side: check those against the whole block.
         boolean swungOut = state.getBlock() instanceof net.minecraft.world.level.block.FenceGateBlock
                 && state.getValue(net.minecraft.world.level.block.FenceGateBlock.OPEN);
         AABB bounds = (swungOut ? new AABB(0, 0, 0, 1, 1, 1) : outline.bounds()).inflate(SLACK);
@@ -71,6 +94,7 @@ final class ModelFaces {
             Direction dir = BlockToneSampler.quadFacing(quads.get(i));
             AABB box = BlockToneSampler.quadBox(quads.get(i));
             if (dir == null) {
+                // A rotated element: keep the face as a tilted rectangle.
                 Vec3[] c = quads.get(i).corners();
                 Vec3 e1 = c[1].subtract(c[0]), e2 = c[3].subtract(c[0]);
                 Vec3 n = e1.cross(c[2].subtract(c[0]));
@@ -82,10 +106,12 @@ final class ModelFaces {
                 }
                 continue;
             }
-            if (box.getXsize() < 1.0e-4 && dir.getAxis() != Direction.Axis.X) continue;
+            if (box.getXsize() < 1.0e-4 && dir.getAxis() != Direction.Axis.X) continue; // degenerate
             if (box.getYsize() < 1.0e-4 && dir.getAxis() != Direction.Axis.Y) continue;
             if (box.getZsize() < 1.0e-4 && dir.getAxis() != Direction.Axis.Z) continue;
             faces.add(new Face(dir, box));
+            // A torch is drawn as big see-through planes far outside its little outline: the
+            // outline is the better guide there.
             if (box.minX < bounds.minX || box.maxX > bounds.maxX || box.minY < bounds.minY || box.maxY > bounds.maxY
                     || box.minZ < bounds.minZ || box.maxZ > bounds.maxZ) {
                 agrees = false;
@@ -95,6 +121,7 @@ final class ModelFaces {
         return new ModelFaces(List.copyOf(faces), List.copyOf(slanted), List.copyOf(solids(faces)), true);
     }
 
+    /** Pairs every top face with the nearest bottom face of the same footprint below it. */
     private static List<AABB> solids(List<Face> faces) {
         List<AABB> out = new ArrayList<>();
         boolean[] used = new boolean[faces.size()];
@@ -128,6 +155,7 @@ final class ModelFaces {
                 && Math.abs(a.minZ - b.minZ) < 1.0e-3 && Math.abs(a.maxZ - b.maxZ) < 1.0e-3;
     }
 
+    /** The face with this facing and (block-local) rectangle, or null. */
     Face face(Direction dir, AABB box) {
         for (Face f : faces) {
             if (f.dir != dir) continue;
@@ -139,6 +167,7 @@ final class ModelFaces {
         return null;
     }
 
+    /** Whether a block-local point lies inside one of the drawn cuboids. */
     boolean insideSolid(double lx, double ly, double lz) {
         for (AABB b : solids) {
             if (b.inflate(0.002).contains(lx, ly, lz)) return true;
@@ -146,6 +175,10 @@ final class ModelFaces {
         return false;
     }
 
+    /**
+     * The first drawn face the segment {@code from -> to} (world coordinates) passes through
+     * on its way in, front side only. Null when it threads through without touching wood.
+     */
     BloodSurfaces.Hit clip(BlockPos pos, Vec3 from, Vec3 to) {
         double fx = from.x - pos.getX(), fy = from.y - pos.getY(), fz = from.z - pos.getZ();
         double dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
@@ -155,7 +188,7 @@ final class ModelFaces {
         Vec3 lf = new Vec3(fx, fy, fz), ld = new Vec3(dx, dy, dz);
         for (Slanted s : slanted) {
             double dn = ld.dot(s.n);
-            if (dn >= -1.0e-9) continue;
+            if (dn >= -1.0e-9) continue; // parallel, or from behind
             double t = s.c0.subtract(lf).dot(s.n) / dn;
             if (t < -1.0e-6 || t > 1.0 + 1.0e-6 || t >= bestT) continue;
             Vec3 p = lf.add(ld.scale(t)).subtract(s.c0);
@@ -172,6 +205,7 @@ final class ModelFaces {
                 case Y -> { d = dy; o = fy; plane = f.box.minY; }
                 default -> { d = dz; o = fz; plane = f.box.minZ; }
             }
+            // Only faces we approach head-on: moving with the normal means we are behind it.
             double n = f.dir.getStepX() + f.dir.getStepY() + f.dir.getStepZ();
             if (d * n >= -1.0e-9) continue;
             double t = (plane - o) / d;
@@ -190,6 +224,7 @@ final class ModelFaces {
         return new BloodSurfaces.Hit(pos, dir, from.add(dx * t, dy * t, dz * t));
     }
 
+    /** The direction a normal mostly points. */
     static Direction facing(Vec3 n) {
         double ax = Math.abs(n.x), ay = Math.abs(n.y), az = Math.abs(n.z);
         if (ay >= ax && ay >= az) return n.y > 0 ? Direction.UP : Direction.DOWN;
