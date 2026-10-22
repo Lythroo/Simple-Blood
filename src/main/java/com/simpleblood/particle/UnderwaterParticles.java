@@ -30,9 +30,8 @@ public final class UnderwaterParticles {
 
     private static final List<DrawnBeforeWater> PARTICLES = new ArrayList<>();
 
-    // The render thread owns the list: it walks it every frame, while particles join and leave
-    // from their constructors and ticks, which AsyncParticles runs on worker threads (GitHub #11).
     static void add(DrawnBeforeWater particle) {
+        com.simpleblood.Tally.count("particle.underwater");
         com.simpleblood.RenderThread.run(() -> PARTICLES.add(particle));
     }
 
@@ -40,8 +39,6 @@ public final class UnderwaterParticles {
         com.simpleblood.RenderThread.run(() -> PARTICLES.remove(particle));
     }
 
-    // The ones to draw this frame. Particles cleared with the level never say goodbye: whatever
-    // is not alive here any more is dropped first.
     private static List<DrawnBeforeWater> drawnNow() {
         if (PARTICLES.isEmpty()) return List.of();
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
@@ -85,7 +82,7 @@ public final class UnderwaterParticles {
                     RENDERTYPE_ENTITY_TRANSLUCENT_SHADER,
                     new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_PARTICLES, false, false),
                     TRANSLUCENT_TRANSPARENCY,
-                    LEQUAL_DEPTH_TEST, // switched off between draws: without it blocks hide nothing
+                    LEQUAL_DEPTH_TEST,
                     NO_CULL,
                     LIGHTMAP,
                     OVERLAY,
@@ -129,9 +126,8 @@ public final class UnderwaterParticles {
 
     private static final List<DrawnBeforeWater> PARTICLES = new ArrayList<>();
 
-    // The render thread owns the list: it walks it every frame, while particles join and leave
-    // from their constructors and ticks, which AsyncParticles runs on worker threads (GitHub #11).
     static void add(DrawnBeforeWater particle) {
+        com.simpleblood.Tally.count("particle.underwater");
         com.simpleblood.RenderThread.run(() -> PARTICLES.add(particle));
     }
 
@@ -139,8 +135,6 @@ public final class UnderwaterParticles {
         com.simpleblood.RenderThread.run(() -> PARTICLES.remove(particle));
     }
 
-    // The ones to draw this frame. Particles cleared with the level never say goodbye: whatever
-    // is not alive here any more is dropped first.
     private static List<DrawnBeforeWater> drawnNow() {
         if (PARTICLES.isEmpty()) return List.of();
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
@@ -181,7 +175,7 @@ public final class UnderwaterParticles {
                     RENDERTYPE_ENTITY_TRANSLUCENT_SHADER,
                     new RenderStateShard.TextureStateShard(TextureAtlas.LOCATION_PARTICLES, false, false),
                     TRANSLUCENT_TRANSPARENCY,
-                    LEQUAL_DEPTH_TEST, // switched off between draws: without it blocks hide nothing
+                    LEQUAL_DEPTH_TEST,
                     NO_CULL,
                     LIGHTMAP,
                     OVERLAY,
@@ -226,9 +220,8 @@ public final class UnderwaterParticles {
     private static final List<DrawnBeforeWater> PARTICLES = new ArrayList<>();
     private static RenderType type;
 
-    // The render thread owns the list: it walks it every frame, while particles join and leave
-    // from their constructors and ticks, which AsyncParticles runs on worker threads (GitHub #11).
     static void add(DrawnBeforeWater particle) {
+        com.simpleblood.Tally.count("particle.underwater");
         com.simpleblood.RenderThread.run(() -> PARTICLES.add(particle));
     }
 
@@ -236,8 +229,6 @@ public final class UnderwaterParticles {
         com.simpleblood.RenderThread.run(() -> PARTICLES.remove(particle));
     }
 
-    // The ones to draw this frame. Particles cleared with the level never say goodbye: whatever
-    // is not alive here any more is dropped first.
     private static List<DrawnBeforeWater> drawnNow() {
         if (PARTICLES.isEmpty()) return List.of();
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
@@ -324,21 +315,14 @@ import net.minecraft.client.renderer.texture.TextureAtlas;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Our particles in water, submitted with the blood on blocks, which
- * is drawn before the water surface, instead of with the particles (see the 1.21.1 variant of
- * this class for why). The pipeline is the game one for see-through entities, minus depth
- * writes ({@link CloudPipeline}).
- */
 public final class UnderwaterParticles {
     private UnderwaterParticles() {}
 
     private static final List<DrawnBeforeWater> PARTICLES = new ArrayList<>();
     private static RenderType type;
 
-    // The render thread owns the list: it walks it every frame, while particles join and leave
-    // from their constructors and ticks, which AsyncParticles runs on worker threads (GitHub #11).
     static void add(DrawnBeforeWater particle) {
+        com.simpleblood.Tally.count("particle.underwater");
         com.simpleblood.RenderThread.run(() -> PARTICLES.add(particle));
     }
 
@@ -346,8 +330,6 @@ public final class UnderwaterParticles {
         com.simpleblood.RenderThread.run(() -> PARTICLES.remove(particle));
     }
 
-    // The ones to draw this frame. Particles cleared with the level never say goodbye: whatever
-    // is not alive here any more is dropped first.
     private static List<DrawnBeforeWater> drawnNow() {
         if (PARTICLES.isEmpty()) return List.of();
         net.minecraft.client.multiplayer.ClientLevel level = Minecraft.getInstance().level;
@@ -359,7 +341,6 @@ public final class UnderwaterParticles {
         return now;
     }
 
-    /** From the level render hook that submits the blood on blocks. */
     public static void submit(OrderedSubmitNodeCollector collector) {
         List<DrawnBeforeWater> now = drawnNow();
         if (now.isEmpty()) return;
@@ -381,6 +362,9 @@ public final class UnderwaterParticles {
                             .useLightmap()
                             .useOverlay()
                             .sortOnUpload()
+                            //? if >=26.3 {
+                            /*.setOitPipelines(net.minecraft.client.renderer.RenderPipelines.OIT_ENTITY)
+                            *///?}
                             .createRenderSetup());
         }
         return type;

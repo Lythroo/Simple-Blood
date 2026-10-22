@@ -6,7 +6,6 @@ import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 
-/** Remembers which entity a render state came from, so its blood can be found while it is drawn. */
 @Mixin(EntityRenderState.class)
 public abstract class MobRenderStateMixin implements MobRenderState {
     @Unique

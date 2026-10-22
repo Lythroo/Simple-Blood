@@ -2,10 +2,6 @@ package com.simpleblood.surface;
 
 import com.mojang.blaze3d.platform.NativeImage;
 
-/**
- * Tiny cross-version shim around {@link NativeImage} pixel access. All colours here are
- * packed ABGR ({@code 0xAABBGGRR}), which is the in-memory layout of an RGBA image.
- */
 public final class Pixels {
     private Pixels() {}
 
@@ -17,7 +13,6 @@ public final class Pixels {
         //?}
     }
 
-    /** Red, green and blue of a pixel summed (0..765); enough for luminance comparisons. */
     static int luminanceSum(NativeImage image, int x, int y) {
         //? if <=1.21.1 {
         /*int abgr = image.getPixelRGBA(x, y);

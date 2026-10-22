@@ -20,43 +20,35 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.IntSupplier;
 
-/**
- * A little diorama the settings screen renders in 3D: a few real blocks, a zombie, and blood
- * that behaves exactly like it does in the world, because it runs the same engine. Drops fly
- * with the mod's own velocities and gravity, land on the blocks and paint real canvas tiles
- * (the same {@link CanvasTile} pixels, tones, relaxation and edge runs the world uses), the
- * wound keeps dripping, and under water the drops turn into fog.
- *
- * The scene lives in its own coordinate space (blocks around the origin) and never touches
- * the level. Ticked from the screen (20 Hz), uploads its tile images to the shared atlas from
- * there too, and releases them when the screen goes away.
- */
 public final class PreviewScene {
 
-    /** What a diorama shows; each setting points at the one that matters for it. */
-    public enum Kind { HIT, DRIP, DEATH, PUDDLE, FOOTPRINTS, WATER }
+    public enum Kind {
+        HIT, DRIP, DEATH, PUDDLE, FOOTPRINTS, WATER, ARMOR, GIBLETS, WEAPONS,
+        BONE, METAL, WOOD, EMBER, SPIRIT, WIND, GLOW, RAIN, DRYING, COAT;
 
-    /**
-     * The parts of a hit the HIT diorama can play. A setting lists only the parts it changes,
-     * so hovering "Weapon flavour" shows the sweep and nothing else.
-     */
+        public boolean pieces() {
+            return this == BONE || this == METAL || this == WOOD || this == EMBER || this == SPIRIT || this == WIND;
+        }
+
+        public boolean blocksOnly() {
+            return this == PUDDLE || this == WATER || this == RAIN || this == DRYING;
+        }
+    }
+
     public enum Aspect { DRIPS, SPLASH, DIRECTIONAL, SWEEP, EXIT, LOW_HEALTH }
 
-    /** A block of the diorama. */
     public record Block(BlockPos pos, BlockState state) {}
 
-    /** A blood drop in flight. */
     public static final class Drop {
         public double x, y, z, vx, vy, vz;
         public int age, life;
-        public float size;      // quad half-size in blocks
-        public float tone;      // brightness variation
-        public int kind;        // 0 drip, 1 splash, 2 streak, 3 falling drop (from a run)
-        public int sprite;      // texture variant
+        public float size;
+        public float tone;
+        public int kind;
+        public int sprite;
         public int colour;
     }
 
-    /** A fog cloud under water. */
     public static final class Fog {
         public double x, y, z, vx, vy, vz;
         public int age, life;
@@ -64,20 +56,95 @@ public final class PreviewScene {
         public int sprite, colour;
     }
 
-    /** The zombie. */
     public static final class Mob {
         public boolean present;
         public double x, y, z;
-        public float yaw;          // radians, the way it faces
+        public float yaw;
         public int hurtTicks;
-        public int age;            // ticks alive, for the idle sway
-        public float swing;        // vanilla walk-animation position (limb swing)
-        public float amount;       // vanilla walk-animation speed (limb swing amount)
-        public boolean walking;    // paces the strip (footprint scene), else stands
+        public int age;
+        public float swing;
+        public float amount;
+        public boolean walking;
+        public boolean armored;
+        public int deathTicks;
+        public double vx, vy, vz;
+    }
+
+    public static final class Piece {
+        public static final int SPARK = 0, FLAKE = 1, GIBLET = 2, CHIP = 3, DUST = 4, SPLINTER = 5, EMBER = 6, SPIRIT = 7, WIND = 8;
+        private static final int[] TUMBLE = {0, 2, 3, 4, 5, 4, 3, 2};
+
+        public double x, y, z, vx, vy, vz;
+        public int type, age, life, shape, restFrame;
+        public float size, gravity, drag = 0.95f;
+        public int colour;
+        public int blood;
+        public boolean resting;
+        public boolean collides = true;
+        public boolean glints;
+        public float alphaScale = 1f;
+
+        public String texture() {
+            int frac8 = Math.min(7, age * 8 / Math.max(1, life));
+            return switch (type) {
+                case SPARK -> "armor_spark_" + Math.min(3, age * 4 / Math.max(1, life));
+                case FLAKE -> "metal_flake_" + shape + "_" + (resting ? restFrame : TUMBLE[(age / 2) % TUMBLE.length]);
+                case CHIP -> "bone_chip_" + shape + "_" + (resting ? restFrame : (age / 2) % 4);
+                case DUST -> "bone_dust_" + frac8;
+                case SPLINTER -> "wood_splinter_" + shape + "_" + (resting ? restFrame : (age / 2) % 4);
+                case EMBER -> "ember_" + (resting ? restFrame : (age / 2) % 4);
+                case SPIRIT -> "spirit_spark_" + Math.min(5, age * 6 / Math.max(1, life));
+                case WIND -> "wind_puff_" + frac8;
+                default -> "giblet_" + shape + "_" + (resting ? restFrame : (age / 3) % 4);
+            };
+        }
+
+        public int tint() {
+            float t = age / (float) Math.max(1, life);
+            if (type == SPARK) {
+                int g = Math.round(255 * (0.97f - 0.42f * t)), b = Math.round(255 * (0.75f - 0.62f * t));
+                return 0xFF0000 | (g << 8) | b;
+            }
+            if (type == EMBER) {
+                if (t < 0.25f) return lerp(0xFFF2B3, colour, t / 0.25f);
+                if (t < 0.65f) return lerp(colour, 0x8C1F0D, (t - 0.25f) / 0.4f);
+                return lerp(0x8C1F0D, 0x453A33, Math.min(1f, (t - 0.65f) / 0.2f));
+            }
+            if (type == FLAKE && glints) {
+                boolean face = resting ? restFrame == 0 : TUMBLE[(age / 2) % TUMBLE.length] == 0;
+                if (face && (resting ? age % 30 < 3 : (age / 2) % 3 == 0)) return lerp(colour, 0xFFFFFF, 0.6f);
+            }
+            return colour;
+        }
+
+        private static int lerp(int a, int b, float t) {
+            t = Math.max(0f, Math.min(1f, t));
+            int r = Math.round(((a >> 16) & 0xFF) + (((b >> 16) & 0xFF) - ((a >> 16) & 0xFF)) * t);
+            int g = Math.round(((a >> 8) & 0xFF) + (((b >> 8) & 0xFF) - ((a >> 8) & 0xFF)) * t);
+            int bl = Math.round((a & 0xFF) + ((b & 0xFF) - (a & 0xFF)) * t);
+            return (r << 16) | (g << 8) | bl;
+        }
+
+        public int alpha() {
+            float left = life - age;
+            if (type == SPARK) {
+                float t = age / (float) Math.max(1, life);
+                return t > 0.7f ? Math.round(255 * (1f - (t - 0.7f) / 0.3f)) : 255;
+            }
+            if (type == DUST || type == WIND) {
+                float t = age / (float) Math.max(1, life);
+                return Math.round(255 * alphaScale * (t < 0.6f ? 0.8f : 0.8f * (1f - (t - 0.6f) / 0.4f)));
+            }
+            return left < 15 ? Math.round(255 * left / 15f) : 255;
+        }
+
+        public boolean bright() {
+            return type == SPARK || type == SPIRIT || (type == EMBER && age < life * 0.8f);
+        }
     }
 
     private static final List<PreviewScene> LIVE = new ArrayList<>();
-    private static final int LIFETIME_DIVISOR = 4; // the diorama dries 4x faster than the world
+    private static final int LIFETIME_DIVISOR = 4;
 
     public final Kind kind;
     private final IntSupplier colour;
@@ -86,11 +153,10 @@ public final class PreviewScene {
     private final Map<BlockPos, Block> blockMap = new HashMap<>();
     private final Map<CanvasTile.Key, CanvasTile> tiles = new HashMap<>();
     private final List<Drop> drops = new ArrayList<>();
-    // Drops made while the drops are being moved (a pool running off a wall as one lands):
-    // they join the others once the move is over.
     private final List<Drop> born = new ArrayList<>();
     private boolean movingDrops;
     private final List<Fog> fogs = new ArrayList<>();
+    private final List<Piece> pieces = new ArrayList<>();
     private final List<Run> runs = new ArrayList<>();
     public final Mob mob = new Mob();
     private int now;
@@ -100,7 +166,6 @@ public final class PreviewScene {
     private long lastRenderedMs;
     private int relaxCursor;
 
-    /** Where the viewer stands relative to the scene (unit vector); sprays come this way. */
     public Vec3 camera = new Vec3(0.55, 0.42, 0.72).normalize();
 
     public PreviewScene(Kind kind, IntSupplier colour) {
@@ -114,7 +179,6 @@ public final class PreviewScene {
         blocks.clear();
         blockMap.clear();
         BlockState floor = Blocks.STONE_BRICKS.defaultBlockState();
-        // The footprint scene is a longer strip: room for a puddle and a trail after it.
         int length = kind == Kind.FOOTPRINTS ? 2 : 1;
         for (int x = -1; x <= 1; x++) {
             for (int z = -length; z <= length; z++) {
@@ -122,13 +186,14 @@ public final class PreviewScene {
             }
         }
         switch (kind) {
-            case HIT, DEATH -> add(new BlockPos(-1, 1, -1), Blocks.COBBLESTONE.defaultBlockState());
-            case PUDDLE -> add(new BlockPos(0, 1, -1), Blocks.OAK_PLANKS.defaultBlockState());
+            case HIT, DEATH, WEAPONS, GLOW -> add(new BlockPos(-1, 1, -1), Blocks.COBBLESTONE.defaultBlockState());
+            case PUDDLE, RAIN, DRYING -> add(new BlockPos(0, 1, -1), Blocks.OAK_PLANKS.defaultBlockState());
             default -> {}
         }
-        mob.present = kind != Kind.PUDDLE && kind != Kind.WATER;
+        mob.present = !kind.blocksOnly();
+        mob.armored = kind == Kind.ARMOR;
         mob.x = 0.5; mob.y = 1; mob.z = kind == Kind.FOOTPRINTS ? WALK_FROM : 0.5;
-        mob.yaw = (float) Math.atan2(camera.x, camera.z); // faces the viewer
+        mob.yaw = (float) Math.atan2(camera.x, camera.z);
         mob.walking = kind == Kind.FOOTPRINTS;
     }
 
@@ -143,7 +208,6 @@ public final class PreviewScene {
 
     private final Map<Long, net.minecraft.client.renderer.texture.TextureAtlasSprite> sprites = new HashMap<>();
 
-    /** The block model's sprite on that face (cached). */
     public net.minecraft.client.renderer.texture.TextureAtlasSprite sprite(Block b, Direction face) {
         long key = b.pos().asLong() * 8 + face.ordinal();
         net.minecraft.client.renderer.texture.TextureAtlasSprite s = sprites.get(key);
@@ -159,18 +223,15 @@ public final class PreviewScene {
     }
     public List<Drop> drops() { return drops; }
     public List<Fog> fogs() { return fogs; }
+    public List<Piece> pieces() { return pieces; }
     public java.util.Collection<CanvasTile> tiles() { return tiles.values(); }
     public int now() { return now; }
-    /** The whole diorama is under water: the viewer looks at the floor of a pool. */
     public boolean hasWater() { return kind == Kind.WATER; }
-    /** The surface is above everything in view. */
     public double waterTop() { return 4.0; }
     public AABB bounds() { return kind == Kind.FOOTPRINTS ? new AABB(-1, 0, -2, 2, 3, 3) : new AABB(-1, 0, -1, 2, 3, 2); }
 
-    /** Marks the scene as visible so it keeps ticking; scenes nobody draws idle. */
     public void touch() { lastRenderedMs = System.currentTimeMillis(); }
 
-    /** Limits the HIT diorama to these parts of a hit; a change clears the air and replays. */
     public void show(EnumSet<Aspect> aspects) {
         if (show.equals(aspects)) return;
         show = EnumSet.copyOf(aspects);
@@ -182,26 +243,22 @@ public final class PreviewScene {
         return kind != Kind.HIT || show.contains(a);
     }
 
-    /**
-     * Plays the effect now: a setting was hovered or changed. The blow lands on the next
-     * tick; what is already on the blocks stays. Scenes that run continuously (rain, the
-     * pacing zombie, the dripping wound) just carry on.
-     */
     public void trigger() {
         switch (kind) {
-            case HIT, WATER, DEATH -> {
+            case HIT, WATER, GIBLETS, ARMOR, WEAPONS, GLOW, BONE, METAL, WOOD, EMBER, SPIRIT, WIND, COAT -> {
                 loopTick = HIT_AT - 1;
                 burstTicks = 0;
                 burstTicksLeft = 0;
             }
+            case DEATH -> {
+                if (mob.present && mob.deathTicks == 0) loopTick = HIT_AT - 1;
+            }
+            case RAIN, DRYING -> loopTick = 0;
             case DRIP -> { if (loopTick > HIT_AT) mob.hurtTicks = 6; else loopTick = HIT_AT - 1; }
             default -> {}
         }
     }
 
-    // ------------------------------------------------------------------ lifecycle
-
-    /** Ticks every scene drawn recently; called from the screen tick (outside rendering). */
     public static void tickAll() {
         List<PreviewScene> copy;
         synchronized (LIVE) { copy = new ArrayList<>(LIVE); }
@@ -211,7 +268,6 @@ public final class PreviewScene {
         }
     }
 
-    /** Frees atlas slots of every scene (the screen closed). */
     public static void disposeAll() {
         List<PreviewScene> copy;
         synchronized (LIVE) { copy = new ArrayList<>(LIVE); LIVE.clear(); }
@@ -224,14 +280,15 @@ public final class PreviewScene {
         tiles.clear();
         drops.clear();
         fogs.clear();
+        pieces.clear();
         runs.clear();
+        if (coat != null) coat.dispose();
+        coat = null;
         synchronized (LIVE) { LIVE.remove(this); }
     }
 
-    /** Settings to play the scene with in place of the live ones (a hovered preset), or null. */
     private SimpleBloodConfig override;
 
-    /** Plays the scene with {@code config} instead of the live settings; null goes back to them. */
     public void config(SimpleBloodConfig config) {
         override = config;
     }
@@ -273,6 +330,17 @@ public final class PreviewScene {
         s = s * 31 + c.underwater.fogSize;
         s = s * 31 + c.underwater.fogLifetime;
         s = s * 31 + c.underwater.fogOpacity;
+        s = s * 31 + (c.surfaces.corpsePools ? 1 : 0);
+        s = s * 31 + (c.gore.giblets ? 1 : 0) + (c.gore.gibletTrails ? 2 : 0);
+        s = s * 31 + c.gore.gibletAmount;
+        s = s * 31 + (c.combat.armorSparks ? 1 : 0) + (c.combat.armorShards ? 2 : 0) + (c.combat.armorClank ? 4 : 0);
+        s = s * 31 + c.combat.armorBleed;
+        SimpleBloodConfig.KindSettings k = c.kinds;
+        s = s * 31 + k.boneAmount + k.boneDustOpacity * 7 + k.metalAmount * 13 + k.woodAmount * 17 + k.resinShare * 19;
+        s = s * 31 + k.emberAmount + k.sparkAmount * 7 + k.windAmount * 13 + k.windOpacity * 17 + k.pieceLifetime * 19;
+        s = s * 31 + (k.metalGlint ? 1 : 0) + (k.emberSmoke ? 2 : 0) + (k.glow ? 4 : 0) + (c.surfaces.rainWashes ? 8 : 0);
+        s = s * 31 + c.mobCoat.amount + c.mobCoat.lifetimeSeconds * 7 + (c.mobCoat.runs ? 1 : 0) * 13 + (c.mobCoat.drips ? 1 : 0) * 17
+                + (c.mobCoat.enabled ? 1 : 0) * 19;
         return s;
     }
 
@@ -282,9 +350,20 @@ public final class PreviewScene {
         tiles.clear();
         drops.clear();
         fogs.clear();
+        pieces.clear();
         runs.clear();
         loopTick = 0;
         mob.hurtTicks = 0;
+        mob.deathTicks = 0;
+        mob.present = !kind.blocksOnly();
+        mob.x = 0.5;
+        mob.y = 1;
+        mob.z = kind == Kind.FOOTPRINTS ? WALK_FROM : 0.5;
+        pool = null;
+        woundHeight = 1.15;
+        burstShare = 1f;
+        if (coat != null) coat.dispose();
+        coat = null;
         puddleLaid = false;
         footWet = 0;
         lastStepIndex = Integer.MIN_VALUE;
@@ -292,9 +371,7 @@ public final class PreviewScene {
         signature = signature();
     }
 
-    // ------------------------------------------------------------------ simulation
-
-    private static final int HIT_AT = 8;      // the blow lands this many ticks after a (re)start
+    private static final int HIT_AT = 8;
 
     public void tick() {
         if (signature != signature()) restart();
@@ -304,13 +381,12 @@ public final class PreviewScene {
         mob.age++;
         if (mob.hurtTicks > 0) mob.hurtTicks--;
         if (!mob.walking) {
-            mob.yaw = (float) Math.atan2(camera.x, camera.z); // always faces the viewer
-            mob.amount += (0f - mob.amount) * 0.4f;            // legs settle, as vanilla's do
+            mob.yaw = (float) Math.atan2(camera.x, camera.z);
+            mob.amount += (0f - mob.amount) * 0.4f;
         }
 
         switch (kind) {
             case HIT -> {
-                // One blow per trigger (hover or a changed value), then the wound drips a while.
                 if (loopTick == HIT_AT) hit(c);
                 if (loopTick > HIT_AT + burstTicks && loopTick < HIT_AT + 80 && c.particles.lowHealthDrip && shows(Aspect.LOW_HEALTH)) dripTick(c);
                 if (loopTick >= HIT_AT + burstTicks) burstTicks = 0;
@@ -320,21 +396,43 @@ public final class PreviewScene {
                 if (loopTick == HIT_AT) clouds(c);
             }
             case DRIP -> {
-                // A wounded zombie, bleeding on and on.
                 if (loopTick == HIT_AT) mob.hurtTicks = 6;
                 if (loopTick > HIT_AT && c.particles.lowHealthDrip) dripTick(c);
             }
-            case DEATH -> {
-                if (loopTick == HIT_AT) death(c);
+            case DEATH -> deathTick(c);
+            case ARMOR -> armorTick(c);
+            case WEAPONS -> weaponTick(c);
+            case BONE, METAL, WOOD, EMBER, SPIRIT, WIND -> {
+                if (loopTick == HIT_AT) {
+                    mob.hurtTicks = 10;
+                    throwPieces(c);
+                }
+                if (loopTick >= HIT_AT + 50) loopTick = HIT_AT - 1;
+            }
+            case GLOW -> {
+                if (loopTick == HIT_AT) hit(c);
+                if (burstTicksLeft > 0) burstTick(c);
+                if (loopTick >= HIT_AT + 50) loopTick = HIT_AT - 1;
+            }
+            case RAIN -> rainTick(c);
+            case COAT -> coatTick(c);
+            case DRYING -> dryingTick(c);
+            case GIBLETS -> {
+                if (loopTick == HIT_AT) {
+                    hit(c);
+                    giblets(c, 1 + rng.nextInt(2));
+                }
+                if (burstTicksLeft > 0) burstTick(c);
+                if (loopTick >= HIT_AT + 55) loopTick = HIT_AT - 1;
             }
             case PUDDLE -> {
-                // A steady rain of drops onto the step and the floor.
                 if (loopTick % 7 == 0) rainDrop(c);
                 if (loopTick >= 400) loopTick = 0;
             }
             case FOOTPRINTS -> walkTick(c);
         }
         moveDrops(c);
+        movePieces(c);
         moveFogs();
         advanceRuns(c);
         if ((now & 3) == 0) relax(c);
@@ -342,11 +440,6 @@ public final class PreviewScene {
         upload(c);
     }
 
-    /**
-     * Under water: two or three drops of blood bloom into clouds right in front of the viewer
-     * (or, with clouds turned off, sink as slowed drops), sized and timed like the mod's fog
-     * particles.
-     */
     private void clouds(SimpleBloodConfig c) {
         int n = 2 + rng.nextInt(2);
         for (int i = 0; i < n; i++) {
@@ -358,14 +451,13 @@ public final class PreviewScene {
                 d.colour = colour.getAsInt() & 0xFFFFFF;
                 spawnFog(d, c);
                 Fog f = fogs.get(fogs.size() - 1);
-                f.size = (0.2f + rng.nextFloat() * 0.15f) * c.fogSizeMultiplier(); // the bigger end of the mod's range
+                f.size = (0.2f + rng.nextFloat() * 0.15f) * c.fogSizeMultiplier();
             } else {
                 spawn(x, y, z, (rng.nextDouble() - 0.5) * 0.2, -0.3, (rng.nextDouble() - 0.5) * 0.2, 0);
             }
         }
     }
 
-    /** The death burst as the death spawner does it: everything at once, all over the body. */
     private void death(SimpleBloodConfig c) {
         mob.hurtTicks = 12;
         if (!c.particles.deathBurst) return;
@@ -387,9 +479,436 @@ public final class PreviewScene {
         }
     }
 
-    // ------------------------------------------------------------------ footprints scene
+    private boolean onArmor;
 
-    /** The zombie paces between these z positions at a steady shuffle (blocks per tick). */
+    private void armorTick(SimpleBloodConfig c) {
+        if (loopTick == HIT_AT) {
+            onArmor = !onArmor;
+            woundHeight = onArmor ? 1.2 : 0.45;
+            burstShare = onArmor ? Math.max(0, Math.min(100, c.combat.armorBleed)) / 100f : 1f;
+            hit(c);
+            if (onArmor) {
+                Vec3 at = wound();
+                if (c.combat.armorSparks) sparks(at, camera);
+                if (c.combat.armorShards) flakes(at, camera, 0xC7C7CC);
+                if (c.combat.armorClank) clank();
+            }
+        }
+        if (burstTicksLeft > 0) burstTick(c);
+        if (loopTick >= HIT_AT + 45) loopTick = HIT_AT - 1;
+    }
+
+    private void sparks(Vec3 at, Vec3 back) {
+        int n = 3 + rng.nextInt(3);
+        for (int i = 0; i < n; i++) {
+            Vec3 dir = back.add((rng.nextDouble() - 0.5) * 1.6, 0.2 + rng.nextDouble() * 0.6, (rng.nextDouble() - 0.5) * 1.6).normalize();
+            Piece p = piece(Piece.SPARK, at, dir.scale(0.08 + rng.nextDouble() * 0.1));
+            p.life = 5 + rng.nextInt(6);
+            p.size = 0.05f * (0.8f + rng.nextFloat() * 0.4f);
+            p.gravity = 0.035f;
+            p.drag = 0.9f;
+        }
+    }
+
+    private void flakes(Vec3 at, Vec3 back, int metal) {
+        int n = 1 + rng.nextInt(2);
+        for (int i = 0; i < n; i++) {
+            Vec3 dir = back.add((rng.nextDouble() - 0.5) * 1.2, 0.4 + rng.nextDouble() * 0.5, (rng.nextDouble() - 0.5) * 1.2).normalize();
+            Piece p = piece(Piece.FLAKE, at, dir.scale(0.06 + rng.nextDouble() * 0.06));
+            p.shape = rng.nextInt(3);
+            p.restFrame = rng.nextBoolean() ? 0 : 5;
+            p.life = 60 + rng.nextInt(20);
+            p.size = 0.045f * (1f + rng.nextFloat() * 0.3f);
+            p.gravity = 0.04f;
+            p.colour = metal;
+        }
+    }
+
+    private void clank() {
+        SimpleBloodConfig c = cfg();
+        if (!c.audio.soundEnabled) return;
+        float volume = 0.35f * c.soundVolumeMultiplier() * Math.max(0, c.audio.armorVolume) / 100f;
+        if (volume <= 0) return;
+        net.minecraft.client.Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
+                net.minecraft.sounds.SoundEvents.CHAIN_HIT, (0.85f + rng.nextFloat() * 0.3f) * c.soundPitchMultiplier(), volume));
+    }
+
+    private int weapon = -1;
+    private static final String[] WEAPONS = {"A sword", "An axe", "A mace", "An arrow"};
+
+    private void weaponTick(SimpleBloodConfig c) {
+        if (loopTick == HIT_AT) {
+            weapon = (weapon + 1) % WEAPONS.length;
+            woundHeight = 1.15;
+            hit(c);
+            if (c.directional.enabled && c.directional.weaponFlavour) {
+                switch (weapon) {
+                    case 0 -> sweep(c);
+                    case 1 -> axe(c);
+                    case 2 -> mace(c);
+                    default -> arrow(c);
+                }
+            }
+        }
+        if (burstTicksLeft > 0) burstTick(c);
+        if (loopTick >= HIT_AT + 45) loopTick = HIT_AT - 1;
+    }
+
+    private void axe(SimpleBloodConfig c) {
+        Vec3 w = wound();
+        for (int i = 0; i < 8; i++) {
+            spawn(w.x + (rng.nextDouble() - 0.5) * 0.2, w.y, w.z + (rng.nextDouble() - 0.5) * 0.2,
+                    camera.x * 0.2 + (rng.nextDouble() - 0.5) * 0.2, -1.4, camera.z * 0.2 + (rng.nextDouble() - 0.5) * 0.2, 1);
+        }
+        pour(new Vec3(mob.x, 1, mob.z).add(camera.x * 0.45, 0, camera.z * 0.45), Math.round(14 * c.surfaceAmount()));
+    }
+
+    private void mace(SimpleBloodConfig c) {
+        Vec3 at = new Vec3(mob.x, 1, mob.z).add(camera.x * 0.3, 0, camera.z * 0.3);
+        pour(at, Math.round(20 * c.surfaceAmount()));
+        for (int i = 0; i < 10; i++) {
+            double a = i / 10.0 * Math.PI * 2 + rng.nextDouble() * 0.4;
+            Drop d = spawn(at.x, 1.15, at.z, 0, 0, 0, 1);
+            d.vx = Math.cos(a) * 0.14; d.vy = 0.12 + rng.nextDouble() * 0.06; d.vz = Math.sin(a) * 0.14;
+        }
+        Vec3 w = wound();
+        for (int i = 0; i < 6; i++) {
+            Drop d = spawn(w.x, w.y, w.z, 0, 0, 0, 0);
+            d.vx = (rng.nextDouble() - 0.5) * 0.08; d.vy = 0.35 + rng.nextDouble() * 0.15; d.vz = (rng.nextDouble() - 0.5) * 0.08;
+        }
+    }
+
+    private void arrow(SimpleBloodConfig c) {
+        Vec3 back = camera.scale(-1);
+        Vec3 exit = new Vec3(mob.x, wound().y, mob.z).add(back.scale(0.32));
+        for (int i = 0; i < 7; i++) {
+            Vec3 v = back.scale(0.18 + rng.nextDouble() * 0.12).add((rng.nextDouble() - 0.5) * 0.06, rng.nextDouble() * 0.05, (rng.nextDouble() - 0.5) * 0.06);
+            Drop d = spawn(exit.x, exit.y + (rng.nextDouble() - 0.5) * 0.1, exit.z, 0, 0, 0, i < 2 ? 2 : 1);
+            d.vx = v.x; d.vy = v.y; d.vz = v.z;
+        }
+    }
+
+    private void throwPieces(SimpleBloodConfig c) {
+        SimpleBloodConfig.KindSettings k = c.kinds;
+        float life = k.pieceLifetimeMultiplier();
+        Vec3 w = wound();
+        com.simpleblood.BloodKind which = switch (kind) {
+            case BONE -> com.simpleblood.BloodKind.BONE;
+            case METAL -> com.simpleblood.BloodKind.METAL;
+            case WOOD -> com.simpleblood.BloodKind.WOOD;
+            case EMBER -> com.simpleblood.BloodKind.EMBER;
+            case SPIRIT -> com.simpleblood.BloodKind.SPIRIT;
+            default -> com.simpleblood.BloodKind.WIND;
+        };
+        int n = Math.round(8 * k.amount(which) * c.masterAmount());
+        for (int i = 0; i < n; i++) {
+            Vec3 dir = camera.add((rng.nextDouble() - 0.5) * 1.8, 0.3 + rng.nextDouble() * 0.7, (rng.nextDouble() - 0.5) * 1.8).normalize();
+            switch (kind) {
+                case BONE -> {
+                    if (i % 2 == 0) {
+                        Piece p = piece(Piece.CHIP, w, dir.scale(0.08 + rng.nextDouble() * 0.08));
+                        p.shape = rng.nextInt(4); p.restFrame = rng.nextInt(4); p.life = Math.round((60 + rng.nextInt(20)) * life);
+                        p.size = 0.06f; p.gravity = 0.04f; p.colour = 0xE6DFC8;
+                    } else {
+                        Piece p = piece(Piece.DUST, w, dir.scale(0.02 + rng.nextDouble() * 0.03));
+                        p.life = Math.round((25 + rng.nextInt(15)) * life); p.size = 0.16f; p.gravity = -0.001f; p.drag = 0.9f;
+                        p.collides = false; p.colour = 0xE6DFC8; p.alphaScale = k.boneDustOpacity / 100f;
+                    }
+                }
+                case METAL -> {
+                    Piece p = piece(Piece.FLAKE, w, dir.scale(0.07 + rng.nextDouble() * 0.07));
+                    p.shape = rng.nextInt(3); p.restFrame = rng.nextBoolean() ? 0 : 5; p.life = Math.round((70 + rng.nextInt(30)) * life);
+                    p.size = 0.06f; p.gravity = 0.04f; p.colour = 0xA8A8AC; p.glints = k.metalGlint;
+                }
+                case WOOD -> {
+                    if (rng.nextInt(100) < k.resinShare) {
+                        Drop d = spawn(w.x, w.y, w.z, dir.x, dir.y - 0.5, dir.z, rng.nextInt(3) == 0 ? 1 : 0);
+                        d.colour = 0xE07A2E;
+                    } else {
+                        Piece p = piece(Piece.SPLINTER, w, dir.scale(0.08 + rng.nextDouble() * 0.08));
+                        p.shape = rng.nextInt(4); p.restFrame = rng.nextInt(4); p.life = Math.round((60 + rng.nextInt(20)) * life);
+                        p.size = 0.06f; p.gravity = 0.04f; p.colour = 0x7A5A3E;
+                    }
+                }
+                case EMBER -> {
+                    Piece p = piece(Piece.EMBER, w, dir.scale(0.06 + rng.nextDouble() * 0.06).add(0, 0.05, 0));
+                    p.restFrame = rng.nextInt(4); p.life = Math.round((40 + rng.nextInt(25)) * life);
+                    p.size = 0.045f; p.gravity = 0.022f; p.drag = 0.96f; p.colour = 0xFFA62B;
+                    if (k.emberSmoke && rng.nextInt(5) == 0) {
+                        Piece smoke = piece(Piece.DUST, w, new Vec3(0, 0.03, 0));
+                        smoke.life = Math.round(40 * life); smoke.size = 0.14f; smoke.gravity = -0.002f; smoke.drag = 0.95f;
+                        smoke.collides = false; smoke.colour = 0x4A4A4A; smoke.alphaScale = 0.6f;
+                    }
+                }
+                case SPIRIT -> {
+                    Piece p = piece(Piece.SPIRIT, w, dir.scale(0.03 + rng.nextDouble() * 0.04));
+                    p.life = Math.round((16 + rng.nextInt(10)) * life); p.size = 0.07f; p.gravity = -0.002f; p.drag = 0.9f;
+                    p.collides = false; p.colour = 0xB8F2FF;
+                }
+                default -> {
+                    if (i % 2 == 1) continue;
+                    Piece p = piece(Piece.WIND, w, dir.scale(0.04 + rng.nextDouble() * 0.04));
+                    p.life = Math.round((20 + rng.nextInt(10)) * life); p.size = 0.26f; p.gravity = 0f; p.drag = 0.92f;
+                    p.collides = false; p.colour = 0xD6E6FF; p.alphaScale = k.windOpacity / 100f;
+                }
+            }
+        }
+    }
+
+    public boolean dark() {
+        return kind == Kind.GLOW;
+    }
+
+    public boolean bloodGlows() {
+        return kind == Kind.GLOW && cfg().kinds.glow;
+    }
+
+    private com.simpleblood.mob.PreviewCoat coat;
+    private int coatBlow = -1;
+    private static final com.simpleblood.HitContext.Weapon[] COAT_WEAPONS = {
+            com.simpleblood.HitContext.Weapon.BLADE, com.simpleblood.HitContext.Weapon.MACE,
+            com.simpleblood.HitContext.Weapon.AXE, com.simpleblood.HitContext.Weapon.ARROW};
+
+    public com.simpleblood.mob.PreviewCoat coat() { return coat; }
+
+    public int coatLifetime() {
+        return Math.max(60, Math.max(1, cfg().mobCoat.lifetimeSeconds) * 20 / LIFETIME_DIVISOR);
+    }
+
+    private void coatTick(SimpleBloodConfig c) {
+        if (coat == null) coat = new com.simpleblood.mob.PreviewCoat(colour.getAsInt() & 0xFFFFFF);
+        if (loopTick == HIT_AT) {
+            coatBlow = (coatBlow + 1) % COAT_WEAPONS.length;
+            woundHeight = 0.85 + rng.nextDouble() * 0.7;
+            hit(c);
+            float amount = Math.max(0, c.mobCoat.amount) / 100f;
+            if (amount > 0) {
+                Vec3 w = wound();
+                com.simpleblood.HitContext.Weapon weapon = c.directional.weaponFlavour ? COAT_WEAPONS[coatBlow] : com.simpleblood.HitContext.Weapon.NONE;
+                coat.hit(w.add(camera.scale(0.35)), camera.scale(-1), weapon, 1.2f * amount, 3, colour.getAsInt() & 0xFFFFFF);
+            }
+        }
+        if (burstTicksLeft > 0) burstTick(c);
+        if (c.particles.lowHealthDrip && loopTick > HIT_AT && loopTick % 12 == 0) coat.seep(1);
+        coat.tick(coatLifetime(), c.surfaces.opacity / 100f);
+        coat.takeDrips((at, col) -> {
+            Drop d = spawn(at.x, at.y, at.z, 0, -0.05, 0, 3);
+            d.colour = col;
+        });
+        if (loopTick >= HIT_AT + 60) loopTick = HIT_AT - 1;
+    }
+
+    public final List<Vec3> rain = new ArrayList<>();
+
+    private void rainTick(SimpleBloodConfig c) {
+        if (loopTick == 1) layPuddle(c);
+        for (int i = 0; i < 3; i++) {
+            rain.add(new Vec3(-1 + rng.nextDouble() * 3, 3.4 + rng.nextDouble() * 0.6, -1 + rng.nextDouble() * 3));
+        }
+        rain.replaceAll(v -> v.add(0, -0.35, 0));
+        rain.removeIf(v -> v.y < 1.0);
+        if (c.surfaces.rainWashes && (now & 1) == 0) age();
+        if (loopTick >= 240) loopTick = 0;
+    }
+
+    private void dryingTick(SimpleBloodConfig c) {
+        if (loopTick == 1) layPuddle(c);
+        if (loopTick >= 320) loopTick = 0;
+    }
+
+    private void layPuddle(SimpleBloodConfig c) {
+        if (!c.surfaces.enabled) return;
+        int n = Math.round(60 * (c.surfaces.resolution == 16 ? 3 : 1) / 3f * Math.max(0.3f, c.surfaceAmount()));
+        pour(new Vec3(0.5, 1, 0.55), n);
+        pour(new Vec3(0.15, 1, 0.9), n / 3);
+    }
+
+    public String caption() {
+        SimpleBloodConfig c = cfg();
+        return switch (kind) {
+            case HIT -> "A hit";
+            case DRIP -> "Badly hurt";
+            case DEATH -> mob.present ? "A killing blow" : "Gone to dust";
+            case PUDDLE -> "Drops landing on blocks";
+            case FOOTPRINTS -> "Walking through blood";
+            case WATER -> "Bleeding under water";
+            case ARMOR -> onArmor ? "On the iron chestplate" : "On the bare leg";
+            case GIBLETS -> c.gore.giblets ? "A hard hit" : "A hard hit, giblets are off";
+            case WEAPONS -> weapon < 0 ? "" : WEAPONS[weapon] + (c.directional.weaponFlavour ? "" : ", flavour is off");
+            case BONE -> "Bone, like a skeleton";
+            case METAL -> "Metal, like an iron golem";
+            case WOOD -> "Wood, like the creaking";
+            case EMBER -> "Embers, like a blaze";
+            case SPIRIT -> "Sparks, like an allay";
+            case WIND -> "Wind, like a breeze";
+            case GLOW -> c.kinds.glow ? "Glow squid ink in the dark" : "In the dark, glow is off";
+            case RAIN -> c.surfaces.rainWashes ? "Rain washing it away" : "Rain, washing is off";
+            case DRYING -> "Drying";
+            case COAT -> c.mobCoat.enabled ? "Blood that stays on the body" : "Blood on mobs is off, shown anyway";
+        };
+    }
+
+    private static final int FLESH = 0xD8706A;
+
+    private void giblets(SimpleBloodConfig c, int n) {
+        if (!c.gore.giblets && kind != Kind.GIBLETS) return;
+        n = Math.max(1, Math.round(n * Math.max(0, c.gore.gibletAmount) / 100f));
+        int blood = colour.getAsInt() & 0xFFFFFF;
+        int flesh = mix(blood, FLESH);
+        double towards = Math.atan2(camera.z, camera.x);
+        Vec3 from = wound();
+        for (int i = 0; i < n; i++) {
+            double a = towards + (rng.nextDouble() - 0.5) * Math.toRadians(170);
+            double out = 0.06 + rng.nextDouble() * 0.1;
+            Piece p = piece(Piece.GIBLET, from, new Vec3(Math.cos(a) * out, 0.12 + rng.nextDouble() * 0.12, Math.sin(a) * out));
+            p.shape = rng.nextInt(4);
+            p.restFrame = rng.nextInt(4);
+            p.life = 90 + rng.nextInt(30);
+            p.size = 0.085f * (1f + rng.nextFloat() * 0.3f);
+            p.gravity = 0.03f;
+            p.drag = 0.98f;
+            p.colour = flesh;
+            p.blood = blood;
+        }
+    }
+
+    private static int mix(int a, int b) {
+        int r = (((a >> 16) & 0xFF) + ((b >> 16) & 0xFF)) / 2;
+        int g = (((a >> 8) & 0xFF) + ((b >> 8) & 0xFF)) / 2;
+        int bl = ((a & 0xFF) + (b & 0xFF)) / 2;
+        return (r << 16) | (g << 8) | bl;
+    }
+
+    private Piece piece(int type, Vec3 at, Vec3 v) {
+        Piece p = new Piece();
+        p.type = type;
+        p.x = at.x; p.y = at.y; p.z = at.z;
+        p.vx = v.x; p.vy = v.y; p.vz = v.z;
+        pieces.add(p);
+        return p;
+    }
+
+    private void movePieces(SimpleBloodConfig c) {
+        Iterator<Piece> it = pieces.iterator();
+        while (it.hasNext()) {
+            Piece p = it.next();
+            if (++p.age >= p.life || p.y < -1.5) {
+                it.remove();
+                continue;
+            }
+            if (p.resting) continue;
+            double px = p.x, py = p.y, pz = p.z;
+            p.x += p.vx; p.y += p.vy; p.z += p.vz;
+            p.vy -= p.gravity;
+            p.vx *= p.drag; p.vy *= p.drag; p.vz *= p.drag;
+            if (p.type == Piece.GIBLET && c.gore.gibletTrails && p.age % 3 == 0) {
+                Drop d = spawn(p.x, p.y, p.z, 0, -0.1, 0, 0);
+                d.vx = 0; d.vz = 0; d.vy = -0.05;
+                d.colour = p.blood;
+            }
+            boolean gone = false;
+            for (Block b : p.collides ? blocks : List.<Block>of()) {
+                if (!new AABB(b.pos()).contains(p.x, p.y, p.z)) continue;
+                double top = b.pos().getY() + 1;
+                if (py >= top - 0.05 && p.vy < 0) {
+                    if (p.type == Piece.SPARK) { gone = true; break; }
+                    p.y = top + 0.01;
+                    p.vx = p.vy = p.vz = 0;
+                    p.resting = true;
+                    if (p.type == Piece.GIBLET && c.surfaces.enabled && !blockMap.containsKey(b.pos().above())) {
+                        int px2 = Math.max(1, Math.round(5 * c.surfaceAmount() * (c.surfaces.resolution >= 16 ? 3f : 1f)));
+                        stampAt(b, Direction.UP, new Vec3(p.x, top, p.z), p.blood, px2, new Vec3(0, -1, 0));
+                    }
+                } else {
+                    p.x = px; p.z = pz;
+                    p.vx *= -0.3; p.vz *= -0.3;
+                }
+                break;
+            }
+            if (gone) it.remove();
+        }
+    }
+
+    private static final class Pool {
+        Vec3 middle;
+        List<Vec3> outline = new ArrayList<>();
+        int bled;
+    }
+
+    private Pool pool;
+
+    private void deathTick(SimpleBloodConfig c) {
+        if (loopTick == HIT_AT && mob.present && mob.deathTicks == 0) {
+            death(c);
+            woundHeight = 1.15;
+            giblets(c, 3 + rng.nextInt(2));
+            mob.deathTicks = 1;
+            mob.vx = -camera.x * 0.1;
+            mob.vz = -camera.z * 0.1;
+            mob.vy = 0.22;
+        }
+        if (mob.deathTicks > 0) {
+            mob.deathTicks++;
+            mob.x += mob.vx; mob.y += mob.vy; mob.z += mob.vz;
+            mob.vy -= 0.06;
+            boolean down = mob.y <= 1;
+            if (down) {
+                mob.y = 1;
+                mob.vy = 0;
+                mob.vx *= 0.4;
+                mob.vz *= 0.4;
+            }
+            if (down && mob.deathTicks >= 8 && c.surfaces.enabled && c.surfaces.corpsePools) {
+                if (pool == null) settlePool();
+                bleedPool(c);
+            }
+            if (mob.deathTicks >= 20) {
+                mob.present = false;
+                mob.deathTicks = 0;
+                pool = null;
+            }
+        }
+        if (!mob.present && loopTick >= HIT_AT + 75) {
+            mob.present = true;
+            mob.x = 0.5; mob.y = 1; mob.z = 0.5;
+            loopTick = HIT_AT - 1;
+        }
+    }
+
+    public Vec3 lyingDirection() {
+        return new Vec3(Math.cos(mob.yaw), 0, -Math.sin(mob.yaw));
+    }
+
+    private void settlePool() {
+        pool = new Pool();
+        Vec3 head = lyingDirection(), side = new Vec3(-head.z, 0, head.x);
+        for (double along = 0.1; along <= 1.8; along += 0.25) {
+            for (int s = -1; s <= 1; s += 2) {
+                pool.outline.add(new Vec3(mob.x, 1, mob.z).add(head.scale(along)).add(side.scale(s * 0.25)));
+            }
+        }
+        pool.middle = new Vec3(mob.x, 1, mob.z).add(head.scale(0.9));
+        pour(pool.middle, 10);
+    }
+
+    private void bleedPool(SimpleBloodConfig c) {
+        double reach = Math.min(1.15, 0.35 + pool.bled * 0.08);
+        for (int k = 0; k < 3; k++) {
+            Vec3 to = pool.outline.get(rng.nextInt(pool.outline.size()));
+            double f = reach * (0.75 + rng.nextDouble() * 0.3);
+            Vec3 at = pool.middle.add(to.subtract(pool.middle).scale(f));
+            pour(at, Math.round((6 + rng.nextInt(5)) * 0.85f));
+        }
+        pour(pool.middle, 3);
+        pool.bled++;
+    }
+
+    private void pour(Vec3 at, int pixels) {
+        Block b = blockMap.get(new BlockPos((int) Math.floor(at.x), 0, (int) Math.floor(at.z)));
+        if (b == null || blockMap.containsKey(b.pos().above())) return;
+        stampAt(b, Direction.UP, new Vec3(at.x, 1, at.z), colour.getAsInt() & 0xFFFFFF, pixels, new Vec3(0, -1, 0));
+    }
+
     private static final double WALK_FROM = -1.55, WALK_TO = 2.55, WALK_SPEED = 0.08;
     private static final int TURN_TICKS = 14;
     private int walkDir = 1, turnTicks;
@@ -398,16 +917,8 @@ public final class PreviewScene {
     private double footWet;
     private boolean puddleLaid;
 
-    /**
-     * The zombie walks the strip, through a puddle near one end and on over dry stone, turns
-     * round and comes back. Its legs follow vanilla's walk animation (swing amount eases
-     * toward four times the speed, position advances by it), and a print is laid whenever a
-     * leg reaches its forward extreme - the very same rule {@link Footprints} applies in the
-     * world, so cadence, reach and sole match what the mod does in game.
-     */
     private void walkTick(SimpleBloodConfig c) {
         if (!puddleLaid) {
-            // A puddle to step in, laid down once, a block from the start of the strip.
             Block pool = blockMap.get(new BlockPos(0, 0, -1));
             if (pool != null && c.surfaces.enabled) {
                 int n = Math.round(70 * (c.surfaces.resolution == 16 ? 3 : 1) / 3f * Math.max(0.3f, c.surfaceAmount()));
@@ -419,8 +930,6 @@ public final class PreviewScene {
             turnTicks = 0;
             mob.yaw = 0f;
         }
-        // Blood keeps dripping onto the puddle from above, so the zombie never runs out of
-        // it to step in (feet carry some off, and the diorama dries fast).
         if (loopTick % 10 == 0 && c.surfaces.enabled) {
             Drop d = spawn(0.5 + (rng.nextDouble() - 0.5) * 0.6, 3.4, -0.5 + (rng.nextDouble() - 0.5) * 0.6, 0, -0.1, 0, 0);
             d.vx = 0; d.vz = 0; d.vy = -0.15;
@@ -443,7 +952,6 @@ public final class PreviewScene {
         mob.amount += (Math.min(v * 4f, 1f) - mob.amount) * 0.4f;
         mob.swing += mob.amount;
 
-        // A foot comes down every half period of the leg swing.
         int stepIndex = (int) Math.floor(mob.swing * Footprints.LEG_SWING / Math.PI);
         boolean landed = lastStepIndex != Integer.MIN_VALUE && stepIndex != lastStepIndex && v > 1e-4;
         lastStepIndex = stepIndex;
@@ -457,7 +965,6 @@ public final class PreviewScene {
         double side = right ? gait.side() : -gait.side();
         Vec3 foot = new Vec3(mob.x + rx * side + fx * reach, 1.0, mob.z + rz * side + fz * reach);
         double ps = 1.0 / res;
-        // Wet feet?
         int found = 0;
         for (int[] cell : Footprints.rasterise(gait.sole(), fx, fz, 1)) {
             Vec3 p = foot.add(cell[0] * ps, 0, cell[1] * ps);
@@ -487,9 +994,12 @@ public final class PreviewScene {
         return Math.min(1f, 0.6f * Math.min(1f, DAMAGE / 20f) + 0.4f * Math.min(1f, DAMAGE / MAX_HEALTH));
     }
 
+    private double woundHeight = 1.15;
+    private float burstShare = 1f;
+
     private Vec3 wound() {
         Vec3 facing = new Vec3(Math.sin(mob.yaw), 0, Math.cos(mob.yaw));
-        return new Vec3(mob.x, mob.y + 1.15, mob.z).add(facing.scale(0.32));
+        return new Vec3(mob.x, mob.y + woundHeight, mob.z).add(facing.scale(0.32));
     }
 
     private void hit(SimpleBloodConfig c) {
@@ -504,7 +1014,7 @@ public final class PreviewScene {
 
     private void burstTick(SimpleBloodConfig c) {
         burstTicksLeft--;
-        float intensity = c.burstIntensityMultiplier();
+        float intensity = c.burstIntensityMultiplier() * burstShare;
         float spreadFactor = Math.min(DAMAGE / 10f, 2f) * c.burstSpreadMultiplier();
         int totalDrips = (int) (Math.min(1 + (int) (DAMAGE * 1.2f), 15) * intensity);
         int totalSplash = (int) (Math.min(1 + (int) (DAMAGE * 1.8f), 23) * intensity);
@@ -522,8 +1032,6 @@ public final class PreviewScene {
                 spawn(w.x + (rng.nextDouble() - 0.5) * 2 * patch, w.y + (rng.nextDouble() - 0.5) * 2 * patch, w.z + (rng.nextDouble() - 0.5) * 2 * patch, vx, vy, vz, 0);
             }
         }
-        // The share that flies back toward the viewer, the way it does at whoever struck the
-        // blow. Without the directional part on show the whole splash sprays around.
         int directional = 0;
         if (c.directional.enabled && shows(Aspect.DIRECTIONAL)) {
             directional = Math.round(splash * c.directionalShare());
@@ -569,7 +1077,7 @@ public final class PreviewScene {
             Vec3 v = dir.scale(s).add(0, 0.01 + rng.nextDouble() * 0.03, 0);
             Vec3 p = w.add(side.scale((rng.nextDouble() - 0.5) * 0.36)).add(0, (rng.nextDouble() - 0.5) * 0.25, 0);
             Drop dr = spawn(p.x, p.y, p.z, v.x, v.y, v.z, 2);
-            dr.vx = v.x; dr.vy = v.y; dr.vz = v.z; // streaks keep their exact velocity
+            dr.vx = v.x; dr.vy = v.y; dr.vz = v.z;
         }
     }
 
@@ -597,8 +1105,6 @@ public final class PreviewScene {
         Drop d = new Drop();
         d.x = x; d.y = y; d.z = z;
         if (kind != 2 && kind != 3) {
-            // Vanilla's particle constructor keeps the direction (with a jitter) and picks its
-            // own modest speed plus a little lift; that is what drips and splashes get.
             double jx = vx + (rng.nextDouble() * 2 - 1) * 0.4, jy = vy + (rng.nextDouble() * 2 - 1) * 0.4, jz = vz + (rng.nextDouble() * 2 - 1) * 0.4;
             double mag = (rng.nextDouble() + rng.nextDouble() + 1) * 0.15;
             double len = Math.sqrt(jx * jx + jy * jy + jz * jz);
@@ -609,12 +1115,12 @@ public final class PreviewScene {
         d.vx = vx; d.vy = vy; d.vz = vz;
         d.life = (int) ((40 + rng.nextInt(20) - 10) * c.particleLifetimeMultiplier());
         d.size = (0.08f + rng.nextFloat() * 0.08f) * c.particleSizeMultiplier();
-        if (kind == 2) d.size = (0.34f + rng.nextFloat() * 0.16f) * c.chunkyStreakScale(); // streaks have their own fixed size
+        if (kind == 2) d.size = (0.34f + rng.nextFloat() * 0.16f) * c.chunkyStreakScale();
         if (kind == 3) { d.size = 0.02f; d.life = 200; }
         d.tone = 0.9f + rng.nextFloat() * 0.2f;
         d.kind = kind;
         d.sprite = rng.nextInt(kind == 1 ? 3 : 4);
-        d.colour = colour.getAsInt() & 0xFFFFFF;
+        d.colour = this.kind == Kind.GLOW ? 0x35D6C8 : colour.getAsInt() & 0xFFFFFF;
         (movingDrops ? born : drops).add(d);
         return d;
     }
@@ -647,14 +1153,12 @@ public final class PreviewScene {
             if (d.kind == 3) { d.vy -= 0.02; }
             else { d.vy -= gravity; d.vx *= drag; d.vy *= drag; d.vz *= drag; }
             d.age++;
-            // Hit a block?
             Block hitBlock = null;
             Direction hitFace = null;
             Vec3 hitPoint = null;
             for (Block b : blocks) {
                 AABB box = new AABB(b.pos()).inflate(d.size * 0.5);
                 if (!box.contains(d.x, d.y, d.z)) continue;
-                // Which face did we come through? Use the previous position.
                 Vec3 from = new Vec3(px, py, pz), to = new Vec3(d.x, d.y, d.z);
                 java.util.Optional<Vec3> clip = new AABB(b.pos()).clip(from, to);
                 Vec3 p = clip.orElse(to);
@@ -681,7 +1185,6 @@ public final class PreviewScene {
         if (lx >= 1 - eps && vx < 0) return Direction.EAST;
         if (lz <= eps && vz > 0) return Direction.NORTH;
         if (lz >= 1 - eps && vz < 0) return Direction.SOUTH;
-        // Fallback: the face nearest to the point.
         double[] dist = {1 - ly, ly, lz, 1 - lz, lx, 1 - lx};
         Direction[] dirs = {Direction.UP, Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
         int best = 0;
@@ -713,8 +1216,6 @@ public final class PreviewScene {
         }
     }
 
-    // ------------------------------------------------------------------ surfaces
-
     private CanvasTile tile(Block b, Direction face, boolean create) {
         CanvasTile.Key key = new CanvasTile.Key(b.pos().asLong(), face, 0);
         CanvasTile t = tiles.get(key);
@@ -736,7 +1237,6 @@ public final class PreviewScene {
     private void land(Block b, Direction face, Vec3 point, Drop d, Vec3 travel, SimpleBloodConfig c) {
         if (!c.surfaces.enabled) return;
         if (!c.surfaces.wallsAndCeilings && face != Direction.UP) return;
-        // The neighbour in front of the face must be open (a drop cannot land inside a seam).
         if (blockMap.containsKey(b.pos().relative(face))) return;
         int pixels;
         if (d.kind == 3) {
@@ -745,7 +1245,7 @@ public final class PreviewScene {
             int base = 1 + rng.nextInt(2) + (d.size > 0.22f ? 1 : 0);
             if (d.kind == 1 || d.kind == 2) base += 2 + rng.nextInt(2);
             float areaScale = c.surfaces.resolution >= 16 ? 3.0f : 1.0f;
-            float landing = d.kind == 2 ? 2.4f : 1f; // streaks land as proper puddles
+            float landing = d.kind == 2 ? 2.4f : 1f;
             pixels = Math.max(1, Math.round(base * c.surfaceAmount() * areaScale * landing));
         }
         stampAt(b, face, point, d.colour, pixels, travel);
@@ -763,7 +1263,6 @@ public final class PreviewScene {
         List<int[]> spill = new ArrayList<>();
         tile.stamp(px, py, pixels, colour, now, lifetime(), rng, pattern(), spill, bu, bv);
         for (int[] cell : spill) spillCell(tile, cell[0], cell[1], colour);
-        // Splats on a top-face edge also start creeping down the side.
         if (face == Direction.UP) {
             int started = 0;
             for (int dx = -2; dx <= 2 && started < 2; dx++) {
@@ -780,22 +1279,19 @@ public final class PreviewScene {
         }
     }
 
-    /** A pixel pushed past a tile edge: continue on the neighbouring block, or run down the side. */
     private boolean spillCell(CanvasTile tile, int cx, int cy, int colour) {
         Direction edge = edgeDirection(tile, cx, cy);
         if (edge == null) return false;
         Vec3 p = edgePoint(tile, cx, cy, edge);
         BlockPos npos = tile.pos.relative(edge);
         Block neighbour = blockMap.get(npos);
-        if (neighbour != null && tile.face != Direction.UP) return false; // walls: stop at a corner
+        if (neighbour != null && tile.face != Direction.UP) return false;
         if (neighbour != null) {
-            // Same plane continues on the next block.
             CanvasTile n = tile(neighbour, tile.face, true);
             n.paint(clamp(n.pixelX(p), n.pw), clamp(n.pixelY(p), n.ph), colour, now, lifetime(), rng, pattern());
             return false;
         }
         if (tile.face == Direction.UP && cfg().surfaces.wallsAndCeilings) {
-            // Over the edge: down the side face of this block, fed by the pool at the lip.
             Block self = blockMap.get(tile.pos);
             if (self == null) return false;
             CanvasTile side = tile(self, edge, true);
@@ -803,7 +1299,6 @@ public final class PreviewScene {
             return startRun(side, column, colour, tile, clamp(cx, tile.pw), clamp(cy, tile.ph));
         }
         if (tile.face.getAxis().isHorizontal() && edge == Direction.DOWN) {
-            // Off the bottom of a wall: fall as a drop.
             Drop d = spawn(p.x, p.y - 0.02, p.z, 0, -0.05, 0, 3);
             d.colour = colour;
             return true;
@@ -832,14 +1327,6 @@ public final class PreviewScene {
 
     private static int clamp(int v, int max) { return v < 0 ? 0 : Math.min(max - 1, v); }
 
-    // ------------------------------------------------------------------ runs
-
-    /**
-     * A trickle down a side face, one pixel every few ticks, drinking from the pool it left:
-     * the same basin physics as {@link BloodSurfaces} - the whole pool sinks while a run
-     * pours, a second spout needs a fuller pool, and the run stops when the pool is down to
-     * a film.
-     */
     private static final class Run {
         CanvasTile side;
         int column, row, remaining, interval, nextTick, colour, volume;
@@ -850,7 +1337,7 @@ public final class PreviewScene {
     private boolean startRun(CanvasTile side, int column, int colour, CanvasTile source, int sx, int sy) {
         for (Run r : runs) {
             if (r.side == side && r.column == column) {
-                if (r.source != null) return false; // already fed from the pool
+                if (r.source != null) return false;
                 r.source = source; r.sourceX = sx; r.sourceY = sy;
                 r.remaining = Math.min(r.remaining + 4, side.ph);
                 return true;
@@ -885,7 +1372,6 @@ public final class PreviewScene {
             r.nextTick = now + r.interval;
             if (r.remaining-- <= 0) { it.remove(); continue; }
             if (r.source != null) {
-                // A unit from the pool per pixel of creep; half stays on the wall as film.
                 if (!tiles.containsValue(r.source)
                         || !CanvasTile.body(r.source, r.sourceX, r.sourceY, flow, 6).draw(r.source.pixelCenter(r.sourceX, r.sourceY), rng)) {
                     r.source = null;
@@ -899,7 +1385,6 @@ public final class PreviewScene {
                 int thin = 1 + Math.min(2, r.row / Math.max(1, r.side.res / 2));
                 r.side.paintThin(r.column, r.row, r.colour, now, lifetime(), rng, pattern(), thin);
             } else {
-                // Off the bottom: onto the floor in front, or falling.
                 Vec3 p = r.side.pixelCenter(r.column, r.side.ph - 1);
                 BlockPos below = r.side.pos.below().relative(r.side.face);
                 Block floor = blockMap.get(below);
@@ -914,8 +1399,6 @@ public final class PreviewScene {
             }
         }
     }
-
-    // ------------------------------------------------------------------ relax / age / upload
 
     private final CanvasTile.FlowContext flow = new CanvasTile.FlowContext() {
         @Override
@@ -994,13 +1477,10 @@ public final class PreviewScene {
         }
     }
 
-    // ------------------------------------------------------------------ drawing the tiles
-
-    /** Emits the tiles' quads (same geometry as the world renderer), seen from {@code cam}. */
-    public void drawTiles(PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, int light) {
+    public void drawTiles(PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, int light, float shade) {
         for (CanvasTile t : tiles.values()) {
             if (t.slot < 0 || t.isEmpty()) continue;
-            int grey = Math.round(255 * (t.custom ? 0.9f : SurfaceRenderer.faceShade(t.face)));
+            int grey = Math.round(255 * shade * (t.custom ? 0.9f : SurfaceRenderer.faceShade(t.face)));
             SurfaceRenderer.drawTile(t, pose, vc, cam, Vec3.ZERO, light, 0.004, grey);
         }
     }

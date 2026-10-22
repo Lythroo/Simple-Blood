@@ -6,7 +6,6 @@ import net.minecraft.client.renderer.rendertype.RenderType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-/** RenderType.create is package-private; the shader clouds need a render type of their own. */
 @Mixin(RenderType.class)
 public interface RenderTypeInvoker {
     @Invoker("create")

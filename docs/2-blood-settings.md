@@ -53,6 +53,15 @@ Every drop gets a small random shade, so the blood never looks flat.
 | `setCreatesFogUnderwater(boolean)` | Force the red cloud in water on or off, separately from blocks. | On for `LIQUID` blood that sticks to blocks |
 | `setParticlesDespawnInWater(boolean)` | Drops vanish when they touch water, like snow melting. | On for `POWDER` and `EMBER`, off for the rest |
 
+## Bodies, armour and death (1.2.0)
+
+| Setter | What it does | Default |
+|---|---|---|
+| `setMetalBody(boolean)` | A body of metal: metal weapons and arrows strike sparks off it, with a clank. | On for `METAL` mobs (iron golem), off for the rest |
+| `setBloodOnBody(boolean)` | Blood stays on its body ("Blood on mobs"): its own wounds and blood thrown onto it. Turn it off where it would look wrong on your model. | `true` (if the player has Blood on mobs on) |
+| `setLeavesPool(boolean)` | A pool of its blood spreads under the body when it dies. | `true` for mobs that stain |
+| `setGiblets(boolean)` | Chunks of meat fly off it on hard hits and on death. | `true` for `LIQUID` blood (if the player has giblets on) |
+
 ## How much
 
 | Setter | What it does | Default |
@@ -79,6 +88,37 @@ These are on `SimpleBloodAPI` itself and apply to every mob.
 SimpleBloodAPI.addNonBleedingDamageType(DamageTypes.IN_FIRE);
 SimpleBloodAPI.removeNonBleedingDamageType(DamageTypes.IN_FIRE);   // undo
 ```
+
+### Hard and soft items (1.2.0)
+
+Simple Blood guesses from item ids whether armour and weapons are hard metal ("iron",
+"steel", "plate"...) or soft ("leather", "cloth", "wool"...). A blow on hard armour bleeds
+less and, from a metal weapon or an arrow, strikes sparks, chips shards and clanks. Tell it
+about your items when the guess is wrong:
+
+```java
+SimpleBloodAPI.registerHardItem("yourmod:mithril_chestplate", 0xD8E6F0); // hard, pale shards
+SimpleBloodAPI.registerSoftItem("yourmod:chainmail_robe");                // soft, despite its name
+SimpleBloodAPI.unregisterItem("yourmod:chainmail_robe");                  // back to the guess
+```
+
+### Ragdolls (1.2.0)
+
+Physics Mod, Ragdollified and Saro's Player Ragdoll ragdolls bleed out of the box. Your
+own mod's ragdolls can bleed the same way: hand Simple Blood their limbs every client tick.
+
+```java
+SimpleBloodAPI.registerRagdollSource("yourmod", (level, out) -> {
+    for (MyRagdoll r : MyRagdolls.all(level)) {
+        out.accept(r.mobId(), r.limbPositions()); // Vec3[] in world space, null for a missing limb
+    }
+});
+```
+
+The id should stay the same while the ragdoll exists. If it is a living entity's id, the
+ragdoll bleeds that entity's blood; otherwise it takes the blood of a mob that just died
+where it appeared. Limbs drip, splash and stain where they land hard, and smear the ground
+when they slide, following the player's Ragdolls settings.
 
 ## Looking things up
 

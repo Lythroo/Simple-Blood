@@ -16,40 +16,24 @@ import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
-/**
- * The content of every tab: a live 3D diorama of the blood engine on top, short option rows
- * underneath. Explanations live in tooltips, not on the page.
- */
 public final class Pages {
 
     private Pages() {}
 
-    /** What a page needs from the screen. */
     public interface Host {
         void openPicker(int current, IntConsumer apply);
-        /** The picker with a note under it about what the colour is for. */
         void openPicker(int current, IntConsumer apply, String note);
         SimpleBloodConfig config();
-        /** Rebuilds the whole page (header and list). */
         void rebuildPage();
-        /** Rebuilds only the scrolling list; fixed header widgets (search fields) keep focus. */
         void refreshList();
         void toast(String text);
     }
 
-    /**
-     * A tab. {@code group} is the sidebar heading it sits under, {@code pane} whether the
-     * diorama pane sits beside its list, {@code searchable} whether the settings search looks
-     * through it (the mob tables have a search of their own).
-     */
     public record Page(String group, String title, String hint, boolean pane, boolean searchable, Consumer<Builder> build) {}
 
     private static final String[] KIND_KEYS = {"liquid", "debris", "ember", "powder", "bone", "metal", "wood", "spirit", "wind"};
     private static final String[] KIND_LABELS = {"Liquid", "Debris", "Ember", "Powder", "Bone", "Metal", "Wood", "Spirit", "Wind"};
 
-    // ================================================================== builder
-
-    /** Lays rows into a scroll panel from top to bottom. */
     public static final class Builder {
         public final Widget.ScrollPanel panel;
         public final Widget.Container header;
@@ -59,8 +43,6 @@ public final class Pages {
         private final boolean listOnly;
         private int cursor = 8;
         private int headerCursor = 6;
-        // Searching: only rows whose name, tip, section or page holds the text are laid out,
-        // each group under a heading naming the page and section it lives on.
         private String filter;
         private String filterPage, filterSection;
         private boolean filterShown;
@@ -78,18 +60,12 @@ public final class Pages {
             this.controlW = rowW < 250 ? 90 : 120;
         }
 
-        /** Control width, narrower when the list is narrow. */
         private final int controlW;
 
-        /** Height the fixed header widgets take above the list. */
         public int headerHeight() {
             return headerCursor > 6 ? headerCursor + 2 : 0;
         }
 
-        /**
-         * Places a widget above the scrolling list, where it stays put while the list is
-         * rebuilt (search boxes, add fields). Ignored when only the list is being refreshed.
-         */
         public void fixed(Widget w, int height) {
             if (listOnly || filter != null) return;
             w.x = header.x + 8;
@@ -98,46 +74,38 @@ public final class Pages {
             headerCursor += height + 6;
         }
 
-        /** The diorama every following row shows while hovered (null: none). */
         private PreviewScene.Kind kind;
         private IntSupplier kindColour;
         private java.util.EnumSet<PreviewScene.Aspect> aspects = java.util.EnumSet.allOf(PreviewScene.Aspect.class);
 
-        /** Settings the following rows' diorama plays with instead of the live ones (null: live). */
         private SimpleBloodConfig previewConfig;
 
-        /** Following rows preview this scene, playing every part of a hit. */
         public void preview(PreviewScene.Kind kind, IntSupplier colour) {
             this.kind = kind;
             this.kindColour = colour;
             this.aspects = java.util.EnumSet.allOf(PreviewScene.Aspect.class);
         }
 
-        /** Following rows' diorama plays with these settings instead of the live ones (null: live). */
         public void previewWith(SimpleBloodConfig config) {
             this.previewConfig = config;
         }
 
-        /** Following rows preview this scene, playing only these parts of a hit. */
         public void preview(PreviewScene.Kind kind, IntSupplier colour, PreviewScene.Aspect first, PreviewScene.Aspect... rest) {
             this.kind = kind;
             this.kindColour = colour;
             this.aspects = java.util.EnumSet.of(first, rest);
         }
 
-        /** Lays out only the rows matching {@code text} from now on (the settings search). */
         public void search(String text) {
             filter = text.toLowerCase(Locale.ROOT);
         }
 
-        /** The page whose rows come next while searching. */
         void searchPage(String title) {
             filterPage = title;
             filterSection = null;
             filterShown = false;
         }
 
-        /** Whether this row is shown; the first one shown under a page or section brings its heading. */
         private boolean admit(String name, String tip) {
             if (filter == null) return true;
             String hay = (name + " " + (tip == null ? "" : tip) + " " + (filterSection == null ? "" : filterSection) + " " + filterPage)
@@ -170,7 +138,6 @@ public final class Pages {
             rowIndex = 0;
         }
 
-        /** A line of dim text, wrapped onto as many lines as the list is too narrow for. */
         public void note(String text) {
             if (filter != null) return;
             int width = rowW - 24;
@@ -202,7 +169,6 @@ public final class Pages {
             return y + 10;
         }
 
-        /** A widget across the list's width, between rows. */
         public void wide(Widget w) {
             if (filter != null) return;
             w.x = 8;
@@ -262,7 +228,6 @@ public final class Pages {
             colour(name, tip, null, get, set, def);
         }
 
-        /** A colour whose picker carries {@code pickerNote} under the grid. */
         public void colour(String name, String tip, String pickerNote, IntSupplier get, IntConsumer set, int def) {
             Widgets.Swatch s = new Widgets.Swatch(get, null);
             s.onClick = () -> host.openPicker(get.getAsInt(), set, pickerNote);
@@ -279,8 +244,6 @@ public final class Pages {
         public void gap(int px) { cursor += px; }
     }
 
-    // ================================================================== pages
-
     public static List<Page> all() {
         List<Page> pages = new ArrayList<>();
         pages.add(new Page("Basics", "Overview", "The big switch, how much, and trying it out", true, true, Pages::overview));
@@ -289,19 +252,20 @@ public final class Pages {
         pages.add(new Page("Blood", "Bleeding", "When blood comes out: hits, deaths, wounds, giblets", true, true, Pages::bleeding));
         pages.add(new Page("Blood", "Drops", "How drops fly, and which way", true, true, Pages::drops));
         pages.add(new Page("Blood", "Puddles", "Blood on blocks, footprints", true, true, Pages::puddles));
-        pages.add(new Page("Blood", "Bodies", "Blood on mobs" + (com.simpleblood.compat.PhysicsModRagdolls.available() ? ", ragdolls" : ""), false, true, Pages::bodies));
         pages.add(new Page("Blood", "Water", "Clouds under water", true, true, Pages::water));
         pages.add(new Page("Blood", "Sound", "Splats, drips, squelches", false, true, Pages::sound));
+        pages.add(new Page("Combat", "Armor", "Sparks, shards and a clank off hard armor", true, true, Pages::weapons));
+        pages.add(new Page("Combat", "Blood on mobs", "Blood that sticks to bodies, runs and drips", true, true, Pages::bodies));
+        pages.add(new Page("Combat", "Ragdolls", "Physics Mod, Ragdollified, Saro's Player Ragdoll", false, true, Pages::ragdolls));
         pages.add(new Page("Mobs", "Who bleeds", "Which mob bleeds what", false, false, Pages::mobs));
         pages.add(new Page("Mobs", "Modded", "Mobs from other mods", false, false, Pages::modded));
-        pages.add(new Page("Mobs", "Kinds", "Bone, metal, wood, embers, sparks, wind, glow", false, true, Pages::kinds));
+        pages.add(new Page("Mobs", "Kinds", "Bone, metal, wood, embers, sparks, wind, glow", true, true, Pages::kinds));
         pages.add(new Page("Extras", "Shaders", "For Iris shader packs", true, true, Pages::shaders));
         pages.add(new Page("Extras", "Performance", "Limits for slower machines", false, true, Pages::performance));
         pages.add(new Page("Extras", "Interface", "The menu button", false, true, Pages::interfacePage));
         return pages;
     }
 
-    /** The settings search: every searchable page's matching rows, under their page's name. */
     public static void search(Builder b, List<Page> pages, String text) {
         b.search(text);
         for (Page p : pages) {
@@ -312,7 +276,7 @@ public final class Pages {
         }
         b.preview(null, null);
         if (b.found == 0) {
-            b.filter = null; // say so, in a plain note
+            b.filter = null;
             b.note("Nothing found for \"" + text.trim() + "\".");
         }
     }
@@ -363,7 +327,6 @@ public final class Pages {
                 () -> c.player.colourFromSkins, v -> c.player.colourFromSkins = v, d.player.colourFromSkins);
     }
 
-    /** What other players see of your colour, for the note under it. */
     private static String ownColourText(SimpleBloodConfig c) {
         int carried = SkinColours.ownColour();
         int mine = c.player.clientPlayerBloodColor & 0xFFFFFF;
@@ -388,7 +351,6 @@ public final class Pages {
         return carried == (c.player.clientPlayerBloodColor & 0xFFFFFF) ? Widgets.Notice.GOOD : Widgets.Notice.WARN;
     }
 
-    /** Asks before changing the player's Minecraft skin, then uploads. */
     private static void confirmUpload(Builder b) {
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         net.minecraft.client.gui.screens.Screen back = Screens.current(mc);
@@ -400,7 +362,6 @@ public final class Pages {
                         + "like changing it on minecraft.net. It looks the same. A copy is also saved in the simpleblood folder.")));
     }
 
-    /** Asks before taking the colour out of the player's Minecraft skin, then uploads. */
     private static void confirmRemove(Builder b) {
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         net.minecraft.client.gui.screens.Screen back = Screens.current(mc);
@@ -442,6 +403,8 @@ public final class Pages {
         b.bool("Death burst", "One big spray when something dies.", () -> c.particles.deathBurst, v -> c.particles.deathBurst = v, d.particles.deathBurst);
         b.slider("Amount", "Drops on death.", 20, 300, 10, "%", () -> c.deathBurst.deathIntensity, v -> c.deathBurst.deathIntensity = v, d.deathBurst.deathIntensity);
         b.slider("Spread", "How far it flies.", 30, 200, 10, "%", () -> c.deathBurst.deathSpread, v -> c.deathBurst.deathSpread = v, d.deathBurst.deathSpread);
+        b.bool("Pool under the body", "Where a body falls when it dies, a pool of blood spreads on the ground under it.",
+                () -> c.surfaces.corpsePools, v -> c.surfaces.corpsePools = v, d.surfaces.corpsePools);
 
         b.heading("Dripping wounds");
         b.preview(PreviewScene.Kind.DRIP, playerColour(c));
@@ -452,7 +415,7 @@ public final class Pages {
         b.slider("Lasts", "Dripping stops this long after the last hit.", 3, 120, 1, " s", () -> c.lowHealth.dripDurationSeconds, v -> c.lowHealth.dripDurationSeconds = v, d.lowHealth.dripDurationSeconds);
 
         b.heading("Giblets");
-        b.preview(null, null);
+        b.preview(PreviewScene.Kind.GIBLETS, playerColour(c));
         b.bool("Giblets", "Chunks of meat fly off mobs that bleed: now and then on a hard hit, a handful when they die. Off by default.",
                 () -> c.gore.giblets, v -> c.gore.giblets = v, d.gore.giblets);
         b.slider("Amount", "How many chunks fly off.", 10, 300, 10, "%", () -> c.gore.gibletAmount, v -> c.gore.gibletAmount = v, d.gore.gibletAmount);
@@ -473,7 +436,7 @@ public final class Pages {
         b.bool("Directional", "Blood flies back toward whatever did the hitting.", () -> c.directional.enabled, v -> c.directional.enabled = v, d.directional.enabled);
         b.preview(PreviewScene.Kind.HIT, playerColour(c), PreviewScene.Aspect.DIRECTIONAL, PreviewScene.Aspect.SPLASH);
         b.slider("Share", "How much of a burst follows the blow. The rest goes everywhere.", 0, 100, 5, "%", () -> c.directional.share, v -> c.directional.share = v, d.directional.share);
-        b.preview(PreviewScene.Kind.HIT, playerColour(c), PreviewScene.Aspect.SWEEP);
+        b.preview(PreviewScene.Kind.WEAPONS, playerColour(c));
         b.bool("Weapon flavour", "Swords fling streaks, maces slam, arrows punch through. Also shapes blood on mobs.", () -> c.directional.weaponFlavour, v -> c.directional.weaponFlavour = v, d.directional.weaponFlavour);
         b.preview(PreviewScene.Kind.HIT, playerColour(c), PreviewScene.Aspect.EXIT);
         b.bool("Exit spray", "A bit comes out the other side.", () -> c.directional.entrySpatter, v -> c.directional.entrySpatter = v, d.directional.entrySpatter);
@@ -488,12 +451,14 @@ public final class Pages {
         b.choice("Shading", "Light and dark spots follow the block underneath, or a flat pattern.", new String[]{"block", "pattern"}, new String[]{"Follow block", "Pattern"},
                 () -> c.surfaces.highlightMode, v -> c.surfaces.highlightMode = v, d.surfaces.highlightMode);
         b.slider("Amount", "How much each drop paints when it lands.", 25, 300, 5, "%", () -> c.surfaces.amount, v -> c.surfaces.amount = v, d.surfaces.amount);
+        b.preview(PreviewScene.Kind.DRYING, playerColour(c));
         b.slider("Opacity", "How see-through the blood is.", 20, 100, 2, "%", () -> c.surfaces.opacity, v -> c.surfaces.opacity = v, d.surfaces.opacity);
         b.slider("Lasts", "Seconds until it has dried away.", 5, 600, 5, " s", () -> c.surfaces.lifetimeSeconds, v -> c.surfaces.lifetimeSeconds = v, d.surfaces.lifetimeSeconds);
+        b.preview(PreviewScene.Kind.PUDDLE, playerColour(c));
         b.bool("Walls and ceilings", "Blood on walls and ceilings too. Needed for runs down block sides.", () -> c.surfaces.wallsAndCeilings, v -> c.surfaces.wallsAndCeilings = v, d.surfaces.wallsAndCeilings);
         b.bool("Detailed shapes", "Fences, stairs, signs and plants get blood on the wood you see, not the hitbox. Off is a bit cheaper.",
                 () -> c.surfaces.detailedShapes, v -> { c.surfaces.detailedShapes = v; BloodSurfaces.clear(); }, d.surfaces.detailedShapes);
-        b.preview(null, null);
+        b.preview(PreviewScene.Kind.RAIN, playerColour(c));
         b.bool("Rain washes", "Rain clears blood faster, on blocks and on mobs.", () -> c.surfaces.rainWashes, v -> c.surfaces.rainWashes = v, d.surfaces.rainWashes);
 
         b.heading("Footprints");
@@ -504,18 +469,34 @@ public final class Pages {
 
     private static void bodies(Builder b) {
         SimpleBloodConfig c = b.cfg, d = b.defaults;
-        b.heading("Blood on mobs");
-        b.bool("Blood on mobs", "A hit leaves blood on the mob's body, shaped by the weapon. It moves with the mob, runs down and drips off; a badly hurt mob bleeds from the wound. Off by default.",
+        b.preview(PreviewScene.Kind.COAT, playerColour(c));
+        b.bool("Blood on mobs", "A hit leaves blood on the mob's body, shaped by the weapon. It moves with the mob, runs down and drips off; a badly hurt mob bleeds from the wound. Blood thrown onto another mob or a player sticks to them too. Off by default.",
                 () -> c.mobCoat.enabled, v -> c.mobCoat.enabled = v, d.mobCoat.enabled);
         b.slider("Amount", "How much of each hit stays on the body.", 0, 300, 10, "%", () -> c.mobCoat.amount, v -> c.mobCoat.amount = v, d.mobCoat.amount);
         b.slider("Lasts", "Seconds until it has dried away. Water washes it off sooner, rain too.", 5, 300, 5, " s",
                 () -> c.mobCoat.lifetimeSeconds, v -> c.mobCoat.lifetimeSeconds = v, d.mobCoat.lifetimeSeconds);
         b.bool("Runs down", "Heavy blood runs down the body.", () -> c.mobCoat.runs, v -> c.mobCoat.runs = v, d.mobCoat.runs);
         b.bool("Drips off", "Blood drips off the body and stains the ground below.", () -> c.mobCoat.drips, v -> c.mobCoat.drips = v, d.mobCoat.drips);
-        if (com.simpleblood.compat.PhysicsModRagdolls.available()) {
-            b.heading("Physics Mod ragdolls");
-            physicsMod(b);
+    }
+
+    private static void weapons(Builder b) {
+        SimpleBloodConfig c = b.cfg, d = b.defaults;
+        SimpleBloodConfig.CombatSettings w = c.combat, dw = d.combat;
+        b.heading("Hard armor");
+        b.preview(PreviewScene.Kind.ARMOR, playerColour(c));
+        b.note("Metal and diamond armor, modded metal armor too. Leather, turtle shells and cloth are soft.");
+        b.slider("Blood through armor", "How much blood still comes out where a blow lands on hard armor.", 0, 100, 5, "%",
+                () -> w.armorBleed, v -> w.armorBleed = v, dw.armorBleed);
+        b.bool("Sparks", "Metal weapons and arrows strike sparks off hard armor.", () -> w.armorSparks, v -> w.armorSparks = v, dw.armorSparks);
+        b.bool("Shards", "Small flakes chip off the armor, in its colour.", () -> w.armorShards, v -> w.armorShards = v, dw.armorShards);
+        b.bool("Clank", "A metal clank, or a tink for arrows.", () -> w.armorClank, v -> w.armorClank = v, dw.armorClank);
+    }
+
+    private static void ragdolls(Builder b) {
+        if (!com.simpleblood.compat.PhysicsModRagdolls.anyRagdollMod()) {
+            b.note("Needs Physics Mod, Ragdollified or Saro's Player Ragdoll. None of them is installed.");
         }
+        physicsMod(b);
     }
 
     private static void water(Builder b) {
@@ -532,8 +513,26 @@ public final class Pages {
         b.bool("Sounds", "All the noises the mod makes.", () -> c.audio.soundEnabled, v -> c.audio.soundEnabled = v, d.audio.soundEnabled);
         b.slider("Volume", "Louder or quieter.", 0, 200, 5, "%", () -> c.audio.soundVolume, v -> c.audio.soundVolume = v, d.audio.soundVolume);
         b.slider("Pitch", "Higher or lower.", 50, 150, 5, "%", () -> c.audio.soundPitch, v -> c.audio.soundPitch = v, d.audio.soundPitch);
-        b.bool("Landing sounds", "Little taps and plinks when drops land.", () -> c.audio.landingSounds, v -> c.audio.landingSounds = v, d.audio.landingSounds);
-        b.bool("Footstep sounds", "Squelch.", () -> c.audio.footstepSounds, v -> c.audio.footstepSounds = v, d.audio.footstepSounds);
+        b.heading("Each sound");
+        b.note("How loud each sound is, on top of the volume above. All the way down turns it off.");
+        b.slider("Hits", "Hits and deaths, in the voice of what the mob is made of: wet, bone, metal, embers...", 0, 200, 5, "%",
+                () -> c.audio.hitVolume, v -> c.audio.hitVolume = v, d.audio.hitVolume);
+        b.slider("Drops landing", "Drops tapping onto blocks and plinking into puddles, and a puddle dropping off a broken block.", 0, 200, 5, "%",
+                () -> c.audio.landingVolume, v -> c.audio.landingVolume = v, d.audio.landingVolume);
+        b.slider("Ledge drips", "Blood dripping off ledges and ceilings, slow and hollow.", 0, 200, 5, "%",
+                () -> c.audio.ledgeDripVolume, v -> c.audio.ledgeDripVolume = v, d.audio.ledgeDripVolume);
+        b.slider("Wound drips", "A badly hurt mob dripping.", 0, 200, 5, "%",
+                () -> c.audio.woundDripVolume, v -> c.audio.woundDripVolume = v, d.audio.woundDripVolume);
+        b.slider("Mace slaps", "The wet slap of a mace smash.", 0, 200, 5, "%",
+                () -> c.audio.slapVolume, v -> c.audio.slapVolume = v, d.audio.slapVolume);
+        b.slider("Water", "Blood pattering into water, embers hissing out in it.", 0, 200, 5, "%",
+                () -> c.audio.waterVolume, v -> c.audio.waterVolume = v, d.audio.waterVolume);
+        b.slider("Pieces", "Bone chips, metal flakes, splinters and giblets landing.", 0, 200, 5, "%",
+                () -> c.audio.pieceVolume, v -> c.audio.pieceVolume = v, d.audio.pieceVolume);
+        b.slider("Footsteps", "Squelching through fresh blood, a sticky tack once it dries.", 0, 200, 5, "%",
+                () -> c.audio.footstepVolume, v -> c.audio.footstepVolume = v, d.audio.footstepVolume);
+        b.slider("Armor", "The clank of metal on hard armor, and on iron golems.", 0, 200, 5, "%",
+                () -> c.audio.armorVolume, v -> c.audio.armorVolume = v, d.audio.armorVolume);
     }
 
     private static void shaders(Builder b) {
@@ -562,42 +561,46 @@ public final class Pages {
                 () -> c.general.menuButton, v -> c.general.menuButton = v, d.general.menuButton);
     }
 
-    // ------------------------------------------------------------------ kinds
-
     private static void kinds(Builder b) {
         SimpleBloodConfig c = b.cfg, d = b.defaults;
         SimpleBloodConfig.KindSettings k = c.kinds, dk = d.kinds;
         b.note("Mobs with nothing to bleed throw what they are made of. Which mob throws what is set under Who bleeds.");
         b.heading("Bone");
+        b.preview(PreviewScene.Kind.BONE, playerColour(c));
         b.slider("Amount", "Chips and dust per hit (skeletons, strays, bogged).", 0, 300, 10, "%", () -> k.boneAmount, v -> k.boneAmount = v, dk.boneAmount);
         b.slider("Dust", "How thick the puffs of bone dust look.", 10, 200, 10, "%", () -> k.boneDustOpacity, v -> k.boneDustOpacity = v, dk.boneDustOpacity);
         b.heading("Metal");
+        b.preview(PreviewScene.Kind.METAL, playerColour(c));
         b.slider("Amount", "Flakes per hit (golems).", 0, 300, 10, "%", () -> k.metalAmount, v -> k.metalAmount = v, dk.metalAmount);
         b.bool("Glint", "Flakes flash as they turn into the light, and twinkle where they lie.", () -> k.metalGlint, v -> k.metalGlint = v, dk.metalGlint);
         b.heading("Wood");
+        b.preview(PreviewScene.Kind.WOOD, playerColour(c));
         b.slider("Amount", "Splinters per hit (the creaking).", 0, 300, 10, "%", () -> k.woodAmount, v -> k.woodAmount = v, dk.woodAmount);
         b.slider("Resin", "Share of drops that stay resin, which pools like blood.", 0, 100, 5, "%", () -> k.resinShare, v -> k.resinShare = v, dk.resinShare);
         b.heading("Embers");
+        b.preview(PreviewScene.Kind.EMBER, playerColour(c));
         b.slider("Amount", "Embers per hit (blazes, magma cubes).", 0, 300, 10, "%", () -> k.emberAmount, v -> k.emberAmount = v, dk.emberAmount);
         b.bool("Smoke", "A wisp of smoke now and then among the embers.", () -> k.emberSmoke, v -> k.emberSmoke = v, dk.emberSmoke);
         b.heading("Sparks");
+        b.preview(PreviewScene.Kind.SPIRIT, playerColour(c));
         b.slider("Amount", "Sparks per hit (allays, vexes).", 0, 300, 10, "%", () -> k.sparkAmount, v -> k.sparkAmount = v, dk.sparkAmount);
         b.heading("Wind");
+        b.preview(PreviewScene.Kind.WIND, playerColour(c));
         b.slider("Amount", "Gusts per hit (breezes).", 0, 300, 10, "%", () -> k.windAmount, v -> k.windAmount = v, dk.windAmount);
         b.slider("Thickness", "How thick the gusts look.", 10, 200, 10, "%", () -> k.windOpacity, v -> k.windOpacity = v, dk.windOpacity);
         b.heading("Pieces");
+        b.preview(PreviewScene.Kind.BONE, playerColour(c));
         b.slider("Lifetime", "How long chips, flakes, splinters, embers and sparks last.", 25, 300, 25, "%", () -> k.pieceLifetime, v -> k.pieceLifetime = v, dk.pieceLifetime);
         b.heading("Glowing blood");
+        b.preview(PreviewScene.Kind.GLOW, playerColour(c));
         b.bool("Glow", "Blood marked Glow in the Mobs table (glow squid ink) glows in the dark.", () -> k.glow, v -> k.glow = v, dk.glow);
         b.slider("Cloud thickness", "How thick glowing clouds under water look.", 10, 200, 10, "%", () -> k.glowCloudOpacity, v -> k.glowCloudOpacity = v, dk.glowCloudOpacity);
     }
 
-    // ------------------------------------------------------------------ physics mod
-
     private static void physicsMod(Builder b) {
         SimpleBloodConfig c = b.cfg, d = b.defaults;
         SimpleBloodConfig.PhysicsModSettings p = c.physicsMod, dp = d.physicsMod;
-        b.bool("Ragdolls bleed", "Physics Mod ragdolls keep bleeding, splash where they land and smear the ground.",
+        b.bool("Ragdolls bleed", "Ragdolls (Physics Mod, Ragdollified, Saro's Player Ragdoll) keep bleeding, splash where they land and smear the ground.",
                 () -> c.general.physicsModRagdolls, v -> c.general.physicsModRagdolls = v, d.general.physicsModRagdolls);
         b.slider("Bleed time", "How long a ragdoll keeps bleeding. It bleeds less and less over this time.", 1, 30, 1, "s",
                 () -> p.bleedSeconds, v -> p.bleedSeconds = v, dp.bleedSeconds);
@@ -611,18 +614,15 @@ public final class Pages {
         b.heading("Smears");
         b.bool("Smears", "Limbs sliding along the ground leave a trail.", () -> p.smears, v -> p.smears = v, dp.smears);
         b.slider("How often", "How often a sliding limb smears.", 10, 200, 10, "%", () -> p.smearAmount, v -> p.smearAmount = v, dp.smearAmount);
-        b.heading("Pieces");
+        b.heading("Pieces (Physics Mod)");
         b.bool("Pieces bleed", "Mobs that break into blocky or fractured pieces bleed too, not just ragdolls.", () -> p.pieces, v -> p.pieces = v, dp.pieces);
     }
 
-    // ------------------------------------------------------------------ mobs
-
-    /** Search text, kept across rebuilds. */
     public static String mobFilter = "";
 
     private static void mobs(Builder b) {
         SimpleBloodConfig c = b.cfg;
-        com.simpleblood.MobTable.sync(c); // every mob this game has, none it does not
+        com.simpleblood.MobTable.sync(c);
         Widgets.TextField search = new Widgets.TextField();
         search.hint = "Find a mob...";
         search.set(mobFilter);
@@ -635,7 +635,7 @@ public final class Pages {
         String f = mobFilter.trim().toLowerCase(Locale.ROOT);
         int shown = 0;
         for (String id : ids) {
-            if (!SimpleBlood.vanillaMobExists(id)) continue; // not in this version of the game
+            if (!SimpleBlood.vanillaMobExists(id)) continue;
             if (!f.isEmpty() && !id.contains(f) && !pretty(id).toLowerCase(Locale.ROOT).contains(f)) continue;
             SimpleBloodConfig.VanillaEntities.EntitySettings s = c.vanillaEntities.entities.get(id);
             mobRow(b, id, () -> s.bloodColor, v -> s.bloodColor = v, () -> s.kind, v -> s.kind = v,
@@ -647,7 +647,6 @@ public final class Pages {
         if (shown == 0) b.note("Nothing found.");
     }
 
-    /** Modded page: every mob your other mods add, grouped by mod, plus entries for mods that are not here. */
     public static String newModdedId = "";
     public static String moddedFilter = "";
 
@@ -727,10 +726,6 @@ public final class Pages {
         if (shown == 0) b.note("Nothing found.");
     }
 
-    /**
-     * One modded mob. A guessed mob shows the guess; changing anything makes it a real
-     * entry, and x takes the entry away again (back to the guess, or off the list).
-     */
     private static void moddedRow(Builder b, SimpleBloodConfig.ModdedEntities m, String eid, String shownAs) {
         Supplier<SimpleBloodConfig.ModdedEntities.ModdedEntitySettings> now = () -> {
             SimpleBloodConfig.ModdedEntities.ModdedEntitySettings s = m.effective(eid);
@@ -746,14 +741,8 @@ public final class Pages {
                 remove);
     }
 
-    // Mob table geometry, shared by the header and the rows so the labels sit over the boxes.
     private static final int MOB_ROW_H = 26, SWATCH_W = 82, KIND_W = 66, CHECK_W = 17, CHECK_GAP = 27;
 
-    /**
-     * Left edges of the columns of a mob row: swatch, kind, on, drip, pool, glow. The controls hug
-     * the right edge but never drift more than a comfortable reading distance from the names
-     * on a very wide screen.
-     */
     private static int[] mobColumns(int x, int w, boolean removable) {
         int right = x + Math.min(w, 540) - 10 - (removable ? 22 : 0);
         int glow = right - CHECK_W;
@@ -803,7 +792,6 @@ public final class Pages {
         b.cursor += row.h;
     }
 
-    /** One mob: name, colour swatch, kind, and four checkboxes (bleeds / drips / stains / glows). */
     private static final class MobRow extends Widget.Container {
         final String id;
         final Widgets.Swatch swatch;
@@ -880,7 +868,6 @@ public final class Pages {
         }
     }
 
-    /** "zombie_villager" -> "Zombie Villager", "mod:thing" -> "mod: Thing". */
     static String pretty(String id) {
         String ns = "", path = id;
         int colon = id.indexOf(':');
@@ -899,7 +886,6 @@ public final class Pages {
         com.google.gson.Gson gson = new com.google.gson.Gson();
         String current = gson.toJson(b.cfg);
         for (Presets.Preset p : Presets.ALL) {
-            // Hovering a preset plays the diorama the way it would look with that preset.
             SimpleBloodConfig look = gson.fromJson(current, SimpleBloodConfig.class);
             p.apply().accept(look);
             b.previewWith(look);
@@ -914,10 +900,6 @@ public final class Pages {
         b.preview(null, null);
     }
 
-    /**
-     * Wraps a container so its children's positions stay relative to it while the scroll
-     * panel moves it around: the panel only ever moves the wrapper.
-     */
     static final class Offset extends Widget.Container {
         private final Widget.Container inner;
         private final List<int[]> rel = new ArrayList<>();

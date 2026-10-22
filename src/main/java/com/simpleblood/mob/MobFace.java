@@ -6,27 +6,21 @@ import com.simpleblood.surface.BloodCanvasAtlas;
 import com.simpleblood.surface.Pixels;
 import net.minecraft.util.RandomSource;
 
-/**
- * The blood on one face of a mob's model (one side of one cube): a small canvas of its own,
- * at most one atlas tile, so it shares the surface blood's texture, look and wet shine.
- * Pixels hold units of blood, which run down the face and drip off it (see {@link MobCoat}).
- */
 final class MobFace {
     static final int MAX_DEPTH = 6;
-    /** Pixel shades: a little darker, plain, a little lighter, picked once per pixel. */
     private static final float[] TONE = {0.86f, 1.0f, 1.0f, 1.18f};
 
     final int pw, ph;
     private final byte[] depth;
     private final byte[] tone;
-    private final int[] rgb;   // colour per pixel, with the glow mark
+    private final int[] rgb;
     private final int[] born;
     private final int[] life;
-    int count;                 // pixels holding blood
+    int count;
     int slot = -1;
     boolean dirty;
-    int glow;                  // block light the face gives off, from fresh glowing blood
-    int lastSeen;              // clock of the last frame this face was drawn on its mob
+    int glow;
+    int lastSeen;
     private NativeImage image, spec;
 
     MobFace(int pw, int ph) {
@@ -52,7 +46,6 @@ final class MobFace {
         return rgb[y * pw + x];
     }
 
-    /** Adds units of blood to a pixel; a fresh pixel gets its own shade and lifetime. */
     void add(int x, int y, int units, int colour, int now, int lifetime, RandomSource rng) {
         int i = y * pw + x;
         if (depth[i] == 0) {
@@ -60,13 +53,12 @@ final class MobFace {
             tone[i] = (byte) rng.nextInt(TONE.length);
             life[i] = Math.max(20, (int) (lifetime * (0.85f + rng.nextFloat() * 0.3f)));
         }
-        born[i] = now; // fresh blood on top: wet again
+        born[i] = now;
         rgb[i] = colour;
         depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + units);
         dirty = true;
     }
 
-    /** Takes one unit from a pixel; returns its colour, or -1 if it was empty. */
     int take(int x, int y) {
         int i = y * pw + x;
         if (depth[i] == 0) return -1;
@@ -76,11 +68,6 @@ final class MobFace {
         return c;
     }
 
-    /**
-     * Dries the face: pixels past their life go. Water washes blood off fast, rain slowly.
-     * @param wash extra ticks of age per tick
-     * @return true when the face is clean
-     */
     boolean age(int now, int wash) {
         for (int i = 0; i < depth.length; i++) {
             if (depth[i] == 0) continue;
@@ -91,15 +78,14 @@ final class MobFace {
                 dirty = true;
             }
         }
-        if (wash > 0 && count > 0) dirty = true; // the age shading moved
+        if (wash > 0 && count > 0) dirty = true;
         return count == 0;
     }
 
-    /** Redraws the canvas and sends it to its atlas tile. Render thread, outside render passes. */
     void refresh(BloodCanvasAtlas atlas, int now, float opacity) {
         if (slot < 0) {
             slot = atlas.acquireSlot();
-            if (slot < 0) return; // atlas full: this face stays clean until a tile frees up
+            if (slot < 0) return;
         }
         if (image == null) image = new NativeImage(pw, ph, true);
         if (spec == null && atlas.wantsSpecular()) spec = new NativeImage(pw, ph, true);
@@ -115,12 +101,12 @@ final class MobFace {
             float dry = Math.max(0f, Math.min(1f, (agePct - 0.35f) / 0.35f));
             if ((rgb[i] & BloodColor.GLOW_BIT) != 0) glowSum += 1f - dry;
             float deep = Math.min(1f, (depth[i] - 1) / 3f);
-            float f = TONE[tone[i]] * (1f - 0.16f * dry) * (1f - 0.08f * deep); // pools a shade darker
+            float f = TONE[tone[i]] * (1f - 0.16f * dry) * (1f - 0.08f * deep);
             int c = rgb[i];
             int r = clamp((int) (((c >> 16) & 0xFF) * f));
             int g = clamp((int) (((c >> 8) & 0xFF) * f));
             int b = clamp((int) ((c & 0xFF) * f));
-            float alpha = opacity * (0.55f + 0.45f * Math.min(1f, (depth[i] - 1) / 2f)); // a film shows the skin through
+            float alpha = opacity * (0.55f + 0.45f * Math.min(1f, (depth[i] - 1) / 2f));
             if (agePct > 0.75f) alpha *= 1f - Math.min(1f, (agePct - 0.75f) / 0.25f);
             Pixels.setAbgr(image, x, y, Pixels.packAbgr(r, g, b, clamp((int) (alpha * 255))));
             if (spec != null) {

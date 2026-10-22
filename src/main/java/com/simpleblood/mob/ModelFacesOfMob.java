@@ -14,28 +14,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * The faces of a mob as they are posed this frame: every side of every cube that is drawn on
- * it - its own model and the layers over it (wool, a drowned's outer layer, a villager's
- * clothes) - with its corners where the game draws them, in the world, and in the face's own
- * canvas. Hidden parts are skipped; outer layers come along, so blood lands on what is seen.
- */
 public final class ModelFacesOfMob {
     private ModelFacesOfMob() {}
 
-    /** Parts that are see-through shells with nothing to hold blood: a villager's hat brim. */
     private static final Set<String> SKIP = Set.of("hat_rim");
 
-    /** One posed face. Corners 0..3 run round the face in the model's own order. */
     static final class Face {
-        final Object key;              // the model's polygon: the same object every frame
-        final int cube;                // which cube of this frame it belongs to
-        final float[] p = new float[12];   // corners as drawn (camera-relative)
-        final double[] w = new double[12]; // corners in the world
-        final float[] s = new float[4], t = new float[4]; // corners in the canvas, 0..1
-        float nx, ny, nz;              // outward normal, unit, as drawn
-        float wnx, wny, wnz;           // the same in the world (differs only where mobs are drawn in view space)
-        int pw, ph;                    // canvas size in pixels
+        final Object key;
+        final int cube;
+        final float[] p = new float[12];
+        final double[] w = new double[12];
+        final float[] s = new float[4], t = new float[4];
+        float nx, ny, nz;
+        float wnx, wny, wnz;
+        int pw, ph;
 
         Face(Object key, int cube) {
             this.key = key;
@@ -46,10 +38,7 @@ public final class ModelFacesOfMob {
         double wy(int k) { return w[k * 3 + 1]; }
         double wz(int k) { return w[k * 3 + 2]; }
 
-        /** World point at canvas position (fx, fy), each 0..1. */
         Vec3 at(double fx, double fy) {
-            // The canvas is axis-aligned in s/t, the face a parallelogram: solve for the two
-            // edge weights from the corners' own canvas positions.
             double[] ab = edgeWeights(fx, fy);
             double a = ab[0], b = ab[1];
             return new Vec3(wx(0) + (wx(1) - wx(0)) * a + (wx(3) - wx(0)) * b,
@@ -57,7 +46,6 @@ public final class ModelFacesOfMob {
                     wz(0) + (wz(1) - wz(0)) * a + (wz(3) - wz(0)) * b);
         }
 
-        /** Weights along edges 0-1 and 0-3 for a canvas position. */
         double[] edgeWeights(double fx, double fy) {
             double s1 = s[1] - s[0], s3 = s[3] - s[0], t1 = t[1] - t[0], t3 = t[3] - t[0];
             double det = s1 * t3 - s3 * t1;
@@ -66,14 +54,9 @@ public final class ModelFacesOfMob {
             return new double[]{(dx * t3 - s3 * dy) / det, (s1 * dy - dx * t1) / det};
         }
 
-        /** Canvas position (0..1 each) of edge weights a, b. */
         double sAt(double a, double b) { return s[0] + (s[1] - s[0]) * a + (s[3] - s[0]) * b; }
         double tAt(double a, double b) { return t[0] + (t[1] - t[0]) * a + (t[3] - t[0]) * b; }
 
-        /**
-         * Where a world point lies on this face, as edge weights {a, b} and its distance off
-         * the face's plane; null when the face's edges are degenerate.
-         */
         double[] locate(double x, double y, double z) {
             double e1x = wx(1) - wx(0), e1y = wy(1) - wy(0), e1z = wz(1) - wz(0);
             double e3x = wx(3) - wx(0), e3y = wy(3) - wy(0), e3z = wz(3) - wz(0);
@@ -88,11 +71,6 @@ public final class ModelFacesOfMob {
         }
     }
 
-    /**
-     * One face from a model polygon: its four corners as {x, y, z (model pixels), u, v} each,
-     * its normal in the model, and the pose it is drawn with.
-     * @param toWorld the turn from where it is drawn to the world, or null for none
-     */
     private static void addPolygon(Object key, int cube, float[] v, float mnx, float mny, float mnz,
                                    Matrix4f m, Matrix3f nm, Quaternionf toWorld, Vec3 camera, List<Face> out) {
         float umin = Float.MAX_VALUE, umax = -Float.MAX_VALUE, vmin = Float.MAX_VALUE, vmax = -Float.MAX_VALUE;
@@ -102,9 +80,7 @@ public final class ModelFacesOfMob {
             vmin = Math.min(vmin, v[k * 5 + 4]);
             vmax = Math.max(vmax, v[k * 5 + 4]);
         }
-        if (umax - umin < 1e-6f || vmax - vmin < 1e-6f) return; // a face with no texture area
-        // Pixel size of the face, from its edges in model pixels: along the side where the
-        // texture's u changes, and the side where v does.
+        if (umax - umin < 1e-6f || vmax - vmin < 1e-6f) return;
         float lenU = 0, lenV = 0;
         for (int k = 0; k < 4; k++) {
             int a = k * 5, b = ((k + 1) % 4) * 5;
@@ -113,7 +89,7 @@ public final class ModelFacesOfMob {
             if (Math.abs(v[a + 3] - v[b + 3]) > Math.abs(v[a + 4] - v[b + 4])) lenU = Math.max(lenU, len);
             else lenV = Math.max(lenV, len);
         }
-        if (lenU < 0.5f || lenV < 0.5f) return; // a flat cube's sliver of a side
+        if (lenU < 0.5f || lenV < 0.5f) return;
         Vector3f n = nm.transform(new Vector3f(mnx, mny, mnz));
         if (n.lengthSquared() < 1e-8f) return;
         n.normalize();
@@ -144,11 +120,6 @@ public final class ModelFacesOfMob {
     }
 
     //? if >=1.21.11 {
-    /**
-     * Adds the drawn faces of a model posed as it is now.
-     * @param pose the stack the model is drawn with (camera-relative)
-     * @param cubes numbers the cubes of one mob across its models
-     */
     static void collect(ModelPart root, PoseStack pose, Vec3 camera, List<Face> out, int[] cubes) {
         walk(root, pose, camera, out, cubes);
     }
@@ -189,16 +160,9 @@ public final class ModelFacesOfMob {
     //?}
 
     //? if <=1.21.1 {
-    /*// 1.21.1 and older put a mob's models together each in their own way (a baby's big head,
-    // a list of parts drawn one by one), so the faces are caught as the game draws the mob and
-    // its layers: each drawn part's cubes with the pose they are drawn with.
-    private static final List<Object[]> CAUGHT = new ArrayList<>();
-    // Parts found while drawing to be see-through shells (by the name their parent gives them):
-    // they and their children take no blood.
+    /*    private static final List<Object[]> CAUGHT = new ArrayList<>();
     private static final Set<ModelPart> SKIPPED = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private static boolean catching;
-    // Parts already walked for this mob: a walk from a part's render() covers everything under
-    // it, so its children's own render() calls (vanilla draws them one by one) add nothing.
     private static final Set<ModelPart> WALKED = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     /^* From the mob's renderer: its model and layers are about to be drawn. ^/
@@ -280,7 +244,6 @@ public final class ModelFacesOfMob {
     }
 
     // These versions keep a cube's polygons to themselves; they are read by the types of their
-    // fields (the names differ between the game as shipped and as developed against).
     private static java.lang.reflect.Field fPolygons, fVertices, fNormal, fPos, fU, fV;
     private static boolean looked, readable;
 
@@ -336,8 +299,6 @@ public final class ModelFacesOfMob {
         }
     }
 
-    // When the faces cannot be read: a cube's six sides from its box. Corners in order (corner 0
-    // to 1 is the canvas's x, 0 to 3 its y) from the box's corners (0 = min, 1 = max per axis).
     private static final int[][][] SIDES = {
             {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}},
             {{1, 0, 1}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}},
@@ -364,13 +325,40 @@ public final class ModelFacesOfMob {
     }
     *///?}
 
-    /** A side of a cube, as the key of its canvas where its polygon cannot be read. */
+    static List<Face> collectModel(ModelPart root, PoseStack pose) {
+        List<Face> out = new ArrayList<>();
+        int[] cubes = {0};
+        //? if >=1.21.11 {
+        walk(root, pose, Vec3.ZERO, out, cubes);
+        //?} else {
+        /*walkModel(root, pose, out, cubes);
+        *///?}
+        return out;
+    }
+
+    //? if <=1.21.1 {
+    /*private static void walkModel(ModelPart part, PoseStack stack, List<Face> out, int[] cubes) {
+        if (!part.visible) return;
+        com.simpleblood.mixin.ModelPartAccessor parts = (com.simpleblood.mixin.ModelPartAccessor) (Object) part;
+        stack.pushPose();
+        part.translateAndRotate(stack);
+        if (!part.skipDraw) {
+            Matrix4f m = stack.last().pose();
+            Matrix3f n = stack.last().normal();
+            for (ModelPart.Cube cube : parts.simpleblood$cubes()) {
+                int id = cubes[0]++;
+                if (!addPolygons(cube, id, m, n, null, Vec3.ZERO, out)) addBox(cube, id, m, n, null, Vec3.ZERO, out);
+            }
+        }
+        for (Map.Entry<String, ModelPart> child : parts.simpleblood$children().entrySet()) {
+            if (!SKIP.contains(child.getKey())) walkModel(child.getValue(), stack, out, cubes);
+        }
+        stack.popPose();
+    }
+    *///?}
+
     record CubeSide(Object cube, int side) {}
 
-    /**
-     * The turn from where mobs are drawn to the world: 1.20.1 draws them with the camera's turn
-     * in the pose stack (in view space); later versions keep that turn out of it. Null: none.
-     */
     private static Quaternionf viewToWorld() {
         //? if 1.20.1 {
         /*net.minecraft.client.Camera cam = net.minecraft.client.Minecraft.getInstance().gameRenderer.getMainCamera();

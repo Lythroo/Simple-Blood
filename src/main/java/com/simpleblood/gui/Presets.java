@@ -2,11 +2,6 @@ package com.simpleblood.gui;
 
 import com.simpleblood.SimpleBloodConfig;
 
-/**
- * Ready-made looks. Each one sets every tuning value in the config - amount and budget,
- * drop physics, bursts, bleeding, puddles, hit direction, water and sound - so the result is
- * a coherent whole rather than a few sliders nudged. Mob colours and kinds stay as they are.
- */
 public final class Presets {
 
     private Presets() {}
@@ -102,9 +97,6 @@ public final class Presets {
             }),
     };
 
-    // ------------------------------------------------------------------ sections
-
-    /** Drop physics: size, lifetime, gravity and drag, all in percent. */
     private static void drops(SimpleBloodConfig c, int size, int lifetime, int gravity, int drag) {
         c.particles.particleSize = size;
         c.particles.particleLifetime = lifetime;
@@ -112,7 +104,6 @@ public final class Presets {
         c.particles.particleDrag = drag;
     }
 
-    /** Hit burst (intensity, duration, spread, cooldown ms) and death burst (intensity, spread). */
     private static void bursts(SimpleBloodConfig c, int hitIntensity, int hitDuration, int hitSpread, int cooldownMs,
                                int deathIntensity, int deathSpread) {
         c.hitBurst.burstIntensity = hitIntensity;
@@ -123,7 +114,6 @@ public final class Presets {
         c.deathBurst.deathSpread = deathSpread;
     }
 
-    /** Low-health dripping: health threshold (%), frequency (%), intensity (%), seconds after the last hit. */
     private static void bleeding(SimpleBloodConfig c, int threshold, int frequency, int intensity, int seconds) {
         c.lowHealth.threshold = threshold;
         c.lowHealth.dripFrequency = frequency;
@@ -131,7 +121,6 @@ public final class Presets {
         c.lowHealth.dripDurationSeconds = seconds;
     }
 
-    /** Blood on blocks. */
     private static void puddles(SimpleBloodConfig c, int resolution, String highlights, int amount, int opacity,
                                 int lifetimeSeconds, int maxTiles, int renderDistance, boolean rainWashes,
                                 boolean wallsAndCeilings, boolean detailedShapes, boolean footprints, int footprintSteps) {
@@ -149,21 +138,18 @@ public final class Presets {
         c.surfaces.footprintSteps = footprintSteps;
     }
 
-    /** Direction of a hit: the share (%) following the blow, weapon flavour, exit spray. */
     private static void hits(SimpleBloodConfig c, int share, boolean weaponFlavour, boolean exitSpray) {
         c.directional.share = share;
         c.directional.weaponFlavour = weaponFlavour;
         c.directional.entrySpatter = exitSpray;
     }
 
-    /** Chunks of meat: on/off, how many (%), whether they bleed. Only the Gore preset switches them on. */
     private static void giblets(SimpleBloodConfig c, boolean on, int amount, boolean trails) {
         c.gore.giblets = on;
         c.gore.gibletAmount = amount;
         c.gore.gibletTrails = trails;
     }
 
-    /** Under water: clouds on/off and their size, lifetime and opacity (%). */
     private static void water(SimpleBloodConfig c, boolean clouds, int size, int lifetime, int opacity) {
         c.underwater.transformToFog = clouds;
         c.underwater.fogSize = size;
@@ -171,7 +157,6 @@ public final class Presets {
         c.underwater.fogOpacity = opacity;
     }
 
-    /** Sound: volume and pitch (%), landing taps, footstep squelches. */
     private static void sound(SimpleBloodConfig c, int volume, int pitch, boolean landing, boolean footsteps) {
         c.audio.soundVolume = volume;
         c.audio.soundPitch = pitch;
@@ -179,11 +164,6 @@ public final class Presets {
         c.audio.footstepSounds = footsteps;
     }
 
-    /**
-     * Every tuning value back to its default; entity table, colours and kinds untouched. The
-     * presets build on this, so giblets and blood on mobs (off by default) are off after any
-     * preset but Gore, which switches them on.
-     */
     public static void defaults(SimpleBloodConfig c) {
         SimpleBloodConfig d = new SimpleBloodConfig();
         c.general.bloodAmount = d.general.bloodAmount;

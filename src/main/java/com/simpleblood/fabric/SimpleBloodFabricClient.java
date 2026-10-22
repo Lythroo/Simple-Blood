@@ -10,9 +10,6 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.particle.v1.ParticleProviderRegistry;
 
-/**
- * Fabric client entrypoint. Wiring only - behaviour lives in {@link SimpleBloodClient}.
- */
 public class SimpleBloodFabricClient implements ClientModInitializer {
 
     @Override
@@ -36,6 +33,7 @@ public class SimpleBloodFabricClient implements ClientModInitializer {
         providers.register(BloodParticles.WIND_PUFF, sprites -> new com.simpleblood.particle.PuffParticle.Factory(sprites, true));
         providers.register(BloodParticles.SPIRIT_SPARK, com.simpleblood.particle.SparkParticle.Factory::new);
         providers.register(BloodParticles.EMBER, com.simpleblood.particle.EmberParticle.Factory::new);
+        providers.register(BloodParticles.ARMOR_SPARK, com.simpleblood.particle.ArmorSparkParticle.Factory::new);
 
         ClientTickEvents.END_CLIENT_TICK.register(SimpleBloodClient::clientTick);
 
@@ -45,7 +43,6 @@ public class SimpleBloodFabricClient implements ClientModInitializer {
 
         SimpleBlood.LOGGER.info("Simple Blood (Fabric) ready.");
     }
-
 
 }
 //?}

@@ -7,7 +7,6 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 import java.util.List;
 import java.util.Map;
 
-/** A model part's own cubes and its children, for laying blood over a mob's model. */
 @Mixin(ModelPart.class)
 public interface ModelPartAccessor {
     @Accessor("cubes")

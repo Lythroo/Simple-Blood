@@ -10,12 +10,6 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.util.RandomSource;
 
-/**
- * A long drop of blood thrown by a sweeping blow. Eight pixel-art teardrop sprites (one per
- * 45 degrees, head first) stand in for rotation: each frame the one closest to the particle's
- * on-screen direction of travel is used, so it always looks like crisp pixel art and never
- * a smoothly rotated texture. Lands like a splash.
- */
 public class BloodStreakParticle extends BloodParticle {
 
     private final SpriteSet sprites;
@@ -26,7 +20,6 @@ public class BloodStreakParticle extends BloodParticle {
                                   float red, float green, float blue) {
         super(world, x, y, z, velX, velY, velZ, sprite, sizeMultiplier, red, green, blue);
         this.sprites = sprites;
-        // The vanilla constructor jitters the velocity; a streak must fly exactly where aimed.
         this.xd = velX;
         this.yd = velY;
         this.zd = velZ;
@@ -34,14 +27,13 @@ public class BloodStreakParticle extends BloodParticle {
                 * com.simpleblood.SimpleBloodClient.getConfig().chunkyStreakScale();
         this.lifetime = 36 + this.random.nextInt(12);
         this.splash = true;
-        this.landingScale = 2.4f; // a long drop is a lot of blood: it lands as a proper puddle
+        this.landingScale = 2.4f;
         this.setSize(0.05f, 0.05f);
     }
 
-    /** Picks the sprite whose orientation is closest to the velocity as seen from the camera. */
     private void alignToVelocity(Camera camera) {
         double vx = x - xo, vy = y - yo, vz = z - zo;
-        if (vx * vx + vy * vy + vz * vz < 1.0e-6) return; // resting: keep the last sprite
+        if (vx * vx + vy * vy + vz * vz < 1.0e-6) return;
         //? if <=1.21.1 {
         /*org.joml.Vector3f up = camera.getUpVector();
         org.joml.Vector3f left = camera.getLeftVector();
@@ -53,8 +45,8 @@ public class BloodStreakParticle extends BloodParticle {
         float sx = -(float) (vx * left.x() + vy * left.y() + vz * left.z());
         double angle = Math.atan2(sy, sx);
         if (angle < 0) angle += Math.PI * 2;
-        int orientation = (int) Math.round(angle / (Math.PI / 4)) & 7; // 8 headings, head first
-        this.setSprite(sprites.get(orientation, 7));         // 8 frames: index * 7 / 7
+        int orientation = (int) Math.round(angle / (Math.PI / 4)) & 7;
+        this.setSprite(sprites.get(orientation, 7));
     }
 
     //? if <=1.21.1 {

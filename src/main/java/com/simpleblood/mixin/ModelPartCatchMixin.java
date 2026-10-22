@@ -1,10 +1,3 @@
-// Catches a mob's drawn parts for the blood on mobs (1.21.1 and older; later versions read the
-// model's faces straight off it). Listed in the mixins only on those versions.
-//
-// Hooked at the head of render() and not in compile(): Sodium and Embeddium cancel render()
-// right there and draw the part and all its children themselves, so compile() and the
-// children's render() never run with them. The priority puts this ahead of their cancel.
-
 //? if 1.21.1 {
 /*package com.simpleblood.mixin;
 

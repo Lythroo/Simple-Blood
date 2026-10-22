@@ -12,28 +12,18 @@ import net.minecraft.network.chat.Component;
 import java.util.List;
 import java.util.function.IntConsumer;
 
-/**
- * Simple Blood's settings screen. Vanilla buttons and sliders, a tab strip down the left,
- * rows of options on the right, a live puddle preview, presets, a colour picker and
- * try-it-out buttons that throw blood at the block you are looking at.
- *
- * Every change applies to the running game immediately (the screen does not pause it), so
- * the world is the preview; Cancel restores the values from when the screen was opened,
- * Save writes them to disk.
- */
 public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     private static final Gson GSON = new Gson();
     private static final int TITLE_H = 26;
     private static final int FOOTER_H = 22;
-    /** The tab list's scrollbar (6 px) plus a gap, kept clear of the tabs. */
     private static final int TAB_BAR_ROOM = 8;
     private int sidebar = 96;
     private int margin = 8;
     private int paneW = 160;
 
     private final Screen parent;
-    private final String backup; // config as JSON when the screen opened, for Cancel
+    private final String backup;
     private final List<Pages.Page> pages = Pages.all();
     private int page;
     private int prevPage = -1;
@@ -41,7 +31,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     private final Widget.Container root = new Widget.Container();
     private final Widget.Container tabs = new Widget.Container();
-    // The sidebar: a settings search on top, the pages under their group names below it.
     private final Widget.ScrollPanel tabList = new Widget.ScrollPanel();
     private Widgets.TextField search;
     private String searchText = "";
@@ -51,13 +40,11 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     private ColourPicker picker;
     private boolean saved;
 
-    // The preview pane: a fixed panel beside the settings list showing a diorama of the effect
-    // the hovered (or dragged) setting changes, and nothing else.
     private final java.util.EnumMap<com.simpleblood.surface.PreviewScene.Kind, SceneView> scenes = new java.util.EnumMap<>(com.simpleblood.surface.PreviewScene.Kind.class);
-    private Widget.PreviewSource previewRow;   // what the pane shows (sticks until another row is hovered)
-    private Widget.PreviewSource hoverRow;     // what is under the mouse right now
-    private float previewHover;                // seconds hoverRow has been hovered
-    private float previewSwap;                 // fade when the pane switches scenes
+    private Widget.PreviewSource previewRow;
+    private Widget.PreviewSource hoverRow;
+    private float previewHover;
+    private float previewSwap;
     private String previewName;
     private static final float PREVIEW_DELAY = 0.15f;
 
@@ -65,21 +52,14 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     private String toast;
     private float toastUntil;
 
-
     public BloodConfigScreen(Screen parent) {
         super(Component.literal("Simple Blood"));
         this.parent = parent;
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         this.backup = cfg == null ? null : GSON.toJson(cfg);
-        Guard.retryScreen(); // opened on purpose: an earlier error does not keep it shut
+        Guard.retryScreen();
     }
 
-    // ------------------------------------------------------------------ crash guard
-
-    /**
-     * Every way in from the game runs through here: an error is reported and closes the
-     * screen (the guard does that on the next tick) instead of taking the game down.
-     */
     private boolean guarded(String doing, java.util.function.BooleanSupplier task) {
         if (!Guard.ok(Guard.Part.SCREEN)) return false;
         try {
@@ -97,7 +77,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         });
     }
 
-    /** Like {@link #guarded} but runs even after an error: closing has to happen either way. */
     private void cleanup(String doing, Runnable task) {
         try {
             task.run();
@@ -106,13 +85,10 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         }
     }
 
-    /** The crash guard is closing us: keep nothing, go back to where we came from. */
     public void abandon() {
         saved = true;
         Screens.open(minecraft, parent);
     }
-
-    // ------------------------------------------------------------------ host
 
     @Override
     public SimpleBloodConfig config() {
@@ -146,8 +122,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         toastUntil = Widget.Anim.now() + 2.2f;
     }
 
-    // ------------------------------------------------------------------ layout
-
     @Override
     protected void init() {
         guarded("building the settings screen", this::layout);
@@ -156,12 +130,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     private void layout() {
         root.clear();
         root.x = 0; root.y = 0; root.w = width; root.h = height;
-        // Everything scales with the room there is: at a big GUI scale the screen is barely
-        // 480 x 270, so the sidebar, gaps and the preview pane shrink to fit.
         margin = width < 520 ? 6 : 10;
-        // Wide enough for the longest tab title next to the scrollbar (a tab needs its text
-        // plus 16 px of marker and padding; the list around it takes 14 more), but never more
-        // than a quarter of the screen.
         int longest = 0;
         for (Pages.Page p : pages) longest = Math.max(longest, this.font.width(p.title()));
         sidebar = Math.min(Math.max(width < 520 ? 84 : 104, longest + 16 + 6 + TAB_BAR_ROOM), width / 4);
@@ -180,10 +149,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         if (picker != null) picker.layout(width, height);
     }
 
-    /**
-     * Widths of the list and the pane beside it. Pages without a diorama (the mob tables) get
-     * the whole width for their columns.
-     */
     private void layoutContent() {
         int contentX = margin + sidebar + margin;
         int contentW = width - contentX - margin;
@@ -197,7 +162,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         return searching() || pages.get(page).pane();
     }
 
-    /** Whether the list shows search results instead of a page. */
     private boolean searching() {
         return !searchText.isBlank();
     }
@@ -263,8 +227,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         });
         reset.tooltip = List.of("Back to how things were when you opened this screen");
         reset.x = x0 + (bw + gap) * 2; reset.y = y0; reset.w = bw; reset.h = bh;
-        // Off to the right: every setting back to how the mod comes. Cancel or Undo still brings
-        // back what was there when the screen was opened.
         Widgets.Button defaults = new Widgets.Button("Reset to defaults", () -> {
             SimpleBloodConfig fresh = new SimpleBloodConfig();
             fresh.vanillaEntities.initializeDefaults();
@@ -277,7 +239,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
                 "Cancel or Undo brings your settings back");
         int dw = this.font.width(defaults.text) + 14;
         int centreRight = x0 + total + gap;
-        if (width - margin - dw < centreRight) { // a narrow screen: the short name
+        if (width - margin - dw < centreRight) {
             defaults.text = "Defaults";
             dw = this.font.width(defaults.text) + 14;
         }
@@ -294,7 +256,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         if (withHeader) header.clear();
         int top = TITLE_H + margin;
         Pages.Builder b = new Pages.Builder(list, header, this, !withHeader);
-        // Build with a provisional height; the header decides where the list starts.
         header.y = top;
         list.y = top;
         list.h = height - top - FOOTER_H - margin;
@@ -308,7 +269,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
             previewRow = null;
             hoverRow = null;
         }
-        for (Widget w : header.children()) w.y += 0; // positions are absolute already
+        for (Widget w : header.children()) w.y += 0;
     }
 
     @Override
@@ -326,7 +287,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         });
     }
 
-    /** The row under the mouse that has a diorama to show, if any. */
     private static Widget.PreviewSource previewSourceAt(Widget.Container c, double mx, double my) {
         for (int i = c.children().size() - 1; i >= 0; i--) {
             Widget w = c.children().get(i);
@@ -340,7 +300,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         return null;
     }
 
-    /** A row whose control is being dragged keeps its preview even when the mouse strays. */
     private static Widget.PreviewSource activeSource(Widget.Container c) {
         for (Widget w : c.children()) {
             if (w instanceof Widget.PreviewSource src && src.previewKind() != null && src.previewActive()) return src;
@@ -352,13 +311,11 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         return null;
     }
 
-    /** The pane to the right of the list: the diorama of the hovered setting. */
     private void drawPreview(Gfx g, int mx, int my, float dt) {
         int px = list.x + list.w + margin, py = TITLE_H + margin;
         int pw = paneW, ph = height - py - FOOTER_H - margin;
         panel(g, px, py, px + pw, py + ph);
 
-        // Which setting: a dragged control wins, then whatever the mouse rests on for a moment.
         Widget.PreviewSource src = picker != null ? null : activeSource(list);
         boolean active = src != null;
         if (src == null && picker == null) src = previewSourceAt(list, mx, my);
@@ -392,13 +349,17 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         view.colour(colour != null ? colour : () -> config().player.clientPlayerBloodColor);
         view.show(previewRow.previewAspects());
         view.config(previewRow.previewConfig());
-        if (fresh) view.trigger(); // the effect plays the moment a setting is hovered
+        if (fresh) view.trigger();
 
-        // Name, diorama (4:3), then the explanation.
         if (!name.isEmpty()) g.textClipped(name, ix + 2, iy + 2, iw - 4, Gfx.alpha(Widgets.TEXT, a));
         int sy = iy + (name.isEmpty() ? 0 : 13);
         int sh = Math.min(Math.round(iw * view.aspect()), ph - (sy - py) - 8);
         view.draw(g, ix, sy, iw, sh, dt);
+        String caption = view.scene().caption();
+        if (caption != null && !caption.isEmpty()) {
+            g.fill(ix, sy + sh - 12, ix + iw, sy + sh, 0x90000000);
+            g.textClipped(caption, ix + 4, sy + sh - 10, iw - 8, Gfx.alpha(Widgets.TEXT, a));
+        }
         if (a < 1f) g.fill(ix, sy, ix + iw, sy + sh, Gfx.alpha(0xFF000000, 1f - a));
         String text = previewRow.previewText();
         if (text != null && !text.isEmpty()) {
@@ -411,7 +372,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         }
     }
 
-    /** The first row on the page that has a diorama, so the pane is never blank. */
     private static Widget.PreviewSource firstSource(Widget.Container c) {
         for (Widget w : c.children()) {
             if (w instanceof Widget.PreviewSource src && src.previewKind() != null) return src;
@@ -425,10 +385,9 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     private void selectPage(int idx) {
         if (searching()) {
-            // Picking a page ends the search.
             searchText = "";
             if (search != null) search.set("");
-            page = -1; // so the page below is built even if it is the one already chosen
+            page = -1;
         }
         if (idx == page) return;
         prevPage = page;
@@ -436,8 +395,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         pageAnim = 0f;
         buildPage(true);
     }
-
-    // ------------------------------------------------------------------ save / cancel
 
     private void save() {
         SimpleBloodConfig cfg = config();
@@ -465,8 +422,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     @Override
     public void onClose() {
-        // Closed by something other than our buttons (a disconnect, another screen): keep
-        // what was changed, the world has been showing it all along.
         if (!saved) {
             cleanup("saving the settings", () -> {
                 SimpleBloodConfig cfg = config();
@@ -478,10 +433,8 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     @Override
     public boolean isPauseScreen() {
-        return false; // the world is the live preview
+        return false;
     }
-
-    // ------------------------------------------------------------------ drawing
 
     private void draw(Gfx g, int mx, int my) {
         guarded("drawing the settings screen", () -> drawAll(g, mx, my));
@@ -492,26 +445,22 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         float dt = Math.min(0.1f, now - lastTime);
         lastTime = now;
 
-        // Title bar.
         g.fill(0, 0, width, TITLE_H, 0xB0000000);
         g.fill(0, TITLE_H - 1, width, TITLE_H, 0x60FFFFFF);
         g.text("Simple Blood", margin + 2, 9, Widgets.TEXT);
         g.textRight(searching() ? "Search" : pages.get(page).title(), width - margin - 2, 9, Widgets.TEXT_DIM);
 
-        // Panels.
         panel(g, tabs.x, tabs.y, tabs.x + tabs.w, tabs.y + tabs.h);
         panel(g, list.x, header.y, list.x + list.w, list.y + list.h);
         if (hasPane()) drawPreview(g, mx, my, dt);
         g.fill(0, footer.y, width, height, 0xB0000000);
         g.fill(0, footer.y, width, footer.y + 1, 0x60FFFFFF);
 
-        // Page slide-in: the content eases in from the right.
         pageAnim = Math.min(1f, pageAnim + dt * 6f);
         float ease = Widget.Anim.easeOut(pageAnim);
         int slide = Math.round((1f - ease) * 10f);
         list.x += slide;
         header.x += slide;
-        // Only the topmost widget under the mouse lights up: the picker, when open, covers the rest.
         Widget.hoverTop(picker != null ? picker.hovered(mx, my) : root.hovered(mx, my));
         tabs.render(g, mx, my, dt);
         header.render(g, mx, my, dt);
@@ -521,7 +470,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         if (pageAnim < 1f) g.fill(list.x, header.y, list.x + list.w, list.y + list.h, Gfx.alpha(0xFF000000, 0.5f * (1f - ease)));
         footer.render(g, mx, my, dt);
 
-        // Toast.
         if (toast != null && now < toastUntil) {
             float a = Math.min(1f, (toastUntil - now) / 0.4f);
             int tw = g.textWidth(toast) + 12;
@@ -531,7 +479,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
             g.text(toast, tx + 6, ty + 4, Gfx.alpha(Widgets.TEXT, a));
         }
 
-        // Tooltip for whatever is under the mouse (not while the picker is open).
         if (picker == null) {
             Widget over = root.hovered(mx, my);
             if (over != null && over.tooltip != null) g.tooltip(over.tooltip, mx, my);
@@ -546,12 +493,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         g.bevel(x1, y1, x2, y2, 0x30FFFFFF, 0x80000000);
     }
 
-    /**
-     * The backdrop. In a world the game itself is the preview, so it only gets dimmed a
-     * little (no blur); outside one the vanilla panorama and menu background are used.
-     * Vanilla draws the background itself before calling render on 1.21.11+, so only the
-     * 1.21.1 render method calls it.
-     */
     private boolean dimWorld(Gfx g) {
         if (minecraft.level == null) return false;
         g.gradient(0, 0, width, height, 0x70000000, 0x90000000);
@@ -601,8 +542,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         if (!dimWorld(new Gfx(graphics, font))) super.extractBackground(graphics, mouseX, mouseY, partialTick);
     }
     //?}
-
-    // ------------------------------------------------------------------ input
 
     private boolean click(double mx, double my, int button) {
         return guarded("a click", () -> clickAt(mx, my, button));
@@ -654,7 +593,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     private boolean keyDown(int key, int modifiers) {
         if (picker != null) return picker.keyPressed(key, modifiers) || key == Keys.ESCAPE;
         if (root.keyPressed(key, modifiers)) return true;
-        if (key == Keys.ESCAPE) { // escape: same as Save
+        if (key == Keys.ESCAPE) {
             save();
             return true;
         }
@@ -721,9 +660,6 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     }
     //?}
 
-    // ------------------------------------------------------------------ tab widget
-
-    /** A sidebar tab: a vanilla button with a red marker when selected. */
     private static final class Tab extends Widget {
         private final String text;
         private final Runnable onClick;

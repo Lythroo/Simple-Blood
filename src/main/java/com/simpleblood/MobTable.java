@@ -12,27 +12,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * The mobs the running game really has, read from its entity registry, and a first guess at
- * what bleeds out of a mob nobody has set up yet (by what its name says it is).
- *
- * The vanilla table is kept in step with the game: mobs this version does not have are left
- * out of it, mobs it has and the built-in table does not know (a newer version's) are added
- * with a guess. Mobs from other mods bleed by the same guess until someone sets them up.
- */
 public final class MobTable {
     private MobTable() {}
 
-    /** Living things that are not mobs: they never bleed and are not listed. */
     private static final Set<String> NOT_MOBS = Set.of("player", "armor_stand", "mannequin");
 
     private static List<Identifier> living;
     private static boolean synced;
 
-    /**
-     * Every living entity type of the running game (one with attributes: that is what makes
-     * an entity alive), by id, sorted. Read once the game has registered every mod's mobs.
-     */
     public static List<Identifier> livingIds() {
         if (living == null) {
             List<Identifier> out = new ArrayList<>();
@@ -51,7 +38,6 @@ public final class MobTable {
         return living;
     }
 
-    /** Mobs from other mods, by mod id. */
     public static Map<String, List<Identifier>> moddedByMod() {
         Map<String, List<Identifier>> out = new java.util.TreeMap<>();
         for (Identifier id : livingIds()) {
@@ -61,10 +47,6 @@ public final class MobTable {
         return out;
     }
 
-    /**
-     * Brings the vanilla table in step with this game: drops mobs it does not have, adds
-     * mobs it has that the table lacks, with a guess. Once per game, after its mobs are known.
-     */
     public static void sync(SimpleBloodConfig cfg) {
         if (synced || cfg == null) return;
         synced = true;
@@ -73,7 +55,7 @@ public final class MobTable {
             if (id.getNamespace().equals("minecraft")) here.add(id.getPath());
         }
         if (here.isEmpty()) {
-            synced = false; // the registry is not ready yet: try again later
+            synced = false;
             return;
         }
         int dropped = 0, added = 0;
@@ -99,20 +81,12 @@ public final class MobTable {
         }
     }
 
-    // ------------------------------------------------------------------ guessing
-
-    /**
-     * Whole words that say what a mob is made of, and stems strong enough to say it from inside
-     * a longer word too ("wildfire", "frostbite", "zombified"). Short or common words stay
-     * whole-word only, so a "giant" is no ant and a "friend" no ender.
-     */
     private record Rule(String[] words, String[] stems, BloodKind kind, int colour, boolean drips, boolean stains) {}
 
     private static Rule rule(String words, String stems, BloodKind kind, int colour, boolean drips, boolean stains) {
         return new Rule(words.split(" "), stems.isEmpty() ? new String[0] : stems.split(" "), kind, colour, drips, stains);
     }
 
-    /** What a word in a mob's name says about its blood, most telling first. */
     private static final Rule[] RULES = {
             rule("skeleton skeletal bone bones skull lich", "skelet skull", BloodKind.BONE, 0xC9C2A8, false, false),
             rule("golem robot construct automaton mech android drone turret sentinel clockwork", "golem robot automaton", BloodKind.METAL, 0xC9C7C1, false, false),
@@ -131,14 +105,8 @@ public final class MobTable {
             rule("sculk warden", "sculk", BloodKind.LIQUID, 0x0F4B58, true, true),
     };
 
-    /**
-     * A first guess at a mob's blood from the words in its name: bones for skeletons, metal
-     * flakes for golems and robots, embers for fire creatures, and so on; plain red for the
-     * rest. Glowing blood for names that say they glow.
-     */
     public static SimpleBloodConfig.ModdedEntities.ModdedEntitySettings guess(Identifier id) {
         String[] words = id.getPath().toLowerCase(Locale.ROOT).split("[_/.\\-]+");
-        // A whole word first (the clearest), then a strong stem inside a word.
         Rule match = null;
         for (int pass = 0; pass < 2 && match == null; pass++) {
             for (Rule r : RULES) {

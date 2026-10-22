@@ -47,6 +47,33 @@ had landed there. The puddle then spreads, runs down the sides and dries like an
 Returns `false` if nothing was hit or nothing was painted (for example, the player turned
 puddles off). Painted blood never glows.
 
+## Sparks (1.2.0)
+
+```java
+SimpleBloodAPI.spawnSparks(level, at, towardsPlayer);
+```
+
+Sparks struck off metal at `at`, flying towards `towardsPlayer` (a direction; `null` sends
+them up), with the metal clank. Uses the player's Armor settings.
+
+## Blood on a body (1.2.0)
+
+```java
+SimpleBloodAPI.stainBody(entity, at, direction, 0x8B0000);
+```
+
+Blood landing on `entity` at `at`, travelling along `direction`: it stays on the body, runs
+down and dries like blood thrown onto it. Needs the player's "Blood on mobs" on.
+
+## A pool (1.2.0)
+
+```java
+SimpleBloodAPI.spawnPool(entity);
+```
+
+A pool of the mob's blood spreads on the ground under it, as under a body that has just
+died. Needs "Pool under the body" on.
+
 ## Cleaning up
 
 ```java

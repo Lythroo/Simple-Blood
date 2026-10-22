@@ -1,8 +1,20 @@
 {
   "textures": [
     "simpleblood:blood_0",
+    "simpleblood:blood_0_f1",
+    "simpleblood:blood_0_f2",
+    "simpleblood:blood_0_f3",
     "simpleblood:blood_1",
+    "simpleblood:blood_1_f1",
+    "simpleblood:blood_1_f2",
+    "simpleblood:blood_1_f3",
     "simpleblood:blood_2",
-    "simpleblood:blood_3"
+    "simpleblood:blood_2_f1",
+    "simpleblood:blood_2_f2",
+    "simpleblood:blood_2_f3",
+    "simpleblood:blood_3",
+    "simpleblood:blood_3_f1",
+    "simpleblood:blood_3_f2",
+    "simpleblood:blood_3_f3"
   ]
 }

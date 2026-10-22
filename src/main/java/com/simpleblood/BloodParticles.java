@@ -21,13 +21,6 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 *///?}
 
-/**
- * The blood particle types (drops, plus the bone, metal, wood and meat pieces) (surface blood is painted by the canvas engine, not a particle). Registration differs per loader:
- * Fabric registers eagerly into the frozen registry; NeoForge defers via
- * {@link net.neoforged.neoforge.registries.DeferredRegister}. Either way the
- * {@code BLOOD_*} fields expose plain {@link SimpleParticleType} handles that the
- * shared spawning code references.
- */
 public final class BloodParticles {
 
     private BloodParticles() {}
@@ -46,6 +39,7 @@ public final class BloodParticles {
     public static final SimpleParticleType SPIRIT_SPARK = simple("spirit_spark");
     public static final SimpleParticleType WIND_PUFF    = simple("wind_puff");
     public static final SimpleParticleType EMBER        = simple("ember");
+    public static final SimpleParticleType ARMOR_SPARK  = simple("armor_spark");
 
     private static SimpleParticleType simple(String name) {
         return Registry.register(BuiltInRegistries.PARTICLE_TYPE,
@@ -53,7 +47,6 @@ public final class BloodParticles {
                 FabricParticleTypes.simple());
     }
 
-    /** Touching this class runs the static registrations above. */
     public static void init() {}
     //?}
 
@@ -74,8 +67,8 @@ public final class BloodParticles {
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> SPIRIT_SPARK_H = REGISTRY.register("spirit_spark", () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> WIND_PUFF_H    = REGISTRY.register("wind_puff",    () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> EMBER_H        = REGISTRY.register("ember",        () -> newSimple());
+    private static final DeferredHolder<ParticleType<?>, SimpleParticleType> ARMOR_SPARK_H  = REGISTRY.register("armor_spark",  () -> newSimple());
 
-    // Direct handles populated by bind() once registration has run.
     public static SimpleParticleType BLOOD_DRIP;
     public static SimpleParticleType BLOOD_SPLASH;
     public static SimpleParticleType BLOOD_DROP;
@@ -89,12 +82,12 @@ public final class BloodParticles {
     public static SimpleParticleType SPIRIT_SPARK;
     public static SimpleParticleType WIND_PUFF;
     public static SimpleParticleType EMBER;
+    public static SimpleParticleType ARMOR_SPARK;
 
     private static SimpleParticleType newSimple() {
         return new SimpleParticleType(false) {};
     }
 
-    // Called after the registry is populated so shared code can use BLOOD_* directly.
     public static void bind() {
         BLOOD_DRIP   = BLOOD_DRIP_H.get();
         BLOOD_SPLASH = BLOOD_SPLASH_H.get();
@@ -109,12 +102,12 @@ public final class BloodParticles {
         SPIRIT_SPARK = SPIRIT_SPARK_H.get();
         WIND_PUFF    = WIND_PUFF_H.get();
         EMBER        = EMBER_H.get();
+        ARMOR_SPARK  = ARMOR_SPARK_H.get();
     }
     *///?}
 
     //? if neoforge && 1.20.1 {
-    /*// 1.20.1 (Forge API): RegistryObject instead of DeferredHolder.
-    public static final DeferredRegister<ParticleType<?>> REGISTRY =
+    /*    public static final DeferredRegister<ParticleType<?>> REGISTRY =
             DeferredRegister.create(Registries.PARTICLE_TYPE, SimpleBlood.MOD_ID);
 
     private static final RegistryObject<SimpleParticleType> BLOOD_DRIP_H   = REGISTRY.register("blood_drip",   () -> newSimple());
@@ -130,8 +123,8 @@ public final class BloodParticles {
     private static final RegistryObject<SimpleParticleType> SPIRIT_SPARK_H = REGISTRY.register("spirit_spark", () -> newSimple());
     private static final RegistryObject<SimpleParticleType> WIND_PUFF_H    = REGISTRY.register("wind_puff",    () -> newSimple());
     private static final RegistryObject<SimpleParticleType> EMBER_H        = REGISTRY.register("ember",        () -> newSimple());
+    private static final RegistryObject<SimpleParticleType> ARMOR_SPARK_H  = REGISTRY.register("armor_spark",  () -> newSimple());
 
-    // Direct handles populated by bind() once registration has run.
     public static SimpleParticleType BLOOD_DRIP;
     public static SimpleParticleType BLOOD_SPLASH;
     public static SimpleParticleType BLOOD_DROP;
@@ -145,12 +138,12 @@ public final class BloodParticles {
     public static SimpleParticleType SPIRIT_SPARK;
     public static SimpleParticleType WIND_PUFF;
     public static SimpleParticleType EMBER;
+    public static SimpleParticleType ARMOR_SPARK;
 
     private static SimpleParticleType newSimple() {
         return new SimpleParticleType(false) {};
     }
 
-    // Called after the registry is populated so shared code can use BLOOD_* directly.
     public static void bind() {
         BLOOD_DRIP   = BLOOD_DRIP_H.get();
         BLOOD_SPLASH = BLOOD_SPLASH_H.get();
@@ -165,6 +158,7 @@ public final class BloodParticles {
         SPIRIT_SPARK = SPIRIT_SPARK_H.get();
         WIND_PUFF    = WIND_PUFF_H.get();
         EMBER        = EMBER_H.get();
+        ARMOR_SPARK  = ARMOR_SPARK_H.get();
     }
     *///?}
 }

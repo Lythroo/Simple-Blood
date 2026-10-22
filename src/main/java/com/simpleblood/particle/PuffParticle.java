@@ -18,19 +18,6 @@ import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 
-/**
- * A puff that plays its eight frames once over its life, tinted with the mob's colour.
- *
- * <ul>
- *   <li>Bone dust (skeletons): a small puff blooms into a lumpy cloud, which then wears away
- *       into grains that drift apart. Hangs near where it was knocked out (strong drag) and
- *       sinks, slowly.</li>
- *   <li>Wind (breezes): a gust curling open, unwinding until only its outer arc is left.
- *       Lighter and quicker than dust, and it rises instead of sinking.</li>
- * </ul>
- *
- * Both are gone the moment they touch water.
- */
 //? if <=1.21.1 {
 /*public class PuffParticle extends net.minecraft.client.particle.TextureSheetParticle {
 *///?} else {
@@ -57,7 +44,6 @@ public class PuffParticle extends SingleQuadParticle {
         this.sprites = sprites;
         this.wind = wind;
 
-        // A puff leaves the wound slower than the pieces do, and lifts a little (wind more).
         if (BloodParticle.ballisticSpawn()) {
             this.xd = velX * 0.35;
             this.yd = velY * 0.35;
@@ -71,18 +57,15 @@ public class PuffParticle extends SingleQuadParticle {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         this.lifetime = Math.max(8, (int) ((wind ? 12 + random.nextInt(6) : 14 + random.nextInt(8))
                 * cfg.particleLifetimeMultiplier()));
-        // The full cloud is a bit over half a block across; a gust a little less.
         this.quadSize = (wind ? 0.24f : 0.30f) * (1f + random.nextFloat() * 0.2f) * size;
         this.setSize(0.1f, 0.1f);
 
-        // Each puff a shade paler or darker than the next.
         float shade = 0.94f + random.nextFloat() * 0.1f;
         this.setColor(Math.min(1f, red * shade), Math.min(1f, green * shade), Math.min(1f, blue * shade));
-        // Dust is a see-through haze rather than a solid puff; both can be turned up or down.
         float thickness = (wind ? cfg.kinds.windOpacity : cfg.kinds.boneDustOpacity) / 100.0f;
         this.startAlpha = Math.min(1f, (wind ? 0.75f : 0.6f) * thickness);
         this.alpha = startAlpha;
-        this.gravity = 0f; // our own physics in tick()
+        this.gravity = 0f;
         this.hasPhysics = true;
         this.setSprite(sprites.get(0, lifetime));
     }
@@ -119,10 +102,9 @@ public class PuffParticle extends SingleQuadParticle {
             return;
         }
         if (level.getFluidState(BlockPos.containing(x, y, z)).is(FluidTags.WATER)) {
-            this.remove(); // dust dissolves, wind has nothing to blow
+            this.remove();
             return;
         }
-        // Dust sinks, slowly; wind keeps rising.
         float gravity = SimpleBloodClient.getConfig().particleGravityMultiplier();
         yd += (wind ? 0.0015f : -0.0016f) * gravity;
         this.move(xd, yd, zd);
@@ -131,7 +113,6 @@ public class PuffParticle extends SingleQuadParticle {
         yd *= drag;
         zd *= drag;
 
-        // The frames carry the bloom and break-up; the last third also fades.
         this.setSprite(sprites.get(age, lifetime));
         float lifeFraction = 1.0f - (float) age / lifetime;
         if (lifeFraction < 0.3f) {
@@ -151,7 +132,6 @@ public class PuffParticle extends SingleQuadParticle {
     }
     //?}
 
-    /** One factory per puff type: bone dust ({@code wind = false}) or wind. */
     public static class Factory implements ParticleProvider<SimpleParticleType> {
 
         private final SpriteSet sprites;

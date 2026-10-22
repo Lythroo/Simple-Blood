@@ -27,21 +27,11 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Blood that sticks to mobs (Puddles settings, "On mobs"). A hit paints the outside of the
- * mob's model where the blow landed; the blood rides along as the mob moves, runs down its
- * body, drips off it and dries, or washes off in water and rain.
- *
- * The body's shape is only known while the mob is drawn, so hits wait for the next frame,
- * and the running is worked out there too, once a tick. Canvases go to the surface blood's
- * atlas from the client tick, never from inside a render pass.
- */
 public final class MobBlood {
     private MobBlood() {}
 
     private static final Map<Integer, MobCoat> COATS = new HashMap<>();
     private static final RandomSource RNG = RandomSource.create();
-    /** Bloody mobs at once; the oldest beyond this are not painted. */
     private static final int MAX_COATS = 96;
     private static int now;
     private static ClientLevel lastLevel;
@@ -54,19 +44,17 @@ public final class MobBlood {
         return COATS.containsKey(entityId);
     }
 
-    /** A hit on a mob that bleeds: painted on its body the next time it is drawn. */
     public static void hit(LivingEntity entity, HitContext ctx) {
         splat(entity, ctx, false);
     }
 
-    /** The killing blow: a bigger splash. */
     public static void death(LivingEntity entity, HitContext ctx) {
         splat(entity, ctx, true);
     }
 
     private static void splat(LivingEntity e, HitContext ctx, boolean death) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
-        if (cfg == null || !cfg.mobCoat.enabled) return;
+        if (cfg == null || !cfg.mobCoat.enabled || !com.simpleblood.SimpleBloodAPI.takesBloodOnBody(e)) return;
         if (SimpleBlood.bloodKindOf(e) != BloodKind.LIQUID || !SimpleBlood.shouldEntityTransformToStains(e)) return;
         MobCoat coat = COATS.get(e.getId());
         if (coat == null) {
@@ -77,7 +65,6 @@ public final class MobBlood {
         float amount = Math.max(0, cfg.mobCoat.amount) / 100f;
         if (amount <= 0) return;
         float damage = ctx != null ? ctx.damage : 4f;
-        // Bigger marks for harder blows; the Amount setting scales them all.
         float size = Math.max(0.5f, Math.min(1.6f, 0.6f + damage / 10f)) * amount * (death ? 1.25f : 1f);
         int units = death || damage >= 8 ? 4 : damage >= 4 ? 3 : 2;
         HitContext.Weapon weapon = ctx != null && cfg.weaponFlavourEnabled() ? ctx.weapon : HitContext.Weapon.NONE;
@@ -87,7 +74,6 @@ public final class MobBlood {
             Vec3 at = ctx.wound != null ? ctx.wound : centre.subtract(ctx.direction.scale(e.getBbWidth() * 0.5));
             coat.pending.add(new MobCoat.Splat(at.subtract(base), ctx.direction, weapon, size, units, now));
         } else {
-            // Hurt all over (a fall, an explosion): blotches from a few sides at once.
             for (int i = 0; i < 3; i++) {
                 double a = RNG.nextDouble() * Math.PI * 2;
                 Vec3 dir = new Vec3(Math.cos(a), -0.3 + RNG.nextDouble() * 0.4, Math.sin(a)).normalize();
@@ -97,11 +83,204 @@ public final class MobBlood {
         }
     }
 
-    /**
-     * A badly hurt mob bleeding: with blood on mobs on and a wound on its body, the blood wells
-     * up at the wound and runs down the body, and the drops fall from where it runs off.
-     * @return false when there is no wound to bleed from (the caller drips the usual way)
-     */
+    public static int coatPixels(int entityId) {
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null) return 0;
+        int n = 0;
+        for (MobFace f : coat.faces.values()) n += f.count;
+        return n;
+    }
+
+    public static int corpseCount() {
+        return CORPSES.size();
+    }
+
+    public static boolean watching(int entityId) {
+        return COATS.containsKey(entityId) || WoundAnchors.wants(entityId) || CORPSES.containsKey(entityId);
+    }
+
+    private static final class Corpse {
+        final long since;
+        final int colour;
+        Vec3 pos;
+        float width, height;
+        List<Vec3> low;
+        List<Vec3> seeds;
+        int bled;
+
+        Corpse(LivingEntity e, int colour) {
+            this.since = System.currentTimeMillis();
+            this.colour = colour;
+            this.pos = e.position();
+            this.width = e.getBbWidth();
+            this.height = e.getBbHeight();
+        }
+    }
+
+    private static final Map<Integer, Corpse> CORPSES = new HashMap<>();
+
+    public static void corpse(LivingEntity e) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || !cfg.surfaces.enabled || !cfg.surfaces.corpsePools) return;
+        if (SimpleBlood.bloodKindOf(e) != BloodKind.LIQUID || !SimpleBlood.shouldEntityTransformToStains(e)) return;
+        if (!com.simpleblood.SimpleBloodAPI.leavesPool(e)) return;
+        if (CORPSES.size() < 64) CORPSES.put(e.getId(), new Corpse(e, colourOf(e)));
+    }
+
+    public static void poolNow(LivingEntity e) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || !cfg.surfaces.enabled || !cfg.surfaces.corpsePools) return;
+        if (!(e.level() instanceof ClientLevel level)) return;
+        Corpse c = new Corpse(e, colourOf(e));
+        settle(level, c);
+        for (int i = 0; i < 12; i++) {
+            c.bled = i;
+            bleed(level, c);
+        }
+    }
+
+    private static void lieDown(int entityId, List<ModelFacesOfMob.Face> faces) {
+        Corpse c = CORPSES.get(entityId);
+        if (c == null || faces.isEmpty()) return;
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null || !(level.getEntity(entityId) instanceof LivingEntity body) || body.deathTime < 6) return;
+        double floor = body.getY();
+        Map<Long, Vec3> low = new HashMap<>();
+        for (ModelFacesOfMob.Face f : faces) {
+            for (int k = 0; k < 4; k++) {
+                if (f.wy(k) > floor + 0.35) continue;
+                long cell = ((long) Math.floor(f.wx(k) * 8) << 32) ^ ((long) Math.floor(f.wz(k) * 8) & 0xffffffffL);
+                low.putIfAbsent(cell, new Vec3(f.wx(k), floor, f.wz(k)));
+            }
+        }
+        if (!low.isEmpty()) c.low = new ArrayList<>(low.values());
+    }
+
+    private static void tickCorpses(ClientLevel level) {
+        if (CORPSES.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        Iterator<Map.Entry<Integer, Corpse>> it = CORPSES.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Integer, Corpse> entry = it.next();
+            Corpse c = entry.getValue();
+            if (!(level.getEntity(entry.getKey()) instanceof LivingEntity body) || body.isRemoved()) {
+                if (c.seeds == null) {
+                    settle(level, c);
+                    for (int i = 0; i < 3; i++) bleed(level, c);
+                }
+                it.remove();
+                continue;
+            }
+            c.pos = body.position();
+            if (c.seeds == null) {
+                if ((body.onGround() && body.deathTime >= 8) || now - c.since > 3000) settle(level, c);
+                continue;
+            }
+            bleed(level, c);
+        }
+    }
+
+    private static void settle(ClientLevel level, Corpse c) {
+        com.simpleblood.Tally.count("corpse.settle");
+        List<Vec3> points = c.low != null ? c.low : List.of();
+        double cx = c.pos.x, cz = c.pos.z;
+        if (!points.isEmpty()) {
+            cx = 0;
+            cz = 0;
+            for (Vec3 p : points) { cx += p.x; cz += p.z; }
+            cx /= points.size();
+            cz /= points.size();
+        }
+        c.seeds = new ArrayList<>(List.of(new Vec3(cx, c.pos.y, cz)));
+        pour(level, c.seeds.get(0), c.colour, 10);
+    }
+
+    private static void bleed(ClientLevel level, Corpse c) {
+        com.simpleblood.Tally.count("corpse.bleed");
+        float size = Math.max(0.6f, Math.min(1.8f, c.width * c.height));
+        Vec3 middle = c.seeds.get(0);
+        List<Vec3> points = c.low != null ? c.low : List.of();
+        double reach = Math.min(1.15, 0.35 + c.bled * 0.08);
+        double radius = 0.35 + c.width * 0.6;
+        for (int k = 0; k < 3; k++) {
+            Vec3 to;
+            if (!points.isEmpty()) {
+                to = points.get(RNG.nextInt(points.size()));
+            } else {
+                double a = RNG.nextDouble() * Math.PI * 2;
+                to = middle.add(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+            }
+            double f = reach * (0.75 + RNG.nextDouble() * 0.3);
+            Vec3 at = new Vec3(middle.x + (to.x - middle.x) * f, middle.y, middle.z + (to.z - middle.z) * f);
+            pour(level, at, c.colour, Math.round((6 + RNG.nextInt(5)) * size * 0.8f));
+        }
+        pour(level, middle, c.colour, 3);
+        c.bled++;
+    }
+
+    private static void pour(ClientLevel level, Vec3 at, int colour, int pixels) {
+        net.minecraft.core.BlockPos ground = net.minecraft.core.BlockPos.containing(at.x, at.y - 0.05, at.z);
+        net.minecraft.world.phys.shapes.VoxelShape shape = level.getBlockState(ground).getCollisionShape(level, ground);
+        com.simpleblood.surface.BloodSurfaces.Hit hit = !shape.isEmpty()
+                ? new com.simpleblood.surface.BloodSurfaces.Hit(ground, net.minecraft.core.Direction.UP,
+                        new Vec3(at.x, ground.getY() + shape.max(net.minecraft.core.Direction.Axis.Y), at.z))
+                : com.simpleblood.surface.BloodSurfaces.trace(level, at.add(0, 0.4, 0), at.add(0, -0.8, 0));
+        if (hit != null) com.simpleblood.surface.BloodSurfaces.deposit(level, hit, colour, Math.max(1, pixels), new Vec3(0, -1, 0));
+    }
+
+    public static void steppedIn(LivingEntity e, Vec3 foot, int colour, int wetPixels) {
+        if (!catchesDrops() || !com.simpleblood.SimpleBloodAPI.takesBloodOnBody(e)) return;
+        com.simpleblood.Tally.count("feet.stained");
+        Vec3 centre = e.position();
+        Vec3 out = new Vec3(foot.x - centre.x, 0, foot.z - centre.z);
+        if (out.lengthSqr() < 1.0e-4) {
+            double a = RNG.nextDouble() * Math.PI * 2;
+            out = new Vec3(Math.cos(a), 0, Math.sin(a));
+        }
+        out = out.normalize();
+        int splats = wetPixels >= 6 ? 2 : 1;
+        for (int i = 0; i < splats; i++) {
+            Vec3 side = new Vec3(-out.z, 0, out.x).scale((RNG.nextDouble() - 0.5) * 0.2);
+            Vec3 at = foot.add(side).add(0, 0.04 + RNG.nextDouble() * Math.min(0.3, e.getBbHeight() * 0.15), 0);
+            landed(e, at, out.scale(-1), colour == 0 ? 0x010101 : colour, 0.7f);
+        }
+    }
+
+    private static boolean inWaterCauldron(ClientLevel level, Entity e) {
+        return level.getBlockState(e.blockPosition()).is(net.minecraft.world.level.block.Blocks.WATER_CAULDRON);
+    }
+
+    public static void washAround(ClientLevel level, Vec3 at, double radius, int ticks) {
+        if (COATS.isEmpty()) return;
+        for (MobCoat coat : COATS.values()) {
+            Entity e = level.getEntity(coat.entityId);
+            if (e != null && e.position().add(0, e.getBbHeight() * 0.5, 0).distanceToSqr(at) <= radius * radius) {
+                com.simpleblood.Tally.count("coat.washed");
+                coat.rinsed = Math.max(coat.rinsed, ticks);
+            }
+        }
+    }
+
+    public static boolean catchesDrops() {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        return cfg != null && cfg.mobCoat.enabled && cfg.mobCoat.amount > 0;
+    }
+
+    public static void landed(LivingEntity e, Vec3 at, Vec3 dir, int colour, float size) {
+        if (!catchesDrops() || !com.simpleblood.SimpleBloodAPI.takesBloodOnBody(e)) return;
+        com.simpleblood.Tally.count("coat.landed");
+        MobCoat coat = COATS.get(e.getId());
+        if (coat == null) {
+            if (COATS.size() >= MAX_COATS) return;
+            coat = new MobCoat(e.getId(), colourOf(e));
+            COATS.put(e.getId(), coat);
+        }
+        if (coat.pending.size() >= 48) return;
+        float amount = settings().amount / 100f;
+        Vec3 from = at.subtract(dir.scale(0.3)).subtract(e.position());
+        coat.pending.add(new MobCoat.Splat(from, dir, HitContext.Weapon.NONE, size * amount, 2, now, colour, true));
+    }
+
     public static boolean seep(LivingEntity e, int units) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (cfg == null || !cfg.mobCoat.enabled) return false;
@@ -117,13 +296,10 @@ public final class MobBlood {
         return SimpleBlood.bloodGlows(e) ? rgb | BloodColor.GLOW_BIT : rgb;
     }
 
-    // ------------------------------------------------------------------ drawing
-
     //? if >=1.21.11 {
-    /** One mob being drawn: its faces gathered from its own model and the layers over it. */
     private static final class Frame {
         final int entityId;
-        final Object state;            // the mob's render state: its layers bring the same one
+        final Object state;
         final Vec3 camera;
         final int light;
         final List<ModelFacesOfMob.Face> faces = new ArrayList<>();
@@ -139,21 +315,18 @@ public final class MobBlood {
 
     private static Frame frame;
 
-    /**
-     * From the blood layer, the first layer of a mob: takes its model's faces, and submits the
-     * drawing of its blood. The drawing comes after every layer has been submitted, so by then
-     * the layers over the body (wool, a drowned's outer layer, clothes) have added their faces
-     * too, and the blood goes on the outermost one the blow meets: wool soaks it up.
-     */
     public static void submit(int entityId, Object state, net.minecraft.client.model.geom.ModelPart root, PoseStack pose,
                               net.minecraft.client.renderer.SubmitNodeCollector collector, int light) {
         frame = null;
-        if (!COATS.containsKey(entityId)) return;
-        // A shader pack draws every mob once more from the sun for its shadows: in that view
-        // the faces are not where the hit landed, and the blood casts no shadow worth drawing.
+        boolean coated = COATS.containsKey(entityId);
+        if (!coated && !WoundAnchors.wants(entityId) && !CORPSES.containsKey(entityId)) return;
         if (com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
         Frame f = new Frame(entityId, state, SurfaceRenderer.cameraPos(), light);
+        com.simpleblood.compat.EmfPoses.pose(state, root);
         ModelFacesOfMob.collect(root, pose, f.camera, f.faces, f.cubes);
+        WoundAnchors.posed(entityId, f.faces);
+        lieDown(entityId, f.faces);
+        if (!coated) return;
         frame = f;
         collector.submitCustomGeometry(new PoseStack(),
                 (net.minecraft.client.renderer.rendertype.RenderType) SurfaceRenderer.renderType(),
@@ -161,13 +334,12 @@ public final class MobBlood {
                         () -> drawFrame(f, p, vc)));
     }
 
-    /** From a layer drawing another model over a mob (its own state): that model's faces join the mob's. */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static void layerModel(net.minecraft.client.model.Model<?> model, Object state, PoseStack pose) {
         Frame f = frame;
         if (f == null || f.state != state) return;
-        // A layer's model is posed when it is drawn, after this: pose it now, the same way.
         ((net.minecraft.client.model.Model) model).setupAnim(state);
+        com.simpleblood.compat.EmfPoses.pose(state, model.root());
         ModelFacesOfMob.collect(model.root(), pose, f.camera, f.faces, f.cubes);
     }
 
@@ -189,6 +361,10 @@ public final class MobBlood {
     public static void render(int entityId, boolean invisible, net.minecraft.client.renderer.MultiBufferSource buffers, int light) {
         Vec3 camera = SurfaceRenderer.cameraPos();
         List<ModelFacesOfMob.Face> posed = ModelFacesOfMob.collectCaught(camera);
+        if (!com.simpleblood.compat.ShaderPacks.inShadowPass()) {
+            WoundAnchors.posed(entityId, posed);
+            lieDown(entityId, posed);
+        }
         MobCoat coat = COATS.get(entityId);
         if (coat == null || invisible || posed.isEmpty() || com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
         List<Quad> quads = prepare(coat, posed, camera, light);
@@ -197,8 +373,7 @@ public final class MobBlood {
     }
     *///?}
 
-    /** One face's quad ready to draw: corners, canvas tile, light, normal. */
-    private record Quad(float[] p, float[] u, float[] v, int light, float nx, float ny, float nz) {}
+    record Quad(float[] p, float[] u, float[] v, int light, float nx, float ny, float nz) {}
 
     private static List<Quad> prepare(MobCoat coat, List<ModelFacesOfMob.Face> posed, Vec3 camera, int light) {
         SimpleBloodConfig.MobCoatSettings s = settings();
@@ -209,8 +384,8 @@ public final class MobBlood {
             Entity e = level == null ? null : level.getEntity(coat.entityId);
             if (e != null) {
                 for (MobCoat.Splat sp : coat.pending) {
-                    if (now - sp.made() > 40) continue; // never drawn in time: let it go
-                    MobCoat.Splat placed = new MobCoat.Splat(sp.at().add(e.position()), sp.dir(), sp.weapon(), sp.size(), sp.units(), sp.made());
+                    if (now - sp.made() > 40) continue;
+                    MobCoat.Splat placed = new MobCoat.Splat(sp.at().add(e.position()), sp.dir(), sp.weapon(), sp.size(), sp.units(), sp.made(), sp.colour(), sp.drop());
                     coat.paint(placed, posed, now, lifetime, RNG);
                 }
             }
@@ -220,14 +395,17 @@ public final class MobBlood {
             coat.lastSim = now;
             coat.flow(posed, now, lifetime, RNG, s.runs, s.drips);
         }
+        return quadsOf(coat, posed, light, now);
+    }
+
+    static List<Quad> quadsOf(MobCoat coat, List<ModelFacesOfMob.Face> posed, int light, int stamp) {
         List<Quad> quads = new ArrayList<>();
         float texel = BloodCanvasAtlas.texel();
         for (ModelFacesOfMob.Face f : posed) {
             MobFace canvas = coat.faces.get(f.key);
             if (canvas == null) continue;
-            canvas.lastSeen = now;
+            canvas.lastSeen = stamp;
             if (canvas.count == 0 || canvas.slot < 0) continue;
-            // Just off the skin, a little more at a distance where depth precision drops.
             double cx = f.p[0], cy = f.p[1], cz = f.p[2];
             float lift = 0.002f + (float) Math.sqrt(cx * cx + cy * cy + cz * cz) * 0.0001f;
             float[] p = new float[12];
@@ -248,7 +426,7 @@ public final class MobBlood {
         return quads;
     }
 
-    private static void draw(List<Quad> quads, PoseStack.Pose pose, VertexConsumer vc) {
+    static void draw(List<Quad> quads, PoseStack.Pose pose, VertexConsumer vc) {
         for (Quad q : quads) {
             for (int k = 0; k < 4; k++) {
                 vertex(vc, pose, q.p()[k * 3], q.p()[k * 3 + 1], q.p()[k * 3 + 2], q.u()[k], q.v()[k], q.light(), q.nx(), q.ny(), q.nz());
@@ -281,15 +459,13 @@ public final class MobBlood {
         return (Math.max(block, level) << 4) | (sky << 20);
     }
 
-    // ------------------------------------------------------------------ ticking
-
-    /** Ages, washes and uploads the blood, and lets the drops that ran off fall. */
     public static void tick(Minecraft mc) {
         ClientLevel level = mc.level;
         if (level != lastLevel) {
             clear();
             lastLevel = level;
         }
+        if (level != null) tickCorpses(level);
         if (level == null || COATS.isEmpty()) return;
         //? if 1.20.1 {
         /*boolean still = mc.isPaused();
@@ -301,7 +477,7 @@ public final class MobBlood {
         if (!still) {
             now++;
             if (!settings().enabled) {
-                clear();
+                clearCoats();
                 return;
             }
             boolean rainWashes = SimpleBloodClient.getConfig().surfaces.rainWashes;
@@ -314,7 +490,11 @@ public final class MobBlood {
                     it.remove();
                     continue;
                 }
-                coat.wash = e.isUnderWater() ? 40 : e.isInWater() ? 12 : rainWashes && e.isInWaterOrRain() ? 3 : 0; // not in water here, so rain
+                coat.wash = e.isUnderWater() ? 40 : e.isInWater() || inWaterCauldron(level, e) ? 12 : rainWashes && e.isInWaterOrRain() ? 3 : 0;
+                if (coat.rinsed > 0) {
+                    coat.rinsed--;
+                    coat.wash = Math.max(coat.wash, 40);
+                }
                 coat.bleed(now, Math.max(1, settings().lifetimeSeconds) * 20, RNG);
                 coat.age(now, atlas);
                 fall(level, coat);
@@ -326,13 +506,11 @@ public final class MobBlood {
         }
         for (MobCoat coat : COATS.values()) {
             for (MobFace f : coat.faces.values()) {
-                // Drying darkens the blood over time: redraw now and then even when nothing moved.
                 if (f.dirty || f.slot < 0 || (now + f.hashCode()) % 20 == 0) f.refresh(atlas, now, opacity);
             }
         }
     }
 
-    /** The drops that ran off a mob this tick fall as blood drops, which land and stain. */
     private static void fall(ClientLevel level, MobCoat coat) {
         if (coat.drips.isEmpty()) return;
         try {
@@ -352,8 +530,13 @@ public final class MobBlood {
         }
     }
 
-    /** All blood off every mob (a new world, /simpleblood clear, the switch turned off). */
     public static void clear() {
+        WoundAnchors.clear();
+        CORPSES.clear();
+        clearCoats();
+    }
+
+    private static void clearCoats() {
         if (COATS.isEmpty()) return;
         BloodCanvasAtlas atlas = BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null;
         for (MobCoat coat : COATS.values()) coat.dispose(atlas);

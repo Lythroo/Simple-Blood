@@ -1,10 +1,3 @@
-// Hooks the surface-blood quads into NeoForge level rendering. Each NeoForge generation
-// exposes a different event, so each variant is a complete top-level block (Stonecutter
-// cannot nest commented-out blocks inside a commented-out loader block).
-//
-// Blood is drawn twice a frame (see SurfaceRenderer#render): before the see-through terrain,
-// so water still covers blood beneath it, and after it, for blood on see-through blocks.
-
 //? if neoforge && >1.20.1 && <1.21.11 {
 /*package com.simpleblood.neoforge;
 
@@ -23,9 +16,7 @@ final class NeoForgeSurfaceHook {
 
     static void register() {
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent e) -> {
-            // After entities and before translucent terrain, so water still blends over blood beneath it.
-            if (e.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) { // signs and banners are drawn by then
-                // Our particles in water (blood clouds, debris): drawn here, before the water surface.
+            if (e.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
                 com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                         () -> com.simpleblood.particle.UnderwaterParticles.draw(new PoseStack().last()));
                 draw(false);
@@ -66,9 +57,7 @@ final class NeoForgeSurfaceHook {
     private NeoForgeSurfaceHook() {}
 
     static void register() {
-        // After entities and before translucent terrain, so water still blends over blood beneath it.
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterEntities e) -> {
-            // Our particles in water (blood clouds, debris): drawn here, before the water surface.
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                     () -> com.simpleblood.particle.UnderwaterParticles.draw(new PoseStack().last()));
             draw(false);
@@ -110,7 +99,6 @@ final class NeoForgeSurfaceHook {
 
     static void register() {
         NeoForge.EVENT_BUS.addListener((SubmitCustomGeometryEvent e) -> {
-            // Our particles in water (blood clouds, debris): drawn with the blood, before the water surface.
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                     () -> com.simpleblood.particle.UnderwaterParticles.submit(e.getSubmitNodeCollector()));
             ClientLevel level = Minecraft.getInstance().level;
@@ -123,8 +111,6 @@ final class NeoForgeSurfaceHook {
                                 () -> SurfaceRenderer.render(level, cam, pose, consumer, false)));
             });
         });
-        // Submitted geometry with blending is drawn before the translucent terrain: blood on
-        // see-through blocks is drawn straight after the terrain instead.
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterTranslucentBlocks e) -> {
             Minecraft mc = Minecraft.getInstance();
             ClientLevel level = mc.level;
@@ -155,7 +141,6 @@ final class NeoForgeSurfaceHook {
 
     static void register() {
         NeoForge.EVENT_BUS.addListener((SubmitCustomGeometryEvent e) -> {
-            // Our particles in water (blood clouds, debris): drawn with the blood, before the water surface.
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                     () -> com.simpleblood.particle.UnderwaterParticles.submit(e.getSubmitNodeCollector()));
             ClientLevel level = Minecraft.getInstance().level;
@@ -185,9 +170,7 @@ final class NeoForgeSurfaceHook {
 
     static void register() {
         MinecraftForge.EVENT_BUS.addListener((RenderLevelStageEvent e) -> {
-            // After entities and before translucent terrain, so water still blends over blood beneath it.
-            if (e.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) { // signs and banners are drawn by then
-                // Our particles in water (blood clouds, debris): drawn here, before the water surface.
+            if (e.getStage() == RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
                 com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                         () -> com.simpleblood.particle.UnderwaterParticles.draw(e.getPoseStack().last()));
                 draw(e.getPoseStack().last(), false);
@@ -197,8 +180,6 @@ final class NeoForgeSurfaceHook {
         });
     }
 
-    // 1.20.1 keeps the camera rotation in the level's pose stack (1.20.5+ moved it into the
-    // model-view matrix), so the quads must go through that stack.
     private static void draw(PoseStack.Pose pose, boolean onSeeThrough) {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;

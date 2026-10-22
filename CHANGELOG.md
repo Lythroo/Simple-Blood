@@ -1,5 +1,56 @@
 # Simple Blood changelog
 
+## 1.2.0
+
+### Combat
+- Sparks and shards off hard armor.
+- Metal clank, sharper tink for arrows.
+- Armor takes some of the blood.
+- Iron golems spark when struck too.
+- Anvils and dripstone hit like maces.
+
+### Bodies
+- Blood lands on other mobs and players.
+- Feet get bloody in puddles.
+- Wound drips follow the moving limb.
+- A pool spreads under every corpse.
+- Fresh Animations support through EMF.
+
+### Ragdolls
+- Ragdollified ragdolls bleed like Physics Mod.
+- Saro's Player Ragdoll bleeds too.
+
+### Water
+- Splash potions wash blood away.
+- Lingering clouds and cauldrons too.
+
+### Look and sound
+- Drops and splashes tumble while flying.
+- Every sound has its own slider.
+
+### Settings
+- New Combat tabs, ragdolls get their own.
+- Many new previews with captions.
+- Preview zombie fixed with Fresh Animations.
+
+### Fixes
+- No crash under water on 26.3.
+- High drag no longer freezes the game.
+- Hurt undead drip blood again.
+- Wound drips follow limbs on newer versions.
+- Blood splashed on walls runs down.
+- No more ETF log spam with EMF.
+
+### For mod developers
+- Metal bodies, pools, giblets per mob.
+- Register hard and soft items.
+- Hook in your own ragdolls.
+- Trigger sparks, body stains and pools.
+
+### Fixes
+- No crash on 26.3 under water ([#12](https://github.com/Lythroo/Simple-Blood/issues/12)).
+- No blood floating over dying mobs.
+
 ## 1.1.1
 
 ### Blood on mobs

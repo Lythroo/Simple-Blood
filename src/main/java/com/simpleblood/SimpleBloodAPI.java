@@ -69,6 +69,16 @@ import java.util.function.Function;
  * SimpleBloodAPI.spawnHit(entity, 6.0f);                        // a burst as if hit for 6 damage
  * SimpleBloodAPI.spawnDeath(entity);                            // the death burst
  * SimpleBloodAPI.paint(level, from, to, 0x8B0000, 12);          // blood on the first block face along a line
+ *
+ * // 1.2.0: armour, metal bodies, blood on bodies, pools, ragdolls:
+ * SimpleBloodAPI.registerEntityBlood("mymod:steam_knight", new SimpleBloodAPI.BloodSettings()
+ *         .setMetalBody(true));                                 // swords spark off it, with a clank
+ * SimpleBloodAPI.registerHardItem("mymod:mithril_chestplate", 0xD8E6F0); // sparks and pale shards
+ * SimpleBloodAPI.registerSoftItem("mymod:chainmail_robe");      // cloth, despite its name
+ * SimpleBloodAPI.registerRagdollSource("mymod", (level, out) -> MyRagdolls.forEach(r -> out.accept(r.mobId(), r.limbs())));
+ * SimpleBloodAPI.spawnSparks(level, at, towardsPlayer);         // sparks and a clank
+ * SimpleBloodAPI.stainBody(entity, at, direction, 0x8B0000);    // blood stays on its body
+ * SimpleBloodAPI.spawnPool(entity);                             // a pool spreads under it
  * }</pre>
  *
  * <p>Everything here is client side: call it from your client initializer or client code.
@@ -214,6 +224,40 @@ public final class SimpleBloodAPI {
         }, false);
     }
 
+    /**
+     * 1.2.0: sparks struck off metal at {@code at}, flying towards {@code towards} (a direction;
+     * null = up), with the metal clank. Respects the player's Armor settings. Client side.
+     */
+    public static void spawnSparks(Level level, Vec3 at, Vec3 towards) {
+        Guard.run(Guard.Part.API, "spawnSparks", () -> {
+            if (level instanceof ClientLevel client && at != null) RenderThread.run(() -> ArmorSparks.strike(client, at, towards, false));
+        });
+    }
+
+    /**
+     * 1.2.0: blood landing on a mob's body at {@code at} (world position on or near it),
+     * travelling along {@code direction}, in colour {@code rgb}: it stays on the body like a
+     * drop thrown onto it ("Blood on mobs" must be on). Client side.
+     */
+    public static void stainBody(LivingEntity entity, Vec3 at, Vec3 direction, int rgb) {
+        Guard.run(Guard.Part.API, "stainBody", () -> {
+            if (entity == null || at == null) return;
+            Vec3 dir = direction == null || direction.lengthSqr() < 1.0e-8 ? new Vec3(0, -1, 0) : direction.normalize();
+            int colour = (rgb & 0xFFFFFF) == 0 ? 0x010101 : rgb & 0xFFFFFF;
+            RenderThread.run(() -> com.simpleblood.mob.MobBlood.landed(entity, at, dir, colour, 1.2f));
+        });
+    }
+
+    /**
+     * 1.2.0: a pool of the mob's blood spreading on the ground under it, as under a body that
+     * has just died ("Pool under the body" must be on). Client side.
+     */
+    public static void spawnPool(LivingEntity entity) {
+        Guard.run(Guard.Part.API, "spawnPool", () -> {
+            if (entity != null) RenderThread.run(() -> com.simpleblood.mob.MobBlood.poolNow(entity));
+        });
+    }
+
     /** Removes all blood from blocks (what {@code /simpleblood clear} does). Any thread. */
     public static void clearSurfaceBlood() {
         Guard.run(Guard.Part.API, "clearSurfaceBlood", BloodSurfaces::clear);
@@ -222,6 +266,101 @@ public final class SimpleBloodAPI {
     /** How many block faces currently hold blood. */
     public static int surfaceBloodCount() {
         return BloodSurfaces.tileCount();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ARMOUR AND WEAPONS (1.2.0)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /** item id → shard colour of a hard item, or -1 for one that is soft. */
+    private static final Map<String, Integer> itemHardness = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * An item that is hard metal: armour of it takes blows (sparks, shards in {@code flakeRgb},
+     * a clank, less blood), and a weapon of it strikes sparks off hard armour. Simple Blood
+     * guesses from item ids ("iron", "steel", "plate"...); this overrides the guess.
+     */
+    public static void registerHardItem(String itemId, int flakeRgb) {
+        itemHardness.put(itemId, flakeRgb & 0xFFFFFF);
+    }
+
+    /** An item that is soft (cloth, leather, wood), whatever its id sounds like. */
+    public static void registerSoftItem(String itemId) {
+        itemHardness.put(itemId, -1);
+    }
+
+    /** Back to Simple Blood's own guess for this item. */
+    public static void unregisterItem(String itemId) {
+        itemHardness.remove(itemId);
+    }
+
+    /** Internal: a registered item's shard colour, -1 if registered soft, null if not registered. */
+    public static Integer itemHardness(String itemId) {
+        return itemHardness.get(itemId);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // RAGDOLLS (1.2.0)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Ragdolls from your mod, so they bleed like Physics Mod's: limbs drip, splash and stain
+     * where they land hard, and smear the ground when they slide. Called every client tick.
+     */
+    @FunctionalInterface
+    public interface RagdollSource {
+        /**
+         * Hand each ragdoll to {@code out}: an id that stays the same while it exists, and the
+         * world position of each of its limbs this tick (null for a missing limb). If the id is
+         * a living entity's, the ragdoll bleeds that entity's blood; otherwise it takes the
+         * blood of a mob that just died where it appeared.
+         */
+        void collect(ClientLevel level, java.util.function.BiConsumer<Integer, Vec3[]> out);
+    }
+
+    private static final Map<String, RagdollSource> ragdollSources = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Registers (or replaces) a ragdoll source under a name of your choice, e.g. your mod id. */
+    public static void registerRagdollSource(String name, RagdollSource source) {
+        ragdollSources.put(name, source);
+    }
+
+    public static void unregisterRagdollSource(String name) {
+        ragdollSources.remove(name);
+    }
+
+    /** Internal: every registered ragdoll source, by name. */
+    public static Map<String, RagdollSource> ragdollSources() {
+        return ragdollSources;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // RESOLVED PER-MOB VALUES (1.2.0)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /** Whether this mob's body is metal (sparks and a clank when struck by metal). */
+    public static boolean hasMetalBody(LivingEntity entity) {
+        BloodSettings s = getEntityBloodSettings(entity);
+        if (s != null && s.getMetalBody() != null) return s.getMetalBody();
+        return SimpleBlood.bloodKindOf(entity) == BloodKind.METAL;
+    }
+
+    /** Whether blood may stay on this mob's body. */
+    public static boolean takesBloodOnBody(LivingEntity entity) {
+        BloodSettings s = getEntityBloodSettings(entity);
+        return s == null || s.getBloodOnBody() == null || s.getBloodOnBody();
+    }
+
+    /** Whether a pool spreads under this mob's body when it dies. */
+    public static boolean leavesPool(LivingEntity entity) {
+        BloodSettings s = getEntityBloodSettings(entity);
+        return s == null || s.getLeavesPool() == null || s.getLeavesPool();
+    }
+
+    /** Whether giblets may fly off this mob. */
+    public static boolean throwsGiblets(LivingEntity entity) {
+        BloodSettings s = getEntityBloodSettings(entity);
+        return s == null || s.getGiblets() == null || s.getGiblets();
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -250,6 +389,46 @@ public final class SimpleBloodAPI {
         private SoundEvent bloodSound = null;
         private Boolean soundEnabled = null;
         private BiPredicate<LivingEntity, DamageSource> bleedPredicate = null;
+        private Boolean metalBody = null;
+        private Boolean bloodOnBody = null;
+        private Boolean leavesPool = null;
+        private Boolean giblets = null;
+
+        /**
+         * 1.2.0: a body of metal. Metal weapons and arrows strike sparks off it, with a clank.
+         * Default: on for {@link BloodKind#METAL} mobs (iron golems), off for the rest.
+         */
+        public BloodSettings setMetalBody(boolean metal) {
+            this.metalBody = metal;
+            return this;
+        }
+
+        /**
+         * 1.2.0: whether blood stays on this mob's body ("Blood on mobs": its own wounds, and
+         * blood thrown onto it). Turn it off for mobs whose model it would look wrong on.
+         * Default: on (when the player has Blood on mobs on).
+         */
+        public BloodSettings setBloodOnBody(boolean onBody) {
+            this.bloodOnBody = onBody;
+            return this;
+        }
+
+        /** 1.2.0: whether a pool spreads under the body when it dies. Default: on for mobs that stain. */
+        public BloodSettings setLeavesPool(boolean pool) {
+            this.leavesPool = pool;
+            return this;
+        }
+
+        /** 1.2.0: whether chunks of meat fly off it (when the player has giblets on). Default: on for {@code LIQUID} blood. */
+        public BloodSettings setGiblets(boolean giblets) {
+            this.giblets = giblets;
+            return this;
+        }
+
+        public Boolean getMetalBody() { return metalBody; }
+        public Boolean getBloodOnBody() { return bloodOnBody; }
+        public Boolean getLeavesPool() { return leavesPool; }
+        public Boolean getGiblets() { return giblets; }
 
         // ── Colour ────────────────────────────────────────────────────────
         /** Static blood colour as {@code 0xRRGGBB}. */

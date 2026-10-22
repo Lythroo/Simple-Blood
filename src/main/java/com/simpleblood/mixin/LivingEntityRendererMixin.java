@@ -17,7 +17,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import org.spongepowered.asm.mixin.Mixin;
 
-/** Every mob is drawn with a layer for the blood stuck to it (see {@link com.simpleblood.mob.MobBlood}). */
 @Mixin(LivingEntityRenderer.class)
 //? if >=1.21.11 {
 public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extends LivingEntityRenderState, M extends EntityModel<? super S>>
@@ -38,14 +37,12 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
 }
 //?} else {
 /*public abstract class LivingEntityRendererMixin<T extends net.minecraft.world.entity.LivingEntity> {
-    // The mob is drawn, then its layers (wool, clothes, armour): catch where all their parts are
-    // drawn, and put the blood on at the end, over the outermost.
     @org.spongepowered.asm.mixin.injection.Inject(method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
             at = @org.spongepowered.asm.mixin.injection.At("HEAD"))
     private void simpleblood$catchModel(T entity, float yaw, float partialTick, com.mojang.blaze3d.vertex.PoseStack pose,
                                         net.minecraft.client.renderer.MultiBufferSource buffers, int light,
                                         org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
-        if (com.simpleblood.mob.MobBlood.has(entity.getId())) com.simpleblood.mob.ModelFacesOfMob.startCatching();
+        if (com.simpleblood.mob.MobBlood.watching(entity.getId())) com.simpleblood.mob.ModelFacesOfMob.startCatching();
     }
 
     @org.spongepowered.asm.mixin.injection.Inject(method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
