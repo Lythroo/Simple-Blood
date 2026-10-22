@@ -2,7 +2,9 @@ package com.simpleblood;
 
 import com.simpleblood.particle.BloodParticle;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
@@ -96,6 +98,7 @@ public final class ArmorSparks {
     }
 
     private static void sparks(ClientLevel level, Vec3 at, Vec3 back, boolean crit, float damage, RandomSource rng) {
+        if (level.getFluidState(BlockPos.containing(at)).is(FluidTags.WATER)) return;
         int count = 3 + rng.nextInt(2) + (crit ? 2 : 0) + (int) Math.min(2, damage / 6f);
         for (int i = 0; i < count; i++) {
             Vec3 dir = back.add((rng.nextDouble() - 0.5) * 1.6, 0.2 + rng.nextDouble() * 0.6, (rng.nextDouble() - 0.5) * 1.6).normalize();

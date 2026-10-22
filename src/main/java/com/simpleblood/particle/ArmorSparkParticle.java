@@ -1,5 +1,6 @@
 package com.simpleblood.particle;
 
+import com.simpleblood.BloodSounds;
 import com.simpleblood.Guard;
 import com.simpleblood.SimpleBloodClient;
 import net.minecraft.client.particle.SingleQuadParticle;
@@ -11,8 +12,11 @@ import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.SimpleParticleType;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.phys.Vec3;
 
 //? if <=1.21.1 {
 /*public class ArmorSparkParticle extends net.minecraft.client.particle.TextureSheetParticle {
@@ -81,6 +85,12 @@ public class ArmorSparkParticle extends SingleQuadParticle {
             }
             yd -= GRAVITY * SimpleBloodClient.getConfig().particleGravityMultiplier();
             this.move(xd, yd, zd);
+            if (level.getFluidState(BlockPos.containing(x, y, z)).is(FluidTags.WATER)) {
+                com.simpleblood.Tally.count("spark.quenched");
+                BloodSounds.fizzle(level, new Vec3(x, y, z));
+                this.remove();
+                return;
+            }
             xd *= 0.9;
             yd *= 0.9;
             zd *= 0.9;

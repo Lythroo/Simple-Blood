@@ -257,10 +257,10 @@ public final class BloodSounds {
         com.simpleblood.Tally.count("sound.armorVolume");
         float low = dull ? 0.8f : 1f;
         float base = projectile ? 1.3f + RNG.nextFloat() * 0.45f : 0.85f + RNG.nextFloat() * 0.3f;
-        play(level, SoundEvents.CHAIN_HIT, at, 1.0f, base * low);
-        play(level, SoundEvents.CHAIN_HIT, at, 1.0f, (base + 0.08f + RNG.nextFloat() * 0.1f) * low);
+        play(level, SoundEvents.CHAIN_HIT, at, 0.8f, base * low);
+        play(level, SoundEvents.CHAIN_HIT, at, 0.8f, (base + 0.08f + RNG.nextFloat() * 0.1f) * low);
         float ring = projectile ? 1.6f + RNG.nextFloat() * 0.4f : 1.5f + RNG.nextFloat() * 0.35f;
-        play(level, SoundEvents.ANVIL_LAND, at, projectile ? 0.4f : 0.5f, ring * low);
+        play(level, SoundEvents.ANVIL_LAND, at, projectile ? 0.32f : 0.4f, ring * low);
     }
 
     private static boolean nearEnough(ClientLevel level, Vec3 at) {

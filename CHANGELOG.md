@@ -1,5 +1,12 @@
 # Simple Blood changelog
 
+## 1.2.1
+
+### Fixes
+- Armor sparks go out in water.
+- No sparks from blows under water.
+- Armor clank a little quieter.
+
 ## 1.2.0
 
 ### Combat
