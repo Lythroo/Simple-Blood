@@ -1,0 +1,42 @@
+name: Mod compatibility request
+description: Ask for Simple Blood to work with another mod (moving blocks, ragdolls, combat, shaders, mobs...).
+title: "[Mod support] "
+labels: ["suggestion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the changelog first: Create, Create Aeronautics, Sable, Physics Mod, Ragdollified, Saro's ragdolls, Epic Fight weapons, Iris shaders and AsyncParticles already have support.
+        When you join a world, Simple Blood also says in chat if an installed mod has a known issue.
+  - type: input
+    id: mod
+    attributes:
+      label: Which mod?
+      description: Name plus a Modrinth or CurseForge link.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Minecraft version and loader you play it on
+      placeholder: "1.21.1 NeoForge"
+    validations:
+      required: true
+  - type: textarea
+    id: now
+    attributes:
+      label: What happens now?
+      placeholder: "Blood ignores the ships it adds: drops fall through them and stains stay in the air when they fly away."
+    validations:
+      required: true
+  - type: textarea
+    id: want
+    attributes:
+      label: What should happen?
+      placeholder: "Blood sticks to the ships and moves with them."
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or video

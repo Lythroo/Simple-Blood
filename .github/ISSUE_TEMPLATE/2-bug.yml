@@ -1,0 +1,76 @@
+name: Bug or visual glitch
+description: Blood looks or behaves wrong (disappears, floats, wrong colour, wrong place) but nothing crashed.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A screenshot or short clip helps most. Press F3+B or F3 if the block or mob matters, so it shows up in the picture.
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is wrong?
+      options:
+        - Blood on blocks (puddles, stains, runs, drips)
+        - Blood on mobs or players
+        - Blood particles, sprays or giblets
+        - Settings screen or previews
+        - Sounds
+        - Performance (lag, FPS drops)
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what did you expect?
+      placeholder: "Blood on grass blocks disappears after a second; on stone it stays for the set time."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen
+      placeholder: |
+        1. Place a ... block
+        2. Hit a zombie on it with a sword
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots or video
+      description: Drag images or clips in here.
+  - type: dropdown
+    id: mc
+    attributes:
+      label: Minecraft version
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it below)"]
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options: ["Fabric", "NeoForge"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Simple Blood version
+    validations:
+      required: true
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods, resource packs and shaders
+      description: Rendering mods (Sodium, Iris + shader pack, Embeddium, MoreCulling), resource packs with 3D models, and anything that changes blocks or mobs.
+  - type: checkboxes
+    id: alone
+    attributes:
+      label: Tried with Simple Blood alone?
+      options:
+        - label: It also happens with only Simple Blood (and Fabric API) installed.

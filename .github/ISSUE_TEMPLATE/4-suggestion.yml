@@ -1,0 +1,36 @@
+name: Suggestion
+description: An idea for a new feature or setting.
+title: "[Suggestion] "
+labels: ["suggestion"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is it about?
+      options:
+        - Blood on blocks
+        - Blood on mobs or players
+        - Particles, giblets or effects
+        - Settings or the settings screen
+        - Sounds
+        - Shaders
+        - Modpack or server options
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What should it look like or do? A reference picture or video from another game helps.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why would it be good?
+      description: E.g. "modpack makers could turn off bleeding from fire damage".
+  - type: textarea
+    id: media
+    attributes:
+      label: Pictures or references

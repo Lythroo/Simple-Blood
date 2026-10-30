@@ -1,0 +1,56 @@
+name: Crash or error message
+description: The game crashed, or Simple Blood said "error in ..." in chat.
+title: "[Crash] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! When Simple Blood catches an error it says so in chat. Click **[Copy error]** and paste the report below. It is also saved in `logs/simpleblood-error.txt`.
+        If the whole game crashed, attach the file from `crash-reports/` (or upload `logs/latest.log` to https://mclo.gs and paste the link).
+  - type: dropdown
+    id: mc
+    attributes:
+      label: Minecraft version
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it below)"]
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options: ["Fabric", "NeoForge"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Simple Blood version
+      description: The file name works too, e.g. simpleblood-1.3.0+1.21.1-neoforge.jar
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Error report or crash log
+      description: Paste the Simple Blood error report, the crash report, or an mclo.gs link.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What were you doing?
+      description: E.g. "hit a zombie with an axe in a birch forest", "opened the settings", "joined a server".
+    validations:
+      required: true
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods and shaders
+      description: Especially Sodium, Iris (and which shader pack), Embeddium, AsyncParticles, Physics Mod, Epic Fight, Create, Sable. A modpack name and version is fine too.
+  - type: dropdown
+    id: again
+    attributes:
+      label: Does it happen again?
+      options: ["Every time", "Sometimes", "Only once so far"]
