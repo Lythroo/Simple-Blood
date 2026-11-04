@@ -31,6 +31,10 @@ public final class Footprints {
         boolean powder;
         int lastSeen;
         int lastSquelch = -100;
+        double lastY;
+        boolean airborne;
+        float falling;
+        boolean ownView;
     }
 
     private static final Map<Integer, Feet> FEET = new HashMap<>();
@@ -52,22 +56,25 @@ public final class Footprints {
         }
         if (level != trackedLevel) {
             FEET.clear();
+            LANDINGS.clear();
             trackedLevel = level;
         }
-        if (!cfg.surfaces.enabled || !cfg.surfaces.footprints || BloodSurfaces.tileCount() == 0 && FEET.isEmpty()) {
+        landSplashes(level, cfg);
+        if (!cfg.surfaces.enabled || !cfg.surfaces.footprints && !cfg.surfaces.wading || BloodSurfaces.tileCount() == 0 && FEET.isEmpty()) {
             if (!FEET.isEmpty()) FEET.clear();
             return;
         }
         int now = BloodSurfaces.now();
         double range = cfg.surfaces.renderDistance;
         Vec3 eye = mc.player != null ? mc.player.position() : Vec3.ZERO;
+        boolean firstPerson = mc.options.getCameraType().isFirstPerson() && cfg.surfaces.viewBobSteps && !firstPersonModel();
 
         for (Entity e : level.entitiesForRendering()) {
             if (!(e instanceof LivingEntity entity) || entity.isRemoved()) continue;
             if (entity.isPassenger() || entity.isSpectator() || entity.isNoGravity()) continue;
             if (!com.simpleblood.SimpleBlood.leavesFootprints(entity)) continue;
             if (entity.distanceToSqr(eye) > range * range) continue;
-            step(level, entity, cfg, now);
+            step(level, entity, cfg, now, firstPerson && entity == mc.player);
         }
 
         if ((now & 63) == 0) {
@@ -78,30 +85,51 @@ public final class Footprints {
         }
     }
 
-    private static void step(ClientLevel level, LivingEntity entity, SimpleBloodConfig cfg, int now) {
+    private static final double LANDING = 0.2;
+
+    private static void step(ClientLevel level, LivingEntity entity, SimpleBloodConfig cfg, int now, boolean ownView) {
         Feet feet = FEET.get(entity.getId());
-        double x = entity.getX(), z = entity.getZ();
+        double x = entity.getX(), y = entity.getY(), z = entity.getZ();
         if (feet == null) {
             feet = new Feet();
             feet.lastX = x;
+            feet.lastY = y;
             feet.lastZ = z;
             FEET.put(entity.getId(), feet);
         }
         feet.lastSeen = now;
-        double dx = x - feet.lastX, dz = z - feet.lastZ;
+        double dx = x - feet.lastX, dy = y - feet.lastY, dz = z - feet.lastZ;
         feet.lastX = x;
+        feet.lastY = y;
         feet.lastZ = z;
         double dist = Math.sqrt(dx * dx + dz * dz);
-        Gait gait = gaitFor(entity, cfg.surfaces.resolution == 16 ? 16 : 8);
+        int res = cfg.surfaces.resolution == 16 ? 16 : 8;
+        Gait gait = gaitFor(entity, res);
 
-        int stepIndex = (int) Math.floor(entity.walkAnimation.position() * gait.swing() / Math.PI);
-        if (feet.lastStep == Integer.MIN_VALUE || dist > 4.0) {
-            feet.lastStep = stepIndex;
-            return;
+        boolean grounded = entity.onGround();
+        double impact = 0;
+        if (!grounded) {
+            if (Math.abs(dy) > 4.0) feet.falling = 0;
+            else if (dy < 0) feet.falling = Math.max(feet.falling, (float) -dy);
+        } else {
+            if (feet.airborne) impact = feet.falling;
+            feet.falling = 0;
         }
-        if (stepIndex == feet.lastStep) return;
-        feet.lastStep = stepIndex;
-        if (!entity.onGround() || dist < 0.002) return;
+        feet.airborne = !grounded;
+        boolean landed = impact > LANDING;
+
+        int stepIndex = ownView && entity instanceof net.minecraft.client.player.AbstractClientPlayer player
+                ? (int) Math.floor(walked(player))
+                : (int) Math.floor(entity.walkAnimation.position() * gait.swing() / Math.PI);
+        boolean stepped = false;
+        if (feet.lastStep == Integer.MIN_VALUE || dist > 4.0 || feet.ownView != ownView) {
+            feet.lastStep = stepIndex;
+        } else if (stepIndex != feet.lastStep) {
+            feet.lastStep = stepIndex;
+            stepped = grounded && dist >= 0.002;
+        }
+        feet.ownView = ownView;
+        if (!stepped && !landed) return;
         if (entity.isInWater() || entity.isInLava()) {
             feet.wet = 0;
             return;
@@ -110,24 +138,39 @@ public final class Footprints {
         float yaw = (float) Math.toRadians(entity.yBodyRot);
         double fx = -Math.sin(yaw), fz = Math.cos(yaw);
         double rx = -fz, rz = fx;
-        boolean right = (stepIndex & 1) != 0;
-        double reach = reach(gait, entity.walkAnimation.speed());
-        List<Vec3> down = new ArrayList<>(2);
-        if (gait.quadruped()) {
-            double s = gait.side();
-            down.add(new Vec3(x + rx * (right ? s : -s) - fx * gait.hind() + fx * reach, entity.getY(), z + rz * (right ? s : -s) - fz * gait.hind() + fz * reach));
-            down.add(new Vec3(x + rx * (right ? -s : s) + fx * gait.front() + fx * reach, entity.getY(), z + rz * (right ? -s : s) + fz * gait.front() + fz * reach));
+        List<Vec3> down = new ArrayList<>(4);
+        double s = gait.side();
+        if (landed) {
+            if (gait.quadruped()) {
+                for (double side : new double[]{s, -s}) {
+                    down.add(new Vec3(x + rx * side - fx * gait.hind(), y, z + rz * side - fz * gait.hind()));
+                    down.add(new Vec3(x + rx * side + fx * gait.front(), y, z + rz * side + fz * gait.front()));
+                }
+            } else {
+                down.add(new Vec3(x + rx * s, y, z + rz * s));
+                down.add(new Vec3(x - rx * s, y, z - rz * s));
+            }
         } else {
-            double s = right ? gait.side() : -gait.side();
-            down.add(new Vec3(x + rx * s + fx * reach, entity.getY(), z + rz * s + fz * reach));
+            boolean right = (stepIndex & 1) != 0;
+            double reach = reach(gait, entity.walkAnimation.speed());
+            if (gait.quadruped()) {
+                down.add(new Vec3(x + rx * (right ? s : -s) - fx * gait.hind() + fx * reach, y, z + rz * (right ? s : -s) - fz * gait.hind() + fz * reach));
+                down.add(new Vec3(x + rx * (right ? -s : s) + fx * gait.front() + fx * reach, y, z + rz * (right ? -s : s) + fz * gait.front() + fz * reach));
+            } else {
+                double side = right ? s : -s;
+                down.add(new Vec3(x + rx * side + fx * reach, y, z + rz * side + fz * reach));
+            }
         }
 
-        int res = cfg.surfaces.resolution == 16 ? 16 : 8;
         double ps = 1.0 / res;
         Map<BlockPos, CanvasTile> cache = new HashMap<>(4);
         List<int[]> cells = rasterise(gait.sole(), fx, fz, 0);
         List<int[]> around = rasterise(gait.sole(), fx, fz, 1);
+        List<int[]> rim = null;
         RandomSource rng = level.getRandom();
+        Wading.Ground ground = (p, create) -> topTile(level, p, cache, create);
+        Wading.Look look = new Wading.Look(Math.max(40, cfg.surfaces.lifetimeSeconds * 20),
+                !"block".equals(cfg.surfaces.highlightMode), cfg.surfaces.wadeSplash, cfg.surfaces.wakes, cfg.surfaces.trample);
 
         for (Vec3 foot : down) {
             int found = 0, taken = 0, colour = 0;
@@ -153,14 +196,22 @@ public final class Footprints {
                 feet.colour = colour;
                 feet.powder = powderCount * 2 > found;
                 if (!feet.powder) com.simpleblood.mob.MobBlood.steppedIn(entity, foot, colour, found);
-                if (feet.wet > before + 0.5f && now - feet.lastSquelch > 8 && found >= 2) {
+                int squeezed = 0;
+                if (cfg.surfaces.wading && !feet.powder) {
+                    if (rim == null) rim = ring(cells, rasterise(gait.sole(), fx, fz, 2));
+                    Wading.Step wade = Wading.stepIn(ground, (drops, c, born, life) -> splashInWorld(level, drops, c, born, life, cfg),
+                            foot, cells, rim, dx, dz, impact, ps, look, now, rng);
+                    if (wade != null) squeezed = wade.displaced();
+                }
+                if ((squeezed > 0 || landed || feet.wet > before + 0.5f && found >= 2) && now - feet.lastSquelch > 4) {
                     feet.lastSquelch = now;
                     com.simpleblood.Tally.count("footprint.wet");
-                    BloodSounds.squelch(level, foot, Math.min(1f, found / 6f), ageSum / found > 0.3f, feet.powder);
+                    float loud = Math.min(1f, (found + squeezed) / 8f + (float) impact);
+                    BloodSounds.squelch(level, foot, loud, ageSum / found > 0.3f, feet.powder);
                 }
                 continue;
             }
-            if (feet.wet <= 0) continue;
+            if (feet.wet <= 0 || !cfg.surfaces.footprints) continue;
 
             float max = cfg.surfaces.footprintSteps;
             float strength = Math.min(1f, feet.wet / max);
@@ -175,6 +226,86 @@ public final class Footprints {
                 t.paintPrint(t.pixelX(hp), t.pixelY(hp), feet.colour, now, lifetime, rng, pattern, feet.powder);
             }
         }
+    }
+
+    private static float walked(net.minecraft.client.player.AbstractClientPlayer player) {
+        //? if <1.21.11 {
+        /*return player.walkDist;
+        *///?} else {
+        return player.avatarState().getInterpolatedWalkDistance(1f);
+        //?}
+    }
+
+    private record Landing(int tick, Vec3 at, int colour, int born, int life) {}
+
+    private static final List<Landing> LANDINGS = new ArrayList<>();
+
+    private static void splashInWorld(ClientLevel level, List<double[]> drops, int colour, int born, int life, SimpleBloodConfig cfg) {
+        float gravity = 0.04f * cfg.particleGravityMultiplier();
+        float drag = Math.max(0f, 1f - 0.02f * cfg.particleDragMultiplier());
+        int now = BloodSurfaces.now();
+        com.simpleblood.particle.BloodParticle.resetSpawnState();
+        try {
+            com.simpleblood.particle.BloodParticle.setCurrentBloodColor(new com.simpleblood.BloodColor.Color(colour));
+            com.simpleblood.particle.BloodParticle.setCurrentKind(com.simpleblood.BloodKind.LIQUID);
+            com.simpleblood.particle.BloodParticle.setEntitySizeMultiplier(0.55f);
+            com.simpleblood.particle.BloodParticle.setBallistic(true, 0.7f);
+            com.simpleblood.particle.BloodParticle.setPaintsSurfaces(false);
+            com.simpleblood.particle.BloodParticle.setVanishOnLanding(true);
+            for (double[] d : drops) {
+                com.simpleblood.ClientBloodParticleSpawner.emit(level, com.simpleblood.BloodParticles.BLOOD_SPRAY, d[0], d[1], d[2], d[3], d[4], d[5]);
+                double x = d[0], y = d[1], z = d[2], vx = d[3], vy = d[4], vz = d[5], floor = d[1] - 0.03;
+                int t = 0;
+                while (t < 60) {
+                    vy -= gravity;
+                    vx *= drag;
+                    vy *= drag;
+                    vz *= drag;
+                    x += vx;
+                    y += vy;
+                    z += vz;
+                    t++;
+                    if (vy < 0 && y <= floor) break;
+                }
+                if (LANDINGS.size() < 512) LANDINGS.add(new Landing(now + t, new Vec3(x, floor, z), colour, born, life));
+            }
+        } finally {
+            com.simpleblood.particle.BloodParticle.resetSpawnState();
+        }
+    }
+
+    private static void landSplashes(ClientLevel level, SimpleBloodConfig cfg) {
+        if (LANDINGS.isEmpty()) return;
+        if (!cfg.surfaces.enabled) {
+            LANDINGS.clear();
+            return;
+        }
+        int now = BloodSurfaces.now();
+        Map<BlockPos, CanvasTile> cache = new HashMap<>(4);
+        RandomSource rng = level.getRandom();
+        int lifetime = Math.max(40, cfg.surfaces.lifetimeSeconds * 20);
+        boolean pattern = !"block".equals(cfg.surfaces.highlightMode);
+        Iterator<Landing> it = LANDINGS.iterator();
+        while (it.hasNext()) {
+            Landing l = it.next();
+            if (now < l.tick() && l.tick() - now < 200) continue;
+            it.remove();
+            CanvasTile t = topTile(level, l.at(), cache, true);
+            if (t == null) continue;
+            Vec3 hp = hitPoint(t, l.at());
+            t.carry(t.pixelX(hp), t.pixelY(hp), l.colour(), l.born(), l.life(), 0, now, lifetime, rng, pattern);
+        }
+    }
+
+    private static Boolean firstPersonModel;
+
+    public static boolean firstPersonModel() {
+        if (firstPersonModel == null) {
+            boolean found = false;
+            for (String id : com.simpleblood.Platform.modIds()) found |= id.equals("firstperson") || id.equals("firstpersonmodel");
+            firstPersonModel = found;
+        }
+        return firstPersonModel;
     }
 
     static double reach(Gait gait, float swingAmount) {
@@ -249,11 +380,19 @@ public final class Footprints {
         return out;
     }
 
-    private static Vec3 hitPoint(CanvasTile t, Vec3 p) {
+    static List<int[]> ring(List<int[]> sole, List<int[]> wide) {
+        java.util.Set<Long> in = new java.util.HashSet<>();
+        for (int[] c : sole) in.add(((long) c[0] << 32) | (c[1] & 0xFFFFFFFFL));
+        List<int[]> out = new ArrayList<>();
+        for (int[] c : wide) if (!in.contains(((long) c[0] << 32) | (c[1] & 0xFFFFFFFFL))) out.add(c);
+        return out;
+    }
+
+    static Vec3 hitPoint(CanvasTile t, Vec3 p) {
         return new Vec3(p.x, t.oy, p.z);
     }
 
-    private static CanvasTile topTile(ClientLevel level, Vec3 p, Map<BlockPos, CanvasTile> cache, boolean create) {
+    static CanvasTile topTile(ClientLevel level, Vec3 p, Map<BlockPos, CanvasTile> cache, boolean create) {
         BlockPos key = BlockPos.containing(p.x, p.y - 0.02, p.z);
         CanvasTile cached = cache.get(key);
         if (cached != null || (!create && cache.containsKey(key))) return cached;
@@ -276,5 +415,6 @@ public final class Footprints {
 
     public static void clear() {
         FEET.clear();
+        LANDINGS.clear();
     }
 }

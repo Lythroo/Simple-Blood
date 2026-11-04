@@ -1,5 +1,7 @@
 package com.simpleblood.surface;
 
+import com.simpleblood.Lang;
+
 import com.simpleblood.SimpleBloodClient;
 import com.simpleblood.SimpleBloodConfig;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -24,14 +26,14 @@ public final class PreviewScene {
 
     public enum Kind {
         HIT, DRIP, DEATH, PUDDLE, FOOTPRINTS, WATER, ARMOR, GIBLETS, WEAPONS,
-        BONE, METAL, WOOD, EMBER, SPIRIT, WIND, GLOW, RAIN, DRYING, COAT;
+        BONE, METAL, WOOD, EMBER, SPIRIT, WIND, GLOW, RAIN, DRYING, COAT, COAT_DRYING, MIX;
 
         public boolean pieces() {
             return this == BONE || this == METAL || this == WOOD || this == EMBER || this == SPIRIT || this == WIND;
         }
 
         public boolean blocksOnly() {
-            return this == PUDDLE || this == WATER || this == RAIN || this == DRYING;
+            return this == PUDDLE || this == WATER || this == RAIN || this == DRYING || this == MIX;
         }
     }
 
@@ -45,6 +47,9 @@ public final class PreviewScene {
         public float size;
         public float tone;
         public int kind;
+        public boolean single;
+        public final int[] shown = {-1, -1};
+        public boolean powder;
         public int sprite;
         public int colour;
     }
@@ -157,8 +162,13 @@ public final class PreviewScene {
     private boolean movingDrops;
     private final List<Fog> fogs = new ArrayList<>();
     private final List<Piece> pieces = new ArrayList<>();
-    private final List<Run> runs = new ArrayList<>();
+    private final List<RunSim.Run> runs = new ArrayList<>();
     public final Mob mob = new Mob();
+    public int figure;
+    public static final int ZOMBIE = 0, YOU = 1, OTHER = 2;
+    public com.simpleblood.BloodKind bloodKind;
+    public com.simpleblood.HitContext.Weapon fixedWeapon;
+    public String fixedItem;
     private int now;
     private int loopTick;
     private EnumSet<Aspect> show = EnumSet.allOf(Aspect.class);
@@ -204,6 +214,12 @@ public final class PreviewScene {
     }
 
     public List<Block> blocks() { return blocks; }
+
+    public void bleeds(com.simpleblood.BloodKind k) {
+        if (k == bloodKind) return;
+        bloodKind = k;
+        restart();
+    }
     public boolean hasBlock(BlockPos pos) { return blockMap.containsKey(pos); }
 
     private final Map<Long, net.minecraft.client.renderer.texture.TextureAtlasSprite> sprites = new HashMap<>();
@@ -245,7 +261,7 @@ public final class PreviewScene {
 
     public void trigger() {
         switch (kind) {
-            case HIT, WATER, GIBLETS, ARMOR, WEAPONS, GLOW, BONE, METAL, WOOD, EMBER, SPIRIT, WIND, COAT -> {
+            case HIT, WATER, GIBLETS, ARMOR, WEAPONS, GLOW, BONE, METAL, WOOD, EMBER, SPIRIT, WIND, COAT, COAT_DRYING -> {
                 loopTick = HIT_AT - 1;
                 burstTicks = 0;
                 burstTicksLeft = 0;
@@ -360,6 +376,7 @@ public final class PreviewScene {
         mob.y = 1;
         mob.z = kind == Kind.FOOTPRINTS ? WALK_FROM : 0.5;
         pool = null;
+        realBurst = null;
         woundHeight = 1.15;
         burstShare = 1f;
         if (coat != null) coat.dispose();
@@ -385,6 +402,7 @@ public final class PreviewScene {
             mob.amount += (0f - mob.amount) * 0.4f;
         }
 
+        realTick();
         switch (kind) {
             case HIT -> {
                 if (loopTick == HIT_AT) hit(c);
@@ -405,7 +423,15 @@ public final class PreviewScene {
             case BONE, METAL, WOOD, EMBER, SPIRIT, WIND -> {
                 if (loopTick == HIT_AT) {
                     mob.hurtTicks = 10;
-                    throwPieces(c);
+                    com.simpleblood.BloodKind which = switch (kind) {
+                        case BONE -> com.simpleblood.BloodKind.BONE;
+                        case METAL -> com.simpleblood.BloodKind.METAL;
+                        case WOOD -> com.simpleblood.BloodKind.WOOD;
+                        case EMBER -> com.simpleblood.BloodKind.EMBER;
+                        case SPIRIT -> com.simpleblood.BloodKind.SPIRIT;
+                        default -> com.simpleblood.BloodKind.WIND;
+                    };
+                    if (!realPieces(which)) throwPieces(c);
                 }
                 if (loopTick >= HIT_AT + 50) loopTick = HIT_AT - 1;
             }
@@ -416,6 +442,7 @@ public final class PreviewScene {
             }
             case RAIN -> rainTick(c);
             case COAT -> coatTick(c);
+            case COAT_DRYING -> coatDryingTick(c);
             case DRYING -> dryingTick(c);
             case GIBLETS -> {
                 if (loopTick == HIT_AT) {
@@ -428,6 +455,11 @@ public final class PreviewScene {
             case PUDDLE -> {
                 if (loopTick % 7 == 0) rainDrop(c);
                 if (loopTick >= 400) loopTick = 0;
+            }
+            case MIX -> {
+                if (loopTick == 1) mixPuddles();
+                if (loopTick > 1 && loopTick < 120 && loopTick % 2 == 0) mixDrop((loopTick / 2) % 2 == 0);
+                if (loopTick >= 200) restart();
             }
             case FOOTPRINTS -> walkTick(c);
         }
@@ -486,6 +518,11 @@ public final class PreviewScene {
             onArmor = !onArmor;
             woundHeight = onArmor ? 1.2 : 0.45;
             burstShare = onArmor ? Math.max(0, Math.min(100, c.combat.armorBleed)) / 100f : 1f;
+            mob.hurtTicks = 10;
+            if (c.particles.hitBurst && realArmorHit(onArmor)) {
+                if (onArmor) com.simpleblood.Tally.count("preview.armor");
+                return;
+            }
             hit(c);
             if (onArmor) {
                 Vec3 at = wound();
@@ -526,7 +563,7 @@ public final class PreviewScene {
 
     private void clank() {
         SimpleBloodConfig c = cfg();
-        if (!c.audio.soundEnabled) return;
+        if (!c.audio.soundEnabled || c.audio.muted(com.simpleblood.BloodSounds.Preview.ARMOR.name())) return;
         float volume = 0.35f * c.soundVolumeMultiplier() * Math.max(0, c.audio.armorVolume) / 100f;
         if (volume <= 0) return;
         net.minecraft.client.Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(
@@ -534,19 +571,29 @@ public final class PreviewScene {
     }
 
     private int weapon = -1;
-    private static final String[] WEAPONS = {"A sword", "An axe", "A mace", "An arrow"};
+    private static final String[] WEAPONS = {"simpleblood.preview.a_sword", "simpleblood.preview.an_axe", "simpleblood.preview.a_mace", "simpleblood.preview.an_arrow", "simpleblood.preview.a_spear", "simpleblood.preview.a_fist"};
+    private static final com.simpleblood.HitContext.Weapon[] WEAPON_KINDS = {com.simpleblood.HitContext.Weapon.BLADE,
+            com.simpleblood.HitContext.Weapon.AXE, com.simpleblood.HitContext.Weapon.MACE, com.simpleblood.HitContext.Weapon.ARROW,
+            com.simpleblood.HitContext.Weapon.SPEAR, com.simpleblood.HitContext.Weapon.OTHER};
 
     private void weaponTick(SimpleBloodConfig c) {
         if (loopTick == HIT_AT) {
-            weapon = (weapon + 1) % WEAPONS.length;
+            int fixed = fixedWeapon == null ? -1 : java.util.Arrays.asList(WEAPON_KINDS).indexOf(fixedWeapon);
+            weapon = fixed >= 0 ? fixed : (weapon + 1) % (WEAPONS.length - 1);
             woundHeight = 1.15;
+            mob.hurtTicks = 10;
+            if (c.particles.hitBurst && realHit(WEAPON_KINDS[weapon])) {
+                if (loopTick >= HIT_AT + 45) loopTick = HIT_AT - 1;
+                return;
+            }
             hit(c);
             if (c.directional.enabled && c.directional.weaponFlavour) {
                 switch (weapon) {
                     case 0 -> sweep(c);
                     case 1 -> axe(c);
                     case 2 -> mace(c);
-                    default -> arrow(c);
+                    case 3 -> arrow(c);
+                    default -> spear(c);
                 }
             }
         }
@@ -585,6 +632,21 @@ public final class PreviewScene {
             Vec3 v = back.scale(0.18 + rng.nextDouble() * 0.12).add((rng.nextDouble() - 0.5) * 0.06, rng.nextDouble() * 0.05, (rng.nextDouble() - 0.5) * 0.06);
             Drop d = spawn(exit.x, exit.y + (rng.nextDouble() - 0.5) * 0.1, exit.z, 0, 0, 0, i < 2 ? 2 : 1);
             d.vx = v.x; d.vy = v.y; d.vz = v.z;
+        }
+    }
+
+    private void spear(SimpleBloodConfig c) {
+        Vec3 back = camera.scale(-1);
+        Vec3 w = wound();
+        Vec3 exit = new Vec3(mob.x, w.y, mob.z).add(back.scale(0.32));
+        for (int i = 0; i < 11; i++) {
+            Vec3 v = back.scale(0.2 + rng.nextDouble() * 0.16).add((rng.nextDouble() - 0.5) * 0.05, 0.02 + rng.nextDouble() * 0.05, (rng.nextDouble() - 0.5) * 0.05);
+            Drop d = spawn(exit.x, exit.y + (rng.nextDouble() - 0.5) * 0.1, exit.z, 0, 0, 0, i < 4 ? 2 : 1);
+            d.vx = v.x; d.vy = v.y; d.vz = v.z;
+        }
+        for (int i = 0; i < 6; i++) {
+            Drop d = spawn(w.x + (rng.nextDouble() - 0.5) * 0.06, w.y, w.z + (rng.nextDouble() - 0.5) * 0.06, 0, 0, 0, 2);
+            d.vx = camera.x * 0.04; d.vy = -0.03; d.vz = camera.z * 0.04;
         }
     }
 
@@ -667,12 +729,45 @@ public final class PreviewScene {
     private int coatBlow = -1;
     private static final com.simpleblood.HitContext.Weapon[] COAT_WEAPONS = {
             com.simpleblood.HitContext.Weapon.BLADE, com.simpleblood.HitContext.Weapon.MACE,
-            com.simpleblood.HitContext.Weapon.AXE, com.simpleblood.HitContext.Weapon.ARROW};
+            com.simpleblood.HitContext.Weapon.AXE, com.simpleblood.HitContext.Weapon.ARROW,
+            com.simpleblood.HitContext.Weapon.SPEAR};
 
     public com.simpleblood.mob.PreviewCoat coat() { return coat; }
 
     public int coatLifetime() {
+        if (kind == Kind.COAT_DRYING) return timeLapse(cfg().mobCoat.lifetimeSeconds);
         return Math.max(60, Math.max(1, cfg().mobCoat.lifetimeSeconds) * 20 / LIFETIME_DIVISOR);
+    }
+
+    static int timeLapse(int seconds) {
+        double f = Math.log(Math.max(5, Math.min(600, seconds)) / 5.0) / Math.log(120.0);
+        return (int) Math.round(40 + f * 360);
+    }
+
+    private String lasted(String what, int shownTicks, int seconds) {
+        int since = Math.max(0, kind == Kind.COAT_DRYING ? loopTick - HIT_AT : loopTick);
+        int real = (int) Math.min(seconds, Math.round(since / (double) Math.max(1, shownTicks) * seconds));
+        return Lang.t("simpleblood.preview.lasted", what, real, seconds);
+    }
+
+    private void coatDryingTick(SimpleBloodConfig c) {
+        if (coat == null) coat = new com.simpleblood.mob.PreviewCoat(colour.getAsInt() & 0xFFFFFF);
+        if (loopTick == HIT_AT) {
+            coat.dispose();
+            coat = new com.simpleblood.mob.PreviewCoat(colour.getAsInt() & 0xFFFFFF);
+            woundHeight = 1.15;
+            hit(c);
+            float amount = Math.max(0.5f, Math.max(0, c.mobCoat.amount) / 100f);
+            Vec3 w = wound();
+            coat.hit(w.add(camera.scale(0.35)), camera.scale(-1), com.simpleblood.HitContext.Weapon.BLADE, 1.2f * amount, 3, colour.getAsInt() & 0xFFFFFF);
+        }
+        if (burstTicksLeft > 0) burstTick(c);
+        coat.tick(coatLifetime(), c.surfaces.opacity / 100f);
+        coat.takeDrips((at, col) -> {
+            Drop d = spawn(at.x, at.y, at.z, 0, -0.05, 0, 3);
+            d.colour = col;
+        });
+        if (loopTick >= HIT_AT + coatLifetime() + 30) loopTick = HIT_AT - 1;
     }
 
     private void coatTick(SimpleBloodConfig c) {
@@ -713,7 +808,7 @@ public final class PreviewScene {
 
     private void dryingTick(SimpleBloodConfig c) {
         if (loopTick == 1) layPuddle(c);
-        if (loopTick >= 320) loopTick = 0;
+        if (loopTick >= lifetime() + 40) loopTick = 0;
     }
 
     private void layPuddle(SimpleBloodConfig c) {
@@ -726,25 +821,27 @@ public final class PreviewScene {
     public String caption() {
         SimpleBloodConfig c = cfg();
         return switch (kind) {
-            case HIT -> "A hit";
-            case DRIP -> "Badly hurt";
-            case DEATH -> mob.present ? "A killing blow" : "Gone to dust";
-            case PUDDLE -> "Drops landing on blocks";
-            case FOOTPRINTS -> "Walking through blood";
-            case WATER -> "Bleeding under water";
-            case ARMOR -> onArmor ? "On the iron chestplate" : "On the bare leg";
-            case GIBLETS -> c.gore.giblets ? "A hard hit" : "A hard hit, giblets are off";
-            case WEAPONS -> weapon < 0 ? "" : WEAPONS[weapon] + (c.directional.weaponFlavour ? "" : ", flavour is off");
-            case BONE -> "Bone, like a skeleton";
-            case METAL -> "Metal, like an iron golem";
-            case WOOD -> "Wood, like the creaking";
-            case EMBER -> "Embers, like a blaze";
-            case SPIRIT -> "Sparks, like an allay";
-            case WIND -> "Wind, like a breeze";
-            case GLOW -> c.kinds.glow ? "Glow squid ink in the dark" : "In the dark, glow is off";
-            case RAIN -> c.surfaces.rainWashes ? "Rain washing it away" : "Rain, washing is off";
-            case DRYING -> "Drying";
-            case COAT -> c.mobCoat.enabled ? "Blood that stays on the body" : "Blood on mobs is off, shown anyway";
+            case HIT -> Lang.t("simpleblood.preview.a_hit");
+            case DRIP -> Lang.t("simpleblood.preview.badly_hurt");
+            case DEATH -> mob.present ? Lang.t("simpleblood.preview.a_killing_blow") : Lang.t("simpleblood.preview.gone_to_dust");
+            case PUDDLE -> Lang.t("simpleblood.preview.drops_landing_on_blocks");
+            case MIX -> c.surfaces.mixing ? Lang.t("simpleblood.preview.two_kinds_of_blood_meeting") : Lang.t("simpleblood.preview.two_kinds_of_blood_mixing");
+            case FOOTPRINTS -> Lang.t("simpleblood.preview.walking_through_blood");
+            case WATER -> Lang.t("simpleblood.preview.bleeding_under_water");
+            case ARMOR -> onArmor ? Lang.t("simpleblood.preview.on_the_iron_chestplate") : Lang.t("simpleblood.preview.on_the_bare_leg");
+            case GIBLETS -> c.gore.giblets ? Lang.t("simpleblood.preview.a_hard_hit") : Lang.t("simpleblood.preview.a_hard_hit_giblets_are");
+            case WEAPONS -> weapon < 0 ? "" : Lang.t(WEAPONS[weapon]) + (c.directional.weaponFlavour ? "" : Lang.t("simpleblood.preview.flavour_is_off"));
+            case BONE -> Lang.t("simpleblood.preview.bone_like_a_skeleton");
+            case METAL -> Lang.t("simpleblood.preview.metal_like_an_iron_golem");
+            case WOOD -> Lang.t("simpleblood.preview.wood_like_the_creaking");
+            case EMBER -> Lang.t("simpleblood.preview.embers_like_a_blaze");
+            case SPIRIT -> Lang.t("simpleblood.preview.sparks_like_an_allay");
+            case WIND -> Lang.t("simpleblood.preview.wind_like_a_breeze");
+            case GLOW -> c.kinds.glow ? Lang.t("simpleblood.preview.glow_squid_ink_in_the") : Lang.t("simpleblood.preview.in_the_dark_glow_is");
+            case RAIN -> c.surfaces.rainWashes ? Lang.t("simpleblood.preview.rain_washing_it_away") : Lang.t("simpleblood.preview.rain_washing_is_off");
+            case DRYING -> lasted(Lang.t("simpleblood.preview.drying"), lifetime(), c.surfaces.lifetimeSeconds);
+            case COAT_DRYING -> lasted(Lang.t("simpleblood.preview.drying_on_the_body"), coatLifetime(), c.mobCoat.lifetimeSeconds);
+            case COAT -> c.mobCoat.enabled ? Lang.t("simpleblood.preview.blood_that_stays_on_the") : Lang.t("simpleblood.preview.blood_on_mobs_is_off");
         };
     }
 
@@ -839,9 +936,11 @@ public final class PreviewScene {
 
     private void deathTick(SimpleBloodConfig c) {
         if (loopTick == HIT_AT && mob.present && mob.deathTicks == 0) {
-            death(c);
             woundHeight = 1.15;
-            giblets(c, 3 + rng.nextInt(2));
+            if (!c.particles.deathBurst || !realDeath()) {
+                death(c);
+                giblets(c, 3 + rng.nextInt(2));
+            }
             mob.deathTicks = 1;
             mob.vx = -camera.x * 0.1;
             mob.vz = -camera.z * 0.1;
@@ -901,6 +1000,14 @@ public final class PreviewScene {
         }
         pour(pool.middle, 3);
         pool.bled++;
+    }
+
+    private void powderAt(Vec3 at, int pixels) {
+        Block b = blockMap.get(new BlockPos((int) Math.floor(at.x), 0, (int) Math.floor(at.z)));
+        if (b == null || blockMap.containsKey(b.pos().above())) return;
+        CanvasTile tile = tile(b, Direction.UP, true);
+        Vec3 p = new Vec3(at.x, 1, at.z);
+        tile.stampPowder(clamp(tile.pixelX(p), tile.pw), clamp(tile.pixelY(p), tile.ph), pixels, colour.getAsInt() & 0xFFFFFF, now, lifetime(), rng, new ArrayList<>());
     }
 
     private void pour(Vec3 at, int pixels) {
@@ -974,7 +1081,15 @@ public final class PreviewScene {
             if (tt == null) continue;
             if (tt.wetDepthAt(tt.pixelX(p), tt.pixelY(p), now) > 0) found++;
         }
-        if (found > 0) { footWet = Math.min(c.surfaces.footprintSteps, footWet + found * 0.75); return; }
+        if (found > 0) {
+            footWet = Math.min(c.surfaces.footprintSteps, footWet + found * 0.75);
+            if (c.surfaces.wading) {
+                List<int[]> sole = Footprints.rasterise(gait.sole(), fx, fz, 0);
+                Wading.stepIn(ground, this::splashDrops, foot, sole, Footprints.ring(sole, Footprints.rasterise(gait.sole(), fx, fz, 2)),
+                        0, mob.z - pz, 0, ps, new Wading.Look(lifetime(), pattern(), c.surfaces.wadeSplash, c.surfaces.wakes, c.surfaces.trample), now, rng);
+            }
+            return;
+        }
         if (footWet <= 0 || !c.surfaces.footprints) return;
         float strength = (float) Math.min(1.0, footWet / Math.max(1, c.surfaces.footprintSteps));
         footWet -= 1;
@@ -984,6 +1099,22 @@ public final class PreviewScene {
             if (b == null) continue;
             CanvasTile tt = tile(b, Direction.UP, true);
             tt.paintPrint(tt.pixelX(p), tt.pixelY(p), colour.getAsInt() & 0xFFFFFF, now, lifetime(), rng, pattern(), false);
+        }
+    }
+
+    private final Wading.Ground ground = (p, create) -> {
+        Block b = blockMap.get(new BlockPos((int) Math.floor(p.x), 0, (int) Math.floor(p.z)));
+        return b == null ? null : tile(b, Direction.UP, create);
+    };
+
+    private void splashDrops(List<double[]> thrown, int rgb, int born, int life) {
+        SimpleBloodConfig c = cfg();
+        for (double[] t : thrown) {
+            Drop d = spawn(t[0], t[1], t[2], t[3], t[4], t[5], 4);
+            d.size = 0.25f * 0.6f;
+            d.life = 40;
+            d.single = true;
+            d.colour = rgb;
         }
     }
 
@@ -1005,11 +1136,271 @@ public final class PreviewScene {
     private void hit(SimpleBloodConfig c) {
         mob.hurtTicks = 10;
         if (!c.particles.hitBurst) return;
+        if ((kind == Kind.HIT || kind == Kind.GIBLETS || kind == Kind.GLOW) && realHit(null)) return;
+        realKind = null;
         float t = Math.min(DAMAGE / 20f, 1f);
         int ticks = 3 + (int) (13 * t);
         burstTicks = Math.max(1, (int) (ticks * c.burstDurationMultiplier()));
         burstTicksLeft = burstTicks;
         if (c.directional.enabled && c.directional.weaponFlavour && kind == Kind.HIT && shows(Aspect.SWEEP)) sweep(c);
+    }
+
+    private com.simpleblood.ClientBloodBurstTask realBurst;
+    private static net.minecraft.world.entity.LivingEntity actor;
+    private static Object actorLevel;
+    private static final int STAND_IN_ID = -424242;
+
+    private net.minecraft.world.entity.LivingEntity actor() {
+        net.minecraft.client.multiplayer.ClientLevel level = net.minecraft.client.Minecraft.getInstance().level;
+        if (level == null) return null;
+        if (actor == null || actorLevel != level) {
+            try {
+                //? if <=1.21.1 {
+                /*actor = net.minecraft.world.entity.EntityType.ZOMBIE.create(level);
+                *///?} elif <26.2 {
+                actor = net.minecraft.world.entity.EntityType.ZOMBIE.create(level, net.minecraft.world.entity.EntitySpawnReason.LOAD);
+                //?} else {
+                /*actor = (net.minecraft.world.entity.LivingEntity) net.minecraft.world.entity.EntityTypes.ZOMBIE.create(level, net.minecraft.world.entity.EntitySpawnReason.LOAD);
+                *///?}
+                actorLevel = level;
+            } catch (Throwable t) {
+                actor = null;
+            }
+            if (actor == null) return null;
+            actor.setId(STAND_IN_ID);
+        }
+        actor.setPos(mob.x, mob.y, mob.z);
+        actor.setYRot((float) Math.toDegrees(-mob.yaw));
+        actor.yBodyRot = actor.getYRot();
+        return actor;
+    }
+
+    private boolean realHit(com.simpleblood.HitContext.Weapon weapon) {
+        net.minecraft.world.entity.LivingEntity a = actor();
+        if (a == null) return false;
+        if (!kind.pieces()) realKind = bloodKind;
+        if (weapon == null) woundHeight = 1.15;
+        Vec3 w = wound();
+        if (a instanceof com.simpleblood.BloodEntityAccess acc) acc.simpleblood$setWound(w);
+        String item = kind == Kind.WEAPONS ? fixedItem : null;
+        com.simpleblood.HitContext ctx = com.simpleblood.HitContext.replay(a, DAMAGE, camera.scale(-1).normalize(),
+                weapon == null ? com.simpleblood.HitContext.Weapon.BLADE : weapon, item, false, 1f, w, false);
+        com.simpleblood.Tally.count("preview.real");
+        runReal(() -> realBurst = new com.simpleblood.ClientBloodBurstTask(
+                (net.minecraft.client.multiplayer.ClientLevel) a.level(), a, ctx).scaled(burstShare));
+        burstTicksLeft = 0;
+        burstTicks = 20;
+        return true;
+    }
+
+    private void realTick() {
+        if (realBurst == null) return;
+        actor();
+        runReal(() -> {
+            if (!realBurst.tick()) realBurst = null;
+        });
+    }
+
+    private void runReal(Runnable code) {
+        com.simpleblood.BloodKind k = shownKind();
+        com.simpleblood.Capture.run(sink, cfg(), () -> {
+            com.simpleblood.BloodKind was = com.simpleblood.Capture.kind;
+            com.simpleblood.Capture.kind = k;
+            try {
+                code.run();
+            } finally {
+                com.simpleblood.Capture.kind = was;
+            }
+        });
+    }
+
+    private com.simpleblood.BloodKind shownKind() {
+        return realKind != null ? realKind : bloodKind;
+    }
+
+    private final com.simpleblood.Capture.Sink sink = new com.simpleblood.Capture.Sink() {
+        @Override
+        public void particle(net.minecraft.core.particles.ParticleOptions type, double x, double y, double z,
+                             double vx, double vy, double vz, int rgb, boolean exact) {
+            int drop = type == com.simpleblood.BloodParticles.BLOOD_DRIP ? 0 : type == com.simpleblood.BloodParticles.BLOOD_SPLASH ? 1
+                    : type == com.simpleblood.BloodParticles.BLOOD_STREAK ? 2 : type == com.simpleblood.BloodParticles.BLOOD_DROP ? 3
+                    : type == com.simpleblood.BloodParticles.BLOOD_SPRAY ? 4 : -1;
+            if (drop >= 0) {
+                boolean shown = switch (com.simpleblood.Capture.part) {
+                    case DRIPS -> shows(Aspect.DRIPS);
+                    case SPLASH -> shows(Aspect.SPLASH);
+                    case DIRECTIONAL -> shows(Aspect.DIRECTIONAL);
+                    case EXIT -> shows(Aspect.EXIT);
+                    case FLAVOUR -> shows(Aspect.SWEEP);
+                    default -> true;
+                };
+                if (!shown) return;
+                Drop d = spawn(x, y, z, vx, vy, vz, drop);
+                if (exact && drop < 2) { d.vx = vx; d.vy = vy; d.vz = vz; }
+                if (com.simpleblood.Capture.kind == com.simpleblood.BloodKind.WOOD) d.colour = 0xE07A2E;
+                com.simpleblood.Tally.count("preview.drop");
+                return;
+            }
+            capturedPiece(type, new Vec3(x, y, z), new Vec3(vx, vy, vz), rgb, exact);
+        }
+
+        @Override
+        public BloodSurfaces.Hit trace(Vec3 from, Vec3 to) {
+            BloodSurfaces.Hit best = null;
+            double bestD = Double.MAX_VALUE;
+            for (Block b : blocks) {
+                java.util.Optional<Vec3> clip = new AABB(b.pos()).clip(from, to);
+                if (clip.isEmpty()) continue;
+                double d = clip.get().distanceToSqr(from);
+                if (d >= bestD) continue;
+                Vec3 dir = to.subtract(from);
+                bestD = d;
+                best = new BloodSurfaces.Hit(b.pos(), faceOf(b.pos(), clip.get(), dir.x, dir.y, dir.z), clip.get());
+            }
+            return best;
+        }
+
+        @Override
+        public void paint(BloodSurfaces.Hit hit, int pixels) {
+            if (com.simpleblood.Capture.kind == com.simpleblood.BloodKind.POWDER) {
+                powderAt(hit.point(), Math.max(1, pixels / 3));
+                return;
+            }
+            pour(hit.point(), Math.max(1, pixels / 3));
+        }
+    };
+
+    private void capturedPiece(net.minecraft.core.particles.ParticleOptions type, Vec3 at, Vec3 v, int rgb, boolean exact) {
+        SimpleBloodConfig.KindSettings k = cfg().kinds;
+        float life = k.pieceLifetimeMultiplier();
+        Vec3 sent = exact ? v : jitter(v);
+        int own = colour.getAsInt() & 0xFFFFFF;
+        boolean player = figure != ZOMBIE;
+        if (type == com.simpleblood.BloodParticles.ARMOR_SPARK) {
+            Piece p = piece(Piece.SPARK, at, v);
+            p.life = 5 + rng.nextInt(6); p.size = 0.05f * (0.8f + rng.nextFloat() * 0.4f); p.gravity = 0.035f; p.drag = 0.9f;
+        } else if (type == com.simpleblood.BloodParticles.GIBLET) {
+            int blood = colour.getAsInt() & 0xFFFFFF;
+            Piece p = piece(Piece.GIBLET, at, v);
+            p.shape = rng.nextInt(4); p.restFrame = rng.nextInt(4); p.life = 90 + rng.nextInt(30);
+            p.size = 0.085f * (1f + rng.nextFloat() * 0.3f); p.gravity = 0.03f; p.drag = 0.98f;
+            p.colour = mix(blood, FLESH); p.blood = blood;
+        } else if (type == com.simpleblood.BloodParticles.METAL_FLAKE) {
+            Piece p = piece(Piece.FLAKE, at, sent);
+            p.shape = rng.nextInt(3); p.restFrame = rng.nextBoolean() ? 0 : 5; p.life = Math.round((70 + rng.nextInt(30)) * life);
+            p.size = 0.06f; p.gravity = 0.04f; p.glints = k.metalGlint;
+            p.colour = com.simpleblood.Capture.kind == null ? rgb : player ? own : 0xA8A8AC;
+        } else if (type == com.simpleblood.BloodParticles.BONE_CHIP) {
+            Piece p = piece(Piece.CHIP, at, sent);
+            p.shape = rng.nextInt(4); p.restFrame = rng.nextInt(4); p.life = Math.round((60 + rng.nextInt(20)) * life);
+            p.size = 0.06f; p.gravity = 0.04f; p.colour = player ? own : 0xE6DFC8;
+        } else if (type == com.simpleblood.BloodParticles.BONE_DUST) {
+            boolean powder = com.simpleblood.Capture.kind == com.simpleblood.BloodKind.POWDER;
+            Piece p = piece(Piece.DUST, at, sent.scale(0.3));
+            p.life = Math.round((25 + rng.nextInt(15)) * life); p.size = 0.16f; p.gravity = -0.001f; p.drag = 0.9f;
+            p.collides = false; p.colour = player ? own : powder ? 0xF4F7FA : 0xE6DFC8;
+            p.alphaScale = powder ? 1f : k.boneDustOpacity / 100f;
+        } else if (type == com.simpleblood.BloodParticles.WOOD_SPLINTER) {
+            Piece p = piece(Piece.SPLINTER, at, sent);
+            p.shape = rng.nextInt(4); p.restFrame = rng.nextInt(4); p.life = Math.round((60 + rng.nextInt(20)) * life);
+            p.size = 0.06f; p.gravity = 0.04f; p.colour = player ? own : 0x7A5A3E;
+        } else if (type == com.simpleblood.BloodParticles.EMBER) {
+            Piece p = piece(Piece.EMBER, at, sent.add(0, 0.05, 0));
+            p.restFrame = rng.nextInt(4); p.life = Math.round((40 + rng.nextInt(25)) * life);
+            p.size = 0.045f; p.gravity = 0.022f; p.drag = 0.96f; p.colour = 0xFFA62B;
+        } else if (type == com.simpleblood.BloodParticles.SPIRIT_SPARK) {
+            Piece p = piece(Piece.SPIRIT, at, sent.scale(0.5));
+            p.life = Math.round((16 + rng.nextInt(10)) * life); p.size = 0.07f; p.gravity = -0.002f; p.drag = 0.9f;
+            p.collides = false; p.colour = 0xB8F2FF;
+        } else if (type == com.simpleblood.BloodParticles.WIND_PUFF) {
+            Piece p = piece(Piece.WIND, at, sent.scale(0.6));
+            p.life = Math.round((20 + rng.nextInt(10)) * life); p.size = 0.26f; p.gravity = 0f; p.drag = 0.92f;
+            p.collides = false; p.colour = 0xD6E6FF; p.alphaScale = k.windOpacity / 100f;
+        } else if (type == net.minecraft.core.particles.ParticleTypes.SMOKE) {
+            Piece p = piece(Piece.DUST, at, new Vec3(0, 0.03, 0));
+            p.life = Math.round(40 * life); p.size = 0.14f; p.gravity = -0.002f; p.drag = 0.95f;
+            p.collides = false; p.colour = 0x4A4A4A; p.alphaScale = 0.6f;
+        }
+    }
+
+    private Vec3 jitter(Vec3 v) {
+        double jx = v.x + (rng.nextDouble() * 2 - 1) * 0.4, jy = v.y + (rng.nextDouble() * 2 - 1) * 0.4, jz = v.z + (rng.nextDouble() * 2 - 1) * 0.4;
+        double mag = (rng.nextDouble() + rng.nextDouble() + 1) * 0.15;
+        double len = Math.sqrt(jx * jx + jy * jy + jz * jz);
+        if (len < 1e-6) len = 1;
+        return new Vec3(jx / len * mag * 0.4, jy / len * mag * 0.4 + 0.1, jz / len * mag * 0.4);
+    }
+
+    private com.simpleblood.BloodKind realKind;
+
+    private static net.minecraft.world.entity.LivingEntity attacker;
+
+    private boolean realDeath() {
+        net.minecraft.world.entity.LivingEntity a = actor();
+        if (a == null) return false;
+        Vec3 w = wound();
+        if (a instanceof com.simpleblood.BloodEntityAccess acc) acc.simpleblood$setWound(w);
+        com.simpleblood.HitContext ctx = com.simpleblood.HitContext.replay(a, 20f, camera.scale(-1).normalize(), com.simpleblood.HitContext.Weapon.BLADE, false, 1f, w, false);
+        com.simpleblood.Tally.count("preview.real");
+        runReal(() -> com.simpleblood.ClientBloodParticleSpawner.spawnBloodOnDeath(
+                (net.minecraft.client.multiplayer.ClientLevel) a.level(), a, ctx));
+        return true;
+    }
+
+    private boolean realDrip(SimpleBloodConfig c) {
+        net.minecraft.world.entity.LivingEntity a = actor();
+        if (a == null) return false;
+        a.setHealth(Math.max(1f, a.getMaxHealth() * c.lowHealthThreshold() * 0.5f));
+        Vec3 w = wound();
+        if (a instanceof com.simpleblood.BloodEntityAccess acc) acc.simpleblood$setWound(w);
+        runReal(() -> com.simpleblood.ClientBloodParticleSpawner.spawnBloodForLowHealth(
+                (net.minecraft.client.multiplayer.ClientLevel) a.level(), a, c));
+        a.setHealth(a.getMaxHealth());
+        return true;
+    }
+
+    private boolean realArmorHit(boolean onArmor) {
+        net.minecraft.world.entity.LivingEntity a = actor();
+        if (a == null) return false;
+        net.minecraft.client.multiplayer.ClientLevel level = (net.minecraft.client.multiplayer.ClientLevel) a.level();
+        try {
+            if (attacker == null || attacker.level() != level) {
+                //? if <=1.21.1 {
+                /*attacker = net.minecraft.world.entity.EntityType.ZOMBIE.create(level);
+                *///?} elif <26.2 {
+                attacker = net.minecraft.world.entity.EntityType.ZOMBIE.create(level, net.minecraft.world.entity.EntitySpawnReason.LOAD);
+                //?} else {
+                /*attacker = (net.minecraft.world.entity.LivingEntity) net.minecraft.world.entity.EntityTypes.ZOMBIE.create(level, net.minecraft.world.entity.EntitySpawnReason.LOAD);
+                *///?}
+                if (attacker == null) return false;
+                attacker.setId(STAND_IN_ID - 1);
+                attacker.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_SWORD));
+            }
+        } catch (Throwable t) {
+            return false;
+        }
+        a.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_HELMET));
+        a.setItemSlot(net.minecraft.world.entity.EquipmentSlot.CHEST, new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_CHESTPLATE));
+        Vec3 w = wound();
+        if (a instanceof com.simpleblood.BloodEntityAccess acc) acc.simpleblood$setWound(w);
+        attacker.setPos(a.getX() + camera.x * 2, a.getY(), a.getZ() + camera.z * 2);
+        com.simpleblood.HitContext ctx = com.simpleblood.HitContext.replay(a, DAMAGE, camera.scale(-1).normalize(), com.simpleblood.HitContext.Weapon.BLADE, false, 1f, w, false);
+        net.minecraft.world.damagesource.DamageSource source = level.damageSources().mobAttack(attacker);
+        float[] share = {1f};
+        com.simpleblood.Tally.count("preview.real");
+        runReal(() -> share[0] = com.simpleblood.ArmorSparks.hit(level, a, ctx, source));
+        runReal(() -> realBurst = new com.simpleblood.ClientBloodBurstTask(level, a, ctx).scaled(share[0]));
+        burstTicksLeft = 0;
+        burstTicks = 20;
+        a.setItemSlot(net.minecraft.world.entity.EquipmentSlot.HEAD, net.minecraft.world.item.ItemStack.EMPTY);
+        a.setItemSlot(net.minecraft.world.entity.EquipmentSlot.CHEST, net.minecraft.world.item.ItemStack.EMPTY);
+        return true;
+    }
+
+    private boolean realPieces(com.simpleblood.BloodKind which) {
+        if (actor() == null) return false;
+        realKind = which;
+        return realHit(com.simpleblood.HitContext.Weapon.BLADE);
     }
 
     private void burstTick(SimpleBloodConfig c) {
@@ -1082,6 +1473,8 @@ public final class PreviewScene {
     }
 
     private void dripTick(SimpleBloodConfig c) {
+        if (realDrip(c)) return;
+        if (shownKind() == com.simpleblood.BloodKind.POWDER) return;
         int chance = Math.max(1, (int) (6 / c.dripFrequencyMultiplier()));
         if (rng.nextInt(chance) != 0) return;
         int count = (int) (2 * c.dripIntensityMultiplier());
@@ -1090,6 +1483,26 @@ public final class PreviewScene {
             spawn(w.x + (rng.nextDouble() - 0.5) * 0.16, w.y + (rng.nextDouble() - 0.5) * 0.2, w.z + (rng.nextDouble() - 0.5) * 0.16,
                     (rng.nextDouble() - 0.5) * 0.1, -1.5 - rng.nextDouble() * 0.5, (rng.nextDouble() - 0.5) * 0.1, 0);
         }
+    }
+
+    private static final int OTHER_BLOOD = 0x2FB8C4;
+
+    private void mixPuddles() {
+        Block floor = null;
+        for (Block b : blocks) if (b.pos().equals(BlockPos.ZERO)) floor = b;
+        if (floor == null) return;
+        int own = colour.getAsInt() & 0xFFFFFF;
+        for (int layer = 0; layer < 3; layer++) {
+            stampAt(floor, Direction.UP, new Vec3(0.34, 1, 0.5), own, 34, null);
+            stampAt(floor, Direction.UP, new Vec3(0.66, 1, 0.5), OTHER_BLOOD, 34, null);
+        }
+    }
+
+    private void mixDrop(boolean own) {
+        double x = 0.5 + (rng.nextDouble() - 0.5) * 0.12, z = 0.5 + (rng.nextDouble() - 0.5) * 0.25;
+        Drop d = spawn(x, 1.45, z, 0, -0.1, 0, 0);
+        d.vx = 0; d.vz = 0; d.vy = -0.2;
+        if (!own) d.colour = OTHER_BLOOD;
     }
 
     private void rainDrop(SimpleBloodConfig c) {
@@ -1104,7 +1517,7 @@ public final class PreviewScene {
         SimpleBloodConfig c = cfg();
         Drop d = new Drop();
         d.x = x; d.y = y; d.z = z;
-        if (kind != 2 && kind != 3) {
+        if (kind < 2) {
             double jx = vx + (rng.nextDouble() * 2 - 1) * 0.4, jy = vy + (rng.nextDouble() * 2 - 1) * 0.4, jz = vz + (rng.nextDouble() * 2 - 1) * 0.4;
             double mag = (rng.nextDouble() + rng.nextDouble() + 1) * 0.15;
             double len = Math.sqrt(jx * jx + jy * jy + jz * jz);
@@ -1117,10 +1530,16 @@ public final class PreviewScene {
         d.size = (0.08f + rng.nextFloat() * 0.08f) * c.particleSizeMultiplier();
         if (kind == 2) d.size = (0.34f + rng.nextFloat() * 0.16f) * c.chunkyStreakScale();
         if (kind == 3) { d.size = 0.02f; d.life = 200; }
+        if (kind == 4) { d.size = 0.25f * 0.85f; d.life = 80; }
         d.tone = 0.9f + rng.nextFloat() * 0.2f;
         d.kind = kind;
         d.sprite = rng.nextInt(kind == 1 ? 3 : 4);
         d.colour = this.kind == Kind.GLOW ? 0x35D6C8 : colour.getAsInt() & 0xFFFFFF;
+        com.simpleblood.BloodKind bleeds = com.simpleblood.Capture.kind != null ? com.simpleblood.Capture.kind : shownKind();
+        if (bleeds == com.simpleblood.BloodKind.POWDER) {
+            d.size *= 0.6f;
+            d.powder = true;
+        }
         (movingDrops ? born : drops).add(d);
         return d;
     }
@@ -1195,7 +1614,7 @@ public final class PreviewScene {
     private void spawnFog(Drop d, SimpleBloodConfig c) {
         Fog f = new Fog();
         f.x = d.x; f.y = d.y; f.z = d.z;
-        f.vx = d.vx * 0.4; f.vy = d.vy * 0.2; f.vz = d.vz * 0.4;
+        f.vx = d.vx * 0.05 + (rng.nextDouble() - 0.5) * 0.02; f.vy = d.vy * 0.05 - 0.008; f.vz = d.vz * 0.05 + (rng.nextDouble() - 0.5) * 0.02;
         f.life = (int) ((120 + rng.nextInt(20) - 10) * c.fogLifetimeMultiplier());
         f.size = (0.08f + rng.nextFloat() * 0.27f) * c.fogSizeMultiplier();
         f.alpha = 0.25f * c.fogOpacityMultiplier();
@@ -1208,10 +1627,14 @@ public final class PreviewScene {
         Iterator<Fog> it = fogs.iterator();
         while (it.hasNext()) {
             Fog f = it.next();
+            f.vx = f.vx * 0.97 + (rng.nextDouble() - 0.5) * 0.008 + (rng.nextDouble() - 0.5) * 0.002;
+            f.vz = f.vz * 0.97 + (rng.nextDouble() - 0.5) * 0.008 + (rng.nextDouble() - 0.5) * 0.002;
+            f.vy = f.vy * 0.99 - 0.0005;
             f.x += f.vx; f.y += f.vy; f.z += f.vz;
-            f.vx *= 0.97; f.vz *= 0.97; f.vy = f.vy * 0.99 + 0.0006;
-            f.age++;
+            f.vx *= 0.98; f.vy *= 0.98; f.vz *= 0.98;
+            f.age += 2;
             if (f.y > waterTop() - 0.1) f.y = waterTop() - 0.1;
+            if (f.y < 1.15) { f.y = 1.15; f.vy = 0; }
             if (f.age >= f.life) it.remove();
         }
     }
@@ -1229,6 +1652,7 @@ public final class PreviewScene {
     }
 
     private int lifetime() {
+        if (kind == Kind.DRYING) return timeLapse(cfg().surfaces.lifetimeSeconds);
         return Math.max(60, cfg().surfaces.lifetimeSeconds * 20 / LIFETIME_DIVISOR);
     }
 
@@ -1239,7 +1663,14 @@ public final class PreviewScene {
         if (!c.surfaces.wallsAndCeilings && face != Direction.UP) return;
         if (blockMap.containsKey(b.pos().relative(face))) return;
         int pixels;
-        if (d.kind == 3) {
+        if (d.powder) {
+            float areaScale = c.surfaces.resolution >= 16 ? 3.0f : 1.0f;
+            int n = Math.max(1, Math.round((1 + rng.nextInt(2)) * c.surfaceAmount() * areaScale));
+            CanvasTile tile = tile(b, face, true);
+            tile.stampPowder(clamp(tile.pixelX(point), tile.pw), clamp(tile.pixelY(point), tile.ph), n, d.colour, now, lifetime(), rng, new ArrayList<>());
+            return;
+        }
+        if (d.kind == 3 || d.single) {
             pixels = 1;
         } else {
             int base = 1 + rng.nextInt(2) + (d.size > 0.22f ? 1 : 0);
@@ -1327,72 +1758,42 @@ public final class PreviewScene {
 
     private static int clamp(int v, int max) { return v < 0 ? 0 : Math.min(max - 1, v); }
 
-    private static final class Run {
-        CanvasTile side;
-        int column, row, remaining, interval, nextTick, colour, volume;
-        CanvasTile source;
-        int sourceX, sourceY;
-    }
-
     private boolean startRun(CanvasTile side, int column, int colour, CanvasTile source, int sx, int sy) {
-        for (Run r : runs) {
-            if (r.side == side && r.column == column) {
-                if (r.source != null) return false;
-                r.source = source; r.sourceX = sx; r.sourceY = sy;
-                r.remaining = Math.min(r.remaining + 4, side.ph);
-                return true;
-            }
+        RunSim.Run r = runSim.inColumn(side, column);
+        if (r != null) {
+            if (r.source != null) return false;
+            r.feedFrom(source, sx, sy);
+            r.remaining = Math.min(r.remaining + 4, side.ph);
+            return true;
         }
         if (runs.size() > 40) return false;
-        CanvasTile.Body body = CanvasTile.body(source, sx, sy, flow, 6);
-        int mass = Math.max(1, body.mass());
-        int pouring = 0;
-        for (Run r : runs) if (r.source != null && body.contains(r.source)) pouring++;
-        if (pouring > 0 && mass < 32 * side.res * side.res / 256 * (pouring + 1)) return false;
-        Run r = new Run();
-        r.side = side;
-        r.column = column;
-        r.row = 0;
-        r.remaining = Math.max(2, Math.min(3 * side.res, mass / 2));
-        r.volume = 1;
-        r.interval = Math.max(2, (6 + rng.nextInt(4)) * 8 / side.res);
-        r.nextTick = now + r.interval;
-        r.colour = colour;
-        r.source = source; r.sourceX = sx; r.sourceY = sy;
+        int budget = runSim.pour(source, sx, sy);
+        if (budget == 0) return false;
+        runSim.add(new RunSim.Run(side, column, 0, budget, 1, colour, source, sx, sy));
         side.paintThin(column, 0, colour, now, lifetime(), rng, pattern(), 1);
-        runs.add(r);
         return true;
     }
 
     private void advanceRuns(SimpleBloodConfig c) {
-        Iterator<Run> it = runs.iterator();
+        Iterator<RunSim.Run> it = runs.iterator();
         while (it.hasNext()) {
-            Run r = it.next();
-            if (now < r.nextTick) continue;
-            r.nextTick = now + r.interval;
+            RunSim.Run r = it.next();
+            if (!runSim.due(r)) continue;
+            runSim.schedule(r);
             if (r.remaining-- <= 0) { it.remove(); continue; }
-            if (r.source != null) {
-                if (!tiles.containsValue(r.source)
-                        || !CanvasTile.body(r.source, r.sourceX, r.sourceY, flow, 6).draw(r.source.pixelCenter(r.sourceX, r.sourceY), rng)) {
-                    r.source = null;
-                    r.remaining = Math.min(r.remaining, Math.max(1, r.side.res / 4));
-                } else if ((r.row & 1) == 1) {
-                    r.volume++;
-                }
-            }
+            runSim.drink(r, r.row);
             r.row++;
-            if (r.row < r.side.ph) {
-                int thin = 1 + Math.min(2, r.row / Math.max(1, r.side.res / 2));
-                r.side.paintThin(r.column, r.row, r.colour, now, lifetime(), rng, pattern(), thin);
+            if (r.row < r.tile.ph) {
+                r.tile.paintThin(r.column, r.row, r.colour, now, lifetime(), rng, pattern(), RunSim.thin(r.row, r.tile.res));
             } else {
-                Vec3 p = r.side.pixelCenter(r.column, r.side.ph - 1);
-                BlockPos below = r.side.pos.below().relative(r.side.face);
+                Vec3 p = r.tile.pixelCenter(r.column, r.tile.ph - 1);
+                BlockPos below = r.tile.pos.below().relative(r.tile.face);
                 Block floor = blockMap.get(below);
                 if (floor != null && !blockMap.containsKey(below.above())) {
-                    Vec3 at = new Vec3(p.x + r.side.face.getStepX() * 0.03, below.getY() + 1, p.z + r.side.face.getStepZ() * 0.03);
+                    Vec3 at = new Vec3(p.x + r.tile.face.getStepX() * 0.03, below.getY() + 1, p.z + r.tile.face.getStepZ() * 0.03);
                     stampAt(floor, Direction.UP, at, r.colour, Math.max(1, r.volume), new Vec3(0, -1, 0));
                 } else {
-                    Drop d = spawn(p.x + r.side.face.getStepX() * 0.03, p.y - 0.05, p.z + r.side.face.getStepZ() * 0.03, 0, -0.05, 0, 3);
+                    Drop d = spawn(p.x + r.tile.face.getStepX() * 0.03, p.y - 0.05, p.z + r.tile.face.getStepZ() * 0.03, 0, -0.05, 0, 3);
                     d.colour = r.colour;
                 }
                 it.remove();
@@ -1440,6 +1841,8 @@ public final class PreviewScene {
             return startRun(side, clamp(side.pixelX(p), side.pw), colour, tile, clamp(px, tile.pw), clamp(py, tile.ph));
         }
     };
+
+    private final RunSim<RunSim.Run> runSim = new RunSim<>(runs, flow, tiles::containsValue, rng, () -> now);
 
     private void relax(SimpleBloodConfig c) {
         CanvasTile[] all = tiles.values().toArray(new CanvasTile[0]);

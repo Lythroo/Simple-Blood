@@ -1,5 +1,119 @@
 # Simple Blood changelog
 
+## 1.3.0
+
+Everything new since 1.2.1, in one place.
+
+### Settings
+- Settings rebuilt with categories and search.
+- Big live preview, only where useful.
+- Previews run the real hit code.
+- Previews can replay your own hit.
+- Your skin shows in colour previews.
+- Sliders ignore the scroll wheel now.
+- Dropdowns for settings with many choices.
+- Mobs shown as cards with eggs.
+- Cleaner mob settings panel.
+- Export, import and reset settings.
+- Save and load settings as files.
+- Menu animations can be switched off.
+- All text can now be translated.
+
+### Blood on blocks
+- Big pools: darker deep middle, dried rim.
+- Fresh snow buries the blood.
+- Blood soaks into snow, stays red.
+- A bite of cake takes its blood.
+- Blood sizzles and dries near heat.
+- Drops falling into lava sizzle away.
+- Blood sits only where a block's texture is drawn.
+- Drops fall through holes in leaves, bars and trapdoors.
+- Blood in a water cauldron clouds it and turns the water itself redder (it waves along with shaders), clearing again with time; nothing lies on the water.
+- Runs flow down every step of a stair.
+- Blood follows 3D block models from packs.
+- Switching packs moves blood to new shapes.
+- Interactive Foliage plants stay clean.
+
+### Moving blocks
+- Blood opens with chest lids.
+- Shulker box lids carry it too.
+- Shulker blood respects the shell's arches.
+- Runs cross from lid to base when shut.
+- Blood lands inside open chests.
+- Tilting surfaces: excess blood runs downhill.
+- The puddle stays behind as a stain.
+- Runs go round a lid's edge.
+- Turned upside down, blood drips.
+- Doors and trapdoors keep their blood when opened.
+- Turning lets only a few fresh drops go.
+- Drops keep the motion of what they leave.
+
+### Create, Aeronautics and Sable
+- Blood rides along on Sable structures.
+- Drops hit falling Sable ships properly.
+- Blood rides along on Create contraptions.
+- Blood turns with shafts, cogs and wheels.
+- Also on fans, drills and millstones.
+- Fast Create parts fling their blood off.
+- No blood floats over Create parts' gaps.
+- Blood on Create parts sits on their texels.
+
+### Mobs
+- New Armor column in the mob table.
+- Set any mob to Armor or Metal.
+- Modded knights are guessed armored.
+- Mob table fits narrow windows.
+- Blood skips see-through mob parts.
+- Every hit leaves blood on bodies.
+- Dinnerbone mobs keep their blood.
+
+### Players
+- Pick your blood type too.
+- It travels in your skin.
+
+### Ragdolls
+- Bleed time goes up to 60 seconds.
+- Blood on mobs stays on Ragdollified ragdolls.
+- Saro's ragdolls keep the player's blood.
+- Cut-off limbs keep their blood and bleed.
+- Stumps spurt when a limb comes off.
+- Physics Mod ragdolls keep blood exactly.
+- Physics Mod pieces keep it too.
+- Still ragdolls bleed into a puddle.
+
+### Weapons
+- New page: wound per weapon.
+- Pick a wound for any weapon.
+- Modded weapons are sorted automatically.
+- Epic Fight weapons get proper wounds.
+- Axes can sweep like swords.
+- Spears skewer, bursting out the back.
+- Spear stabs leave an exit wound.
+- Every damage type gets its switch.
+
+### Sound
+- Play button next to every sound.
+- Previews loop and name each file.
+- Louder drops, drips and water.
+- New Heat slider for the sizzle.
+- New squelch, splat and slap sounds.
+- No more reused slime sounds.
+
+### Fixes
+- Blood on mobs safe with AsyncParticles.
+- Giblet trails safe with AsyncParticles.
+- No lost drops with AsyncParticles.
+- Quick follow-up hits keep their weapon.
+- No blood inside shulker boxes' hidden faces.
+- Dropdown text no longer overlaps.
+- Banners no longer turn white under blood.
+- Drops fly off moving things with their motion.
+
+### Known issues
+- Chat names installed mods with known issues.
+- Epic Fight mobs get no body blood.
+  Splatter, pools and drips still work.
+
 ## 1.2.1
 
 ### Fixes

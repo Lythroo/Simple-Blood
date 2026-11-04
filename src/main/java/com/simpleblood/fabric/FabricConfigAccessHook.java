@@ -19,12 +19,12 @@ final class FabricConfigAccessHook {
                         .executes(ctx -> { ConfigAccess.requestOpen(); return 1; })
                         .then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("clear").executes(ctx -> {
                             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.OTHER, "clearing blood on blocks", BloodSurfaces::clear);
-                            ctx.getSource().sendFeedback(Component.literal("All clean."));
+                            ctx.getSource().sendFeedback(Component.translatable("simpleblood.command.cleared"));
                             return 1;
                         }))
                         .then(LiteralArgumentBuilder.<FabricClientCommandSource>literal("reset").executes(ctx -> {
                             com.simpleblood.Guard.reset();
-                            ctx.getSource().sendFeedback(Component.literal("Simple Blood: everything back on."));
+                            ctx.getSource().sendFeedback(Component.translatable("simpleblood.command.reset"));
                             return 1;
                         }))));
     }

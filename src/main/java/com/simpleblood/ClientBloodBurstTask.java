@@ -59,6 +59,15 @@ public class ClientBloodBurstTask {
 
     public boolean tick() {
         if (ticksRemaining <= 0) return false;
+        BloodParticle.carryMotionOf(entity);
+        try {
+            return tickSpurt();
+        } finally {
+            BloodParticle.clearCarry();
+        }
+    }
+
+    private boolean tickSpurt() {
 
         net.minecraft.client.Minecraft client = net.minecraft.client.Minecraft.getInstance();
         if (client.isPaused()) {
@@ -110,6 +119,7 @@ public class ClientBloodBurstTask {
 
         float velocityAdjust = entityIsUnderwater ? 0.3f : 1.0f;
 
+        Capture.part = Capture.Part.DRIPS;
         for (int i = 0; i < dripsThisTick; i++) {
             double spawnX, spawnY, spawnZ;
             if (wound != null) {
@@ -134,13 +144,19 @@ public class ClientBloodBurstTask {
             splashThisTick = 0;
         } else if (BloodSpray.isDirectional(ctx)) {
             int directional = Math.round(splashThisTick * config.directionalShare());
-            BloodSpray.exitSpray(world, ctx, directional, velocityAdjust, ticksRemaining == durationTicks);
-            if (config.entrySpatterEnabled() && ticksRemaining == durationTicks) {
-                BloodSpray.entrySpatter(world, ctx, 2 + (int) (ctx.severity * 3), velocityAdjust);
+            BloodSpray.share = share;
+            try {
+                BloodSpray.exitSpray(world, ctx, directional, velocityAdjust, ticksRemaining == durationTicks);
+                if (config.entrySpatterEnabled() && ticksRemaining == durationTicks) {
+                    BloodSpray.entrySpatter(world, ctx, Math.round((2 + (int) (ctx.severity * 3)) * share), velocityAdjust);
+                }
+            } finally {
+                BloodSpray.share = 1f;
             }
             splashThisTick -= directional;
         }
 
+        Capture.part = Capture.Part.SPLASH;
         for (int i = 0; i < splashThisTick; i++) {
             double spawnX, spawnY, spawnZ;
             if (wound != null) {

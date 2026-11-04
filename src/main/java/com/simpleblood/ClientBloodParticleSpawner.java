@@ -16,25 +16,37 @@ public class ClientBloodParticleSpawner {
 
     public static void emit(ClientLevel world, net.minecraft.core.particles.SimpleParticleType type,
                             double x, double y, double z, double vx, double vy, double vz) {
-        if (!BloodParticle.underBudget()) return;
+        boolean preview = Capture.active();
+        if (!preview && !BloodParticle.underBudget()) return;
         if (!Guard.ok(Guard.Part.PARTICLES)) return;
         BloodKind kind = BloodParticle.currentBloodKind();
         if (kind.hasPieces()) {
             emitPiece(world, kind, type, x, y, z, vx, vy, vz);
             return;
         }
-        if (BloodParticle.currentTransformsToFog() && isPositionInWater(world, x, y, z)
-                && SimpleBloodClient.getConfig().underwaterFogEnabled()) {
-            com.simpleblood.particle.BloodFogParticle.setCurrentBloodColor(BloodParticle.currentBloodColor());
-            com.simpleblood.particle.BloodFogParticle.setGlowing(BloodParticle.currentGlows());
-            mergedFog(x, y, z, vx, vy, vz);
-        } else {
-            Minecraft.getInstance().particleEngine.createParticle(type, x, y, z, vx, vy, vz);
+        float grains = -1;
+        if (kind == BloodKind.POWDER) {
+            grains = BloodParticle.currentSizeMultiplier();
+            BloodParticle.setEntitySizeMultiplier(grains * 0.6f);
+        }
+        try {
+            if (Capture.take(type, x, y, z, vx, vy, vz)) return;
+            if (BloodParticle.currentTransformsToFog() && isPositionInWater(world, x, y, z)
+                    && SimpleBloodClient.getConfig().underwaterFogEnabled()) {
+                com.simpleblood.particle.BloodFogParticle.setCurrentBloodColor(BloodParticle.currentBloodColor());
+                com.simpleblood.particle.BloodFogParticle.setGlowing(BloodParticle.currentGlows());
+                mergedFog(x, y, z, vx, vy, vz);
+            } else {
+                Minecraft.getInstance().particleEngine.createParticle(type, x, y, z, vx, vy, vz);
+            }
+        } finally {
+            if (grains >= 0) BloodParticle.setEntitySizeMultiplier(grains);
         }
     }
 
     public static void emitPlain(ClientLevel world, net.minecraft.core.particles.SimpleParticleType type,
                                  double x, double y, double z, double vx, double vy, double vz) {
+        if (Capture.take(type, x, y, z, vx, vy, vz)) return;
         if (!BloodParticle.underBudget() || !Guard.ok(Guard.Part.PARTICLES)) return;
         Minecraft.getInstance().particleEngine.createParticle(type, x, y, z, vx, vy, vz);
     }
@@ -60,8 +72,7 @@ public class ClientBloodParticleSpawner {
             case SPIRIT -> piece = BloodParticles.SPIRIT_SPARK;
             case EMBER -> {
                 if (kinds.emberSmoke && rng.nextFloat() < 0.2f) {
-                    Minecraft.getInstance().particleEngine.createParticle(net.minecraft.core.particles.ParticleTypes.SMOKE,
-                            x, y, z, vx * 0.1, 0.03, vz * 0.1);
+                    create(net.minecraft.core.particles.ParticleTypes.SMOKE, x, y, z, vx * 0.1, 0.03, vz * 0.1);
                     return;
                 }
                 piece = BloodParticles.EMBER;
@@ -74,7 +85,7 @@ public class ClientBloodParticleSpawner {
                 if (rng.nextFloat() < kinds.resinShare / 100.0f) {
                     BloodParticle.setCurrentKind(BloodKind.LIQUID);
                     try {
-                        Minecraft.getInstance().particleEngine.createParticle(type, x, y, z, vx, vy, vz);
+                        create(type, x, y, z, vx, vy, vz);
                     } finally {
                         BloodParticle.setCurrentKind(kind);
                     }
@@ -87,7 +98,12 @@ public class ClientBloodParticleSpawner {
                 piece = rng.nextFloat() < (big ? 0.6f : 0.25f) ? BloodParticles.BONE_DUST : BloodParticles.BONE_CHIP;
             }
         }
-        Minecraft.getInstance().particleEngine.createParticle(piece, x, y, z, vx, vy, vz);
+        create(piece, x, y, z, vx, vy, vz);
+    }
+
+    public static void create(net.minecraft.core.particles.ParticleOptions type, double x, double y, double z, double vx, double vy, double vz) {
+        if (Capture.take(type, x, y, z, vx, vy, vz)) return;
+        Minecraft.getInstance().particleEngine.createParticle(type, x, y, z, vx, vy, vz);
     }
 
     private static final int FOG_MERGE = 4;
@@ -109,7 +125,16 @@ public class ClientBloodParticleSpawner {
     }
 
     public static void spawnBloodOnDeath(ClientLevel world, LivingEntity entity, HitContext ctx) {
-        com.simpleblood.compat.PhysicsModRagdolls.entityDied(entity);
+        BloodParticle.carryMotionOf(entity);
+        try {
+            burstOnDeath(world, entity, ctx);
+        } finally {
+            BloodParticle.clearCarry();
+        }
+    }
+
+    private static void burstOnDeath(ClientLevel world, LivingEntity entity, HitContext ctx) {
+        if (!Capture.active()) com.simpleblood.compat.PhysicsModRagdolls.entityDied(entity);
         com.simpleblood.Tally.count("death.burst");
         SimpleBloodConfig config = SimpleBloodClient.getConfig();
 
@@ -190,11 +215,22 @@ public class ClientBloodParticleSpawner {
         }
 
         Giblets.death(world, entity, ctx);
+        if (Capture.active()) return;
         com.simpleblood.mob.MobBlood.death(entity, ctx);
         com.simpleblood.mob.MobBlood.corpse(entity);
     }
 
     public static void spawnBloodForLowHealth(ClientLevel world, LivingEntity entity, SimpleBloodConfig config) {
+        BloodParticle.carryMotionOf(entity);
+        try {
+            dripWounded(world, entity, config);
+        } finally {
+            BloodParticle.clearCarry();
+        }
+    }
+
+    private static void dripWounded(ClientLevel world, LivingEntity entity, SimpleBloodConfig config) {
+        if (SimpleBlood.bloodKindOf(entity) == BloodKind.POWDER) return;
         float healthPercent = entity.getHealth() / entity.getMaxHealth();
         float threshold = config.lowHealthThreshold();
 
@@ -301,7 +337,7 @@ public class ClientBloodParticleSpawner {
     }
 
     private static void playBloodSound(ClientLevel world, LivingEntity entity, double x, double y, double z, float sizeFactor) {
-        if (!SimpleBlood.isSoundEnabledFor(entity)) {
+        if (Capture.active() || !SimpleBlood.isSoundEnabledFor(entity)) {
             return;
         }
         SimpleBloodConfig config = SimpleBloodClient.getConfig();
@@ -311,7 +347,7 @@ public class ClientBloodParticleSpawner {
 
         float baseVolume = Math.min(0.3f + sizeFactor * 0.2f, 1.0f);
         float volume = baseVolume * volumeMult * Math.max(0, config.audio.woundDripVolume) / 100f;
-        if (volume <= 0) return;
+        if (volume <= 0 || !BloodSounds.on(BloodSounds.Preview.WOUND_DRIPS)) return;
 
         float basePitch = 0.8f + world.getRandom().nextFloat() * 0.3f;
         float pitch = basePitch * pitchMult;

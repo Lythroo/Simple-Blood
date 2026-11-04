@@ -8,10 +8,13 @@ import com.simpleblood.particle.BloodParticle;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.CakeBlock;
+import net.minecraft.world.level.block.SnowLayerBlock;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.piston.PistonHeadBlock;
 import net.minecraft.world.level.block.piston.PistonMovingBlockEntity;
@@ -71,7 +74,9 @@ public final class BloodSurfaces {
     }
 
     public static boolean sways(BlockState state) {
-        if (!settings().skipSwayingBlocks || state.isAir() || !com.simpleblood.compat.ShaderPacks.inUse()) return false;
+        if (!settings().skipSwayingBlocks || state.isAir()) return false;
+        if (com.simpleblood.compat.InteractiveFoliage.sways(state)) return true;
+        if (!com.simpleblood.compat.ShaderPacks.inUse()) return false;
         Block b = state.getBlock();
         return state.is(net.minecraft.tags.BlockTags.LEAVES)
                 || b instanceof net.minecraft.world.level.block.VineBlock
@@ -91,11 +96,11 @@ public final class BloodSurfaces {
     }
 
     public static boolean isHandDrawn(BlockState state) {
-        return detailed() && SignFaces.applies(state);
+        return (detailed() && SignFaces.applies(state)) || SignFaces.lidded(state);
     }
 
     public static boolean hasTiltedFaces(BlockState state) {
-        if (!detailed() || state.isAir() || SignFaces.applies(state)) return false;
+        if (!detailed() || state.isAir() || SignFaces.applies(state) || SignFaces.lidded(state)) return false;
         try {
             VoxelShape shape = state.getShape(net.minecraft.world.level.EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
             if (shape.isEmpty()) return false;
@@ -106,9 +111,121 @@ public final class BloodSurfaces {
         }
     }
 
-    public record Hit(BlockPos pos, Direction face, Vec3 point) {}
+    public record Hit(BlockPos pos, Direction face, Vec3 point, Vec3 onPaint, int part) {
+        public Hit(BlockPos pos, Direction face, Vec3 point) {
+            this(pos, face, point, point, -1);
+        }
+
+        public Hit(BlockPos pos, Direction face, Vec3 point, Vec3 onPaint) {
+            this(pos, face, point, onPaint, -1);
+        }
+    }
 
     public static Hit trace(ClientLevel level, Vec3 from, Vec3 to) {
+        return trace(level, from, to, false);
+    }
+
+    public static Hit traceMove(ClientLevel level, Vec3 from, Vec3 to) {
+        return trace(level, from, to, true);
+    }
+
+    private static Hit trace(ClientLevel level, Vec3 from, Vec3 to, boolean moved) {
+        if (com.simpleblood.Capture.active()) return com.simpleblood.Capture.trace(from, to);
+        Hit hit = traceWorld(level, from, to);
+        if (wheels.length > 0) hit = nearerWheel(level, from, to, hit);
+        List<? extends com.simpleblood.compat.BodyPose> sable = com.simpleblood.compat.SableSubLevels.present()
+                ? com.simpleblood.compat.SableSubLevels.crossing(level, from, to) : List.of();
+        List<com.simpleblood.compat.BodyPose> rides = ContraptionRides.any() ? ContraptionRides.crossing(from, to) : List.of();
+        if (sable.isEmpty() && rides.isEmpty()) return hit;
+        double[] best = {hit == null ? Double.MAX_VALUE : hit.point().distanceToSqr(from)};
+        for (com.simpleblood.compat.BodyPose pose : sable) {
+            Hit h = traceIn(level, pose, from, to, moved, best);
+            if (h != null) { hit = h; com.simpleblood.Tally.count("sable.hit"); }
+        }
+        for (com.simpleblood.compat.BodyPose pose : rides) {
+            Hit h = traceIn(level, pose, from, to, moved, best);
+            if (h != null) { hit = h; com.simpleblood.Tally.count("create.hit"); }
+        }
+        return hit;
+    }
+
+    private static volatile BlockPos[] wheels = new BlockPos[0];
+    private static final double WHEEL_REACH = 3.0;
+    private static final int WHEEL_SCAN_TICKS = 20, WHEEL_SCAN_CHUNKS = 3;
+    private static long wheelScan = Long.MIN_VALUE;
+
+    private static void findWheels(ClientLevel level) {
+        if (!com.simpleblood.compat.CreateKinetics.present() || Minecraft.getInstance().player == null) return;
+        long time = level.getGameTime();
+        if (time - wheelScan < WHEEL_SCAN_TICKS && time >= wheelScan) return;
+        wheelScan = time;
+        BlockPos at = Minecraft.getInstance().player.blockPosition();
+        List<BlockPos> found = new ArrayList<>();
+        for (int cx = (at.getX() >> 4) - WHEEL_SCAN_CHUNKS; cx <= (at.getX() >> 4) + WHEEL_SCAN_CHUNKS; cx++) {
+            for (int cz = (at.getZ() >> 4) - WHEEL_SCAN_CHUNKS; cz <= (at.getZ() >> 4) + WHEEL_SCAN_CHUNKS; cz++) {
+                for (net.minecraft.world.level.block.entity.BlockEntity be : level.getChunk(cx, cz).getBlockEntities().values()) {
+                    CreateParts.Model m = CreateParts.of(be.getBlockState());
+                    if (m != null && m.multiBlock()) found.add(be.getBlockPos().immutable());
+                }
+            }
+        }
+        if (found.size() != wheels.length || !found.equals(List.of(wheels))) wheels = found.toArray(new BlockPos[0]);
+    }
+
+    private static synchronized void knowWheel(BlockPos master) {
+        for (BlockPos w : wheels) if (w.equals(master)) return;
+        BlockPos[] more = java.util.Arrays.copyOf(wheels, wheels.length + 1);
+        more[wheels.length] = master.immutable();
+        wheels = more;
+    }
+
+    private static boolean nearWheel(Vec3 from, Vec3 to) {
+        for (BlockPos w : wheels) {
+            if (within(Vec3.atCenterOf(w), from, to, WHEEL_REACH)) return true;
+        }
+        return false;
+    }
+
+    private static boolean within(Vec3 c, Vec3 from, Vec3 to, double reach) {
+        Vec3 ab = to.subtract(from);
+        double len = ab.lengthSqr();
+        double t = len < 1.0e-12 ? 0 : Math.max(0, Math.min(1, c.subtract(from).dot(ab) / len));
+        return c.distanceToSqr(from.add(ab.scale(t))) <= reach * reach;
+    }
+
+    private static Hit nearerWheel(ClientLevel level, Vec3 from, Vec3 to, Hit hit) {
+        double best = hit == null ? Double.MAX_VALUE : hit.point().distanceToSqr(from);
+        for (BlockPos w : wheels) {
+            if (!within(Vec3.atCenterOf(w), from, to, WHEEL_REACH)) continue;
+            BlockState state = blockState(level, w);
+            CreateParts.Model m = CreateParts.of(state);
+            if (m == null || !m.multiBlock()) continue;
+            Hit h = clipPart(level, w, w, state, m, from, to);
+            if (h == null || h.point().distanceToSqr(from) >= best) continue;
+            best = h.point().distanceToSqr(from);
+            hit = h;
+        }
+        return hit;
+    }
+
+    private static Hit traceIn(ClientLevel level, com.simpleblood.compat.BodyPose pose, Vec3 from, Vec3 to, boolean moved, double[] best) {
+        Hit inPlot = traceWorld(level, moved ? pose.lastToPlot(from) : pose.toPlot(from), pose.toPlot(to));
+        if (inPlot == null) return null;
+        Vec3 seen = pose.toWorld(inPlot.point());
+        double d = seen.distanceToSqr(from);
+        if (d >= best[0]) return null;
+        best[0] = d;
+        return new Hit(inPlot.pos(), inPlot.face(), seen, inPlot.onPaint(), inPlot.part());
+    }
+
+    public static boolean movingBodiesCross(ClientLevel level, Vec3 from, Vec3 to) {
+        if (ContraptionRides.any() && !ContraptionRides.crossing(from, to).isEmpty()) return true;
+        if (nearWheel(from, to)) return true;
+        return com.simpleblood.compat.SableSubLevels.present()
+                && !com.simpleblood.compat.SableSubLevels.crossing(level, from, to).isEmpty();
+    }
+
+    private static Hit traceWorld(ClientLevel level, Vec3 from, Vec3 to) {
         double far = from.distanceToSqr(to);
         if (!(far <= 16 * 16)) return null;
         if (far < 1.0e-8) {
@@ -143,27 +260,124 @@ public final class BloodSurfaces {
     }
 
     private static Hit clipBlock(ClientLevel level, BlockPos pos, Vec3 from, Vec3 to) {
-        BlockState state = level.getBlockState(pos);
+        BlockState state = blockState(level, pos);
+        if (!state.isAir() && com.simpleblood.compat.CreateKinetics.present()) {
+            Hit spun = clipSpinning(level, pos, state, from, to);
+            if (spun != null) return spun == MISSED ? null : spun;
+        }
+        return clipStill(level, pos, state, from, to);
+    }
+
+    private static final Hit MISSED = new Hit(BlockPos.ZERO, Direction.UP, Vec3.ZERO);
+
+    private static Hit clipSpinning(ClientLevel level, BlockPos pos, BlockState state, Vec3 from, Vec3 to) {
+        if (CreateParts.isWheelHelper(state)) {
+            BlockPos master = ContraptionRides.isPlot(pos) ? null : com.simpleblood.compat.CreateKinetics.wheelMaster(level, pos, state);
+            BlockState ms = master == null ? null : blockState(level, master);
+            CreateParts.Model wheel = ms == null ? null : CreateParts.of(ms);
+            if (wheel == null) return MISSED;
+            knowWheel(master);
+            Hit h = clipPart(level, pos, master, ms, wheel, from, to);
+            return h == null ? MISSED : h;
+        }
+        CreateParts.Model model = CreateParts.of(state);
+        if (model != null) {
+            if (model.multiBlock() && !ContraptionRides.isPlot(pos)) knowWheel(pos);
+            Hit onPart = clipPart(level, pos, pos, state, model, from, to);
+            if (model.partOnly()) return onPart == null ? MISSED : onPart;
+            Hit still = clipStill(level, pos, state, from, to, onPart == null);
+            if (onPart == null) return still == null ? MISSED : still;
+            if (still != null && still.point().distanceToSqr(from) < onPart.point().distanceToSqr(from) - 1.0e-8) return still;
+            return onPart;
+        }
+        boolean whole = spinsWhole(state);
+        com.simpleblood.compat.CreateKinetics.Part part = partForHit(level, pos, state);
+        if (part == null) return null;
+        double a = part.angleNow(SurfaceRenderer.partialTick());
+        if (whole) {
+            VoxelShape shape = state.getShape(level, pos);
+            if (shape.isEmpty()) return MISSED;
+            Vec3 f = spun(part, from, -a), t = spun(part, to, -a);
+            BlockHitResult r = shape.clip(f, t, pos);
+            if (r == null || r.getType() != HitResult.Type.BLOCK) return MISSED;
+            if (a != 0) com.simpleblood.Tally.count("create.spin.hit");
+            return new Hit(pos, r.getDirection(), spun(part, r.getLocation(), a), r.getLocation());
+        }
+        Hit h = clipStill(level, pos, state, from, to);
+        if (h == null) return MISSED;
+        if (!part.turns(h.face(), false)) return h;
+        return new Hit(h.pos(), h.face(), h.point(), spun(part, h.onPaint(), -a));
+    }
+
+    private static Hit clipPart(ClientLevel level, BlockPos cell, BlockPos master, BlockState state,
+                                CreateParts.Model model, Vec3 from, Vec3 to) {
+        com.simpleblood.compat.CreateKinetics.Part part = partForHit(level, master, state);
+        double a = part == null ? 0 : part.angleNow(SurfaceRenderer.partialTick());
+        Vec3 base = Vec3.atLowerCornerOf(master);
+        Vec3 f = (part == null ? from : spun(part, from, -a)).subtract(base);
+        Vec3 t = (part == null ? to : spun(part, to, -a)).subtract(base);
+        double best = Double.MAX_VALUE;
+        int bestFace = -1;
+        List<CreateParts.Face> faces = model.faces();
+        for (int i = 0; i < faces.size(); i++) {
+            double h = faces.get(i).hit(f, t);
+            if (h < best) {
+                best = h;
+                bestFace = i;
+            }
+        }
+        if (bestFace < 0) return null;
+        Vec3 rest = f.add(t.subtract(f).scale(best)).add(base);
+        Vec3 seen = part == null ? rest : spun(part, rest, a);
+        if (!cell.equals(master) && !BlockPos.containing(seen).equals(cell)) return null;
+        Vec3 n = faces.get(bestFace).n();
+        if (a != 0) com.simpleblood.Tally.count("create.part.hit");
+        return new Hit(master, axisDirection(n.x, n.y, n.z), seen, rest, bestFace);
+    }
+
+    private static boolean spinsWhole(BlockState state) {
+        return com.simpleblood.compat.CreateKinetics.spinsWhole(state) && CreateParts.of(state) == null;
+    }
+
+    static Vec3 spun(com.simpleblood.compat.CreateKinetics.Part part, Vec3 p, double angle) {
+        if (angle == 0) return p;
+        return part.centre.add(SurfaceRenderer.swing(p.subtract(part.centre), part.axis, angle));
+    }
+
+    private static com.simpleblood.compat.CreateKinetics.Part partForHit(ClientLevel level, BlockPos pos, BlockState state) {
+        if (state == null || !state.hasBlockEntity()) return null;
+        Object be;
+        if (ContraptionRides.isPlot(pos)) be = ContraptionRides.blockEntity(pos);
+        else if (RenderThread.on()) be = level.getBlockEntity(pos);
+        else be = level.getChunkAt(pos).getBlockEntities().get(pos);
+        return com.simpleblood.compat.CreateKinetics.part(state, be, Vec3.atCenterOf(pos), CreateParts.of(state) != null);
+    }
+
+    private static Hit clipStill(ClientLevel level, BlockPos pos, BlockState state, Vec3 from, Vec3 to) {
+        return clipStill(level, pos, state, from, to, true);
+    }
+
+    private static Hit clipStill(ClientLevel level, BlockPos pos, BlockState state, Vec3 from, Vec3 to, boolean outline) {
         if (state.isAir()) {
             BlockPos under = pos.below();
-            BlockState below = level.getBlockState(under);
+            BlockState below = blockState(level, under);
             Hit h = null;
             if (isHandDrawn(below)) {
-                h = SignFaces.clip(below, under, from, to);
+                h = SignFaces.clip(level, below, under, from, to);
             } else if (hasTiltedFaces(below)) {
                 h = modelFaces(below, below.getShape(level, under)).clip(under, from, to);
             }
             if (h != null && h.point().y >= pos.getY() - 1.0e-6) return h;
             BlockPos over = pos.above();
-            BlockState above = level.getBlockState(over);
+            BlockState above = blockState(level, over);
             if (isHandDrawn(above)) {
-                h = SignFaces.clip(above, over, from, to);
+                h = SignFaces.clip(level, above, over, from, to);
                 if (h != null && h.point().y <= pos.getY() + 1 + 1.0e-6) return h;
             }
             return null;
         }
         if (sways(state)) return null;
-        if (isHandDrawn(state)) return SignFaces.clip(state, pos, from, to);
+        if (isHandDrawn(state)) return SignFaces.clip(level, state, pos, from, to);
         if (!detailed() && (SignFaces.applies(state) || BlockToneSampler.isCrossModel(state))) return null;
         VoxelShape shape = state.getShape(level, pos);
         if (shape.isEmpty()) return null;
@@ -171,16 +385,19 @@ public final class BloodSurfaces {
         if (faces != null) {
             Hit drawn = faces.clip(pos, from, to);
             if (drawn != null) return drawn;
+            if (!faces.withinOutline) return null;
         }
+        if (!outline) return null;
         BlockHitResult r = shape.clip(from, to, pos);
         if (r == null || r.getType() != HitResult.Type.BLOCK || (faces != null && r.isInside())) return null;
         return new Hit(pos, r.getDirection(), r.getLocation());
     }
 
     private static ModelFaces modelFaces(BlockState state, VoxelShape shape) {
-        if (!detailed() || Block.isShapeFullBlock(shape) || BlockToneSampler.isCrossModel(state)) return null;
+        if (!detailed() || BlockToneSampler.isCrossModel(state)) return null;
+        if (spinsWhole(state)) return null;
         ModelFaces f = ModelFaces.of(state, shape);
-        return f.usable ? f : null;
+        return f.usable && !f.plain ? f : null;
     }
 
     public static boolean visibleSolidAt(ClientLevel level, double x, double y, double z) {
@@ -214,6 +431,10 @@ public final class BloodSurfaces {
     public static final int NOTHING = 0, ONTO_SURFACE = 1, INTO_PUDDLE = 2;
 
     public static int deposit(ClientLevel level, Hit hit, int colour, int pixels, Vec3 travel, boolean powder) {
+        if (com.simpleblood.Capture.active()) {
+            if (hit != null && pixels > 0) com.simpleblood.Capture.paint(hit, pixels);
+            return hit == null ? NOTHING : ONTO_SURFACE;
+        }
         SimpleBloodConfig.SurfaceSettings s = settings();
         if (!s.enabled || pixels <= 0 || hit == null || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return NOTHING;
         if (!s.wallsAndCeilings && hit.face() != Direction.UP) return NOTHING;
@@ -225,15 +446,23 @@ public final class BloodSurfaces {
             depositLater(level, hit, colour, pixels, travel, powder, null);
             return ONTO_SURFACE;
         }
+        if (!powder && inCauldronWater(level, hit.point().x, hit.point().y, hit.point().z)) {
+            intoCauldron(level, hit.point(), colour);
+            return ONTO_SURFACE;
+        }
+        if (!powder && isSnow(blockState(level, hit.pos()))) {
+            com.simpleblood.Tally.count("snow.soak");
+            pixels = Math.round(pixels * 1.4f);
+        }
         syncLevel(level);
 
-        CanvasTile tile = tileAt(level, hit.pos(), hit.face(), hit.point());
+        CanvasTile tile = hit.part() >= 0 ? partTile(level, hit.pos(), hit.part(), true) : tileAt(level, hit.pos(), hit.face(), hit.onPaint());
         if (tile == null) return NOTHING;
-        int result = tile.depthAt(clampPixel(tile.pixelX(hit.point()), tile.pw), clampPixel(tile.pixelY(hit.point()), tile.ph)) > 0
+        int result = tile.depthAt(clampPixel(tile.pixelX(hit.onPaint()), tile.pw), clampPixel(tile.pixelY(hit.onPaint()), tile.ph)) > 0
                 ? INTO_PUDDLE : ONTO_SURFACE;
         if (powder) {
-            int px = clampPixel(tile.pixelX(hit.point()), tile.pw);
-            int py = clampPixel(tile.pixelY(hit.point()), tile.ph);
+            int px = clampPixel(tile.pixelX(hit.onPaint()), tile.pw);
+            int py = clampPixel(tile.pixelY(hit.onPaint()), tile.ph);
             List<int[]> spill = new ArrayList<>();
             tile.stampPowder(px, py, pixels, colour, now, s.lifetimeSeconds * 20, RNG, spill);
             for (int[] cell : spill) {
@@ -248,14 +477,18 @@ public final class BloodSurfaces {
             }
             return result;
         }
-        stampAt(level, tile, hit.point(), colour, pixels, 0, travel);
+        stampAt(level, tile, hit.onPaint(), colour, pixels, 0, travel);
         return result;
     }
 
     public static void depositLater(ClientLevel level, Hit hit, int colour, int pixels, Vec3 travel, boolean powder, IntConsumer after) {
-        if (hit == null || level == null || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
+        if (hit == null || level == null || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) {
+            com.simpleblood.Tally.count("drop.later.refused");
+            return;
+        }
         if (pendingCount.incrementAndGet() > MAX_PENDING) {
             pendingCount.decrementAndGet();
+            com.simpleblood.Tally.count("drop.later.full");
             return;
         }
         PENDING.add(new Deferred(level, hit, colour, pixels, travel, powder, after));
@@ -265,16 +498,20 @@ public final class BloodSurfaces {
         Deferred d;
         while ((d = PENDING.poll()) != null) {
             pendingCount.decrementAndGet();
-            if (d.level() != level) continue;
+            if (d.level() != level) {
+                com.simpleblood.Tally.count("drop.later.otherlevel");
+                continue;
+            }
             int result = deposit(d.level(), d.hit(), d.colour(), d.pixels(), d.travel(), d.powder());
+            com.simpleblood.Tally.count(result == NOTHING ? "drop.later.nothing" : "drop.later.painted");
             if (d.after() != null) d.after().accept(result);
         }
     }
 
     static CanvasTile topTile(ClientLevel level, Hit hit, boolean create) {
-        if (hit.face() != Direction.UP) return null;
+        if (hit.face() != Direction.UP || hit.part() >= 0) return null;
         syncLevel(level);
-        return tileAt(level, hit.pos(), hit.face(), hit.point(), create);
+        return tileAt(level, hit.pos(), hit.face(), hit.onPaint(), create);
     }
 
     private static void stampAt(ClientLevel level, CanvasTile tile, Vec3 point, int colour, int pixels, int depth) {
@@ -285,7 +522,7 @@ public final class BloodSurfaces {
         SimpleBloodConfig.SurfaceSettings s = settings();
         int px = clampPixel(tile.pixelX(point), tile.pw);
         int py = clampPixel(tile.pixelY(point), tile.ph);
-        if (tile.custom && tile.ny < 0.99) {
+        if (tile.custom && (tile.ny < 0.99 || isPartTile(tile))) {
             int painted = tile.stamp(px, py, pixels, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), null);
             if (painted > 0 && depth == 0 && isHandDrawn(tile.state) && Math.abs(tile.ny) < 0.3 && tile.vy < -0.7) {
                 runDownBoard(tile, px, py, colour, pixels);
@@ -392,7 +629,7 @@ public final class BloodSurfaces {
 
         if (tile.facesUp() && !droppedOff[0]) {
             droppedOff[0] = true;
-            BloodParticle.spawnRunoff(level, edge.x, edge.y - 0.02, edge.z, colour);
+            letGo(level, tile, edge.add(0, -0.02, 0), colour, 0, Double.NaN);
         }
         return false;
     }
@@ -401,30 +638,25 @@ public final class BloodSurfaces {
         RunKey key = new RunKey(side.key, column);
         Integer until = RUN_COOLDOWN.get(key);
         if (until != null && until > now) return false;
-        CanvasTile.Body body = CanvasTile.body(tile, px, py, FLOW, BODY_TILES);
-        int mass = Math.max(1, body.mass());
-        int pouring = 0;
-        for (Run run : RUNS) if (run.source != null && body.contains(run.source)) pouring++;
-        if (pouring > 0 && mass < Math.max(1, POUR_GATE * tile.pw * tile.ph / 256) * (pouring + 1)) {
+        int budget = RUN_SIM.pour(tile, px, py);
+        if (budget == 0) {
             RUN_COOLDOWN.put(key, now + 20);
             return false;
         }
-        int budget = Math.max(2, Math.min(3 * tile.res, mass / 2));
         return startRun(side, column, 0, budget, 1, colour, depth, tile, px, py);
     }
 
-    private static final int POUR_GATE = 32;
-    private static final int BODY_TILES = 6;
-
     private static boolean exposed(ClientLevel level, BlockPos pos, Direction dir) {
         BlockPos npos = pos.relative(dir);
-        BlockState ns = level.getBlockState(npos);
+        BlockState ns = blockState(level, npos);
         VoxelShape shape = ns.getShape(level, npos);
-        return shape.isEmpty() || BlockToneSampler.isCrossModel(ns) || sways(ns) || !Block.isFaceFull(shape, dir.getOpposite());
+        if (shape.isEmpty() || BlockToneSampler.isCrossModel(ns) || sways(ns) || !Block.isFaceFull(shape, dir.getOpposite())) return true;
+        ModelFaces drawn = modelFaces(ns, shape);
+        return drawn != null && !drawn.covers(dir.getOpposite());
     }
 
     private static boolean inFluid(ClientLevel level, BlockPos pos) {
-        return !level.getFluidState(pos).isEmpty();
+        return !ContraptionRides.isPlot(pos) && !level.getFluidState(pos).isEmpty();
     }
 
     private static int sideExposure(ClientLevel level, BlockPos pos) {
@@ -479,7 +711,7 @@ public final class BloodSurfaces {
         }
     }
 
-    private static Direction axisDirection(double dx, double dy, double dz) {
+    static Direction axisDirection(double dx, double dy, double dz) {
         if (dx > 0.5) return Direction.EAST;
         if (dx < -0.5) return Direction.WEST;
         if (dy > 0.5) return Direction.UP;
@@ -500,36 +732,20 @@ public final class BloodSurfaces {
         return v < 0 ? 0 : Math.min(max - 1, v);
     }
 
-    private static final class Run {
-        final CanvasTile tile;
-        final int column;
-        int volume;
-        final int colour;
-        final int interval;
+    private static final class Run extends RunSim.Run {
         final int depth;
-        int row;
-        int remaining;
-        int nextTick;
         int travelled;
-        CanvasTile source;
-        int sourceX, sourceY;
         int waterRow = -1;
         Hit floor;
+        boolean free;
+        double x, y;
+        boolean across;
+        double dirU, dirV;
 
         Run(CanvasTile tile, int column, int row, int remaining, int volume, int colour, int depth,
             CanvasTile source, int sourceX, int sourceY) {
-            this.tile = tile;
-            this.column = column;
-            this.row = row;
-            this.remaining = remaining;
-            this.volume = volume;
-            this.colour = colour;
+            super(tile, column, row, remaining, volume, colour, source, sourceX, sourceY);
             this.depth = depth;
-            this.source = source;
-            this.sourceX = sourceX;
-            this.sourceY = sourceY;
-            this.interval = Math.max(2, (6 + RNG.nextInt(4)) * 8 / tile.res);
-            this.nextTick = now + interval;
         }
     }
 
@@ -559,7 +775,7 @@ public final class BloodSurfaces {
         if (budget > 1) {
             Run run = new Run(side, column, startRow + 1, budget - 1, volume, colour, depth, source, sourceX, sourceY);
             run.floor = floorAhead(side, column, startRow);
-            RUNS.add(run);
+            RUN_SIM.add(run);
         }
         return true;
     }
@@ -572,7 +788,7 @@ public final class BloodSurfaces {
         double bottom = worldBounds(wall).minY;
         Hit hit = trace(level, start, new Vec3(start.x, bottom + 0.005, start.z));
         if (hit == null || hit.face() != Direction.UP || hit.point().y < bottom + 0.02) return null;
-        if (BlockToneSampler.isCrossModel(level.getBlockState(hit.pos()))) return null;
+        if (BlockToneSampler.isCrossModel(blockState(level, hit.pos()))) return null;
         return hit;
     }
 
@@ -583,22 +799,19 @@ public final class BloodSurfaces {
         boolean pattern = !"block".equals(s.highlightMode);
         List<Run> snapshot = new ArrayList<>(RUNS);
         for (Run run : snapshot) {
-            if (now < run.nextTick) continue;
+            if (!RUN_SIM.due(run)) continue;
             if (TILES.get(run.tile.key) != run.tile || run.remaining <= 0) {
                 RUNS.remove(run);
                 continue;
             }
-            boolean fed = false;
-            if (run.source != null) {
-                if (TILES.get(run.source.key) != run.source
-                        || !CanvasTile.body(run.source, run.sourceX, run.sourceY, FLOW, BODY_TILES)
-                                .draw(run.source.pixelCenter(run.sourceX, run.sourceY), RNG)) {
-                    run.source = null;
-                    run.remaining = Math.min(run.remaining, Math.max(1, run.tile.res / 4));
-                } else {
-                    fed = true;
-                    if ((run.travelled & 1) == 1) run.volume++;
-                }
+            boolean fed = RUN_SIM.drink(run, run.travelled);
+            if (run.across) {
+                stepAcross(level, run, fed, lifetime, pattern);
+                continue;
+            }
+            if (run.free || run.tile.slope != null && run.tile.slope.turned()) {
+                stepTurnedRun(level, run, fed, lifetime, pattern);
+                continue;
             }
             if (run.waterRow >= 0 && run.row > run.waterRow) {
                 RUNS.remove(run);
@@ -610,13 +823,15 @@ public final class BloodSurfaces {
                     && run.tile.pixelCenter(run.column, run.row).y - 0.5 / run.tile.res < run.floor.point().y - 1.0e-4) {
                 RUNS.remove(run);
                 CanvasTile floor = tileAt(level, run.floor.pos(), Direction.UP, run.floor.point());
-                if (floor != null && Math.abs(floor.oy - run.floor.point().y) < 0.05 && run.depth + 1 <= MAX_FLOW_DEPTH) {
+                if (floor != null && Math.abs(floor.oy - run.floor.point().y) < 0.05 && run.depth + 1 <= MAX_FLOW_DEPTH
+                        && !acrossStep(level, run.tile, floor, run.floor.point(), run.remaining, run.volume, run.colour, run.depth, run)) {
                     stampAt(level, floor, run.floor.point(), run.colour, Math.max(1, run.volume), run.depth + 1);
                 }
                 continue;
             }
             if (run.row < run.tile.ph && !run.tile.paintable(run.column, run.row)) {
                 RUNS.remove(run);
+                if (lidRunOn(level, run.tile, run.tile.pixelCenter(run.column, run.row), run.remaining, run.volume, run.colour, run.depth, run)) continue;
                 Vec3 at = run.tile.pixelCenter(run.column, run.row)
                         .add(run.tile.nx * 0.03, 0.5 / run.tile.res + 0.02, run.tile.nz * 0.03);
                 Hit ledge = trace(level, at, at.add(0, -0.12, 0));
@@ -633,17 +848,10 @@ public final class BloodSurfaces {
                 continue;
             }
             if (run.row < run.tile.ph) {
-                int thin = 1 + Math.min(2, run.travelled / (run.tile.res / 2));
+                int thin = RunSim.thin(run.travelled, run.tile.res);
                 run.tile.paintThin(run.column, run.row, run.colour, now, lifetime, RNG, pattern, thin);
                 run.row++;
-                run.travelled++;
-                if (!fed) run.remaining--;
-                run.nextTick = now + run.interval;
-                if (run.remaining <= 0 && run.volume > 1) {
-                    run.volume--;
-                    run.remaining = Math.max(1, run.tile.res / 4);
-                }
-                if (run.remaining <= 0) RUNS.remove(run);
+                crept(run, fed);
             } else {
                 RUNS.remove(run);
                 boolean[] dropped = {false};
@@ -653,6 +861,194 @@ public final class BloodSurfaces {
         if ((now & 255) == 0) {
             RUN_COOLDOWN.values().removeIf(t -> t < now);
         }
+    }
+
+    private static final double STEP_REACH = 0.5 + 1.0e-3;
+
+    private static boolean acrossStep(ClientLevel level, CanvasTile wall, CanvasTile floor, Vec3 at, int remaining,
+                                      int volume, int colour, int depth, Run arrived) {
+        if (floor.custom || !floor.facesUp() || remaining <= 0 || depth + 1 > MAX_FLOW_DEPTH) return false;
+        Direction away = axisDirection(wall.nx, wall.ny, wall.nz);
+        if (!away.getAxis().isHorizontal()) return false;
+        double du = away.getStepX() * floor.ux + away.getStepZ() * floor.uz;
+        double dv = away.getStepX() * floor.vx + away.getStepZ() * floor.vz;
+        double a = (at.x - floor.ox) * floor.ux + (at.y - floor.oy) * floor.uy + (at.z - floor.oz) * floor.uz;
+        double b = (at.x - floor.ox) * floor.vx + (at.y - floor.oy) * floor.vy + (at.z - floor.oz) * floor.vz;
+        double reach = du > 0.5 ? floor.w - a : du < -0.5 ? a : dv > 0.5 ? floor.h - b : dv < -0.5 ? b : Double.MAX_VALUE;
+        if (reach > STEP_REACH || !openBeyond(level, floor, away)) return false;
+        Run run = new Run(floor, 0, 0, remaining, volume, colour, depth + 1,
+                arrived != null ? arrived.source : null, arrived != null ? arrived.sourceX : 0, arrived != null ? arrived.sourceY : 0);
+        run.across = true;
+        run.x = clampPixel(floor.pixelX(at), floor.pw) + 0.5;
+        run.y = clampPixel(floor.pixelY(at), floor.ph) + 0.5;
+        run.dirU = Math.abs(du) > 0.5 ? Math.signum(du) : 0;
+        run.dirV = Math.abs(dv) > 0.5 ? Math.signum(dv) : 0;
+        SimpleBloodConfig.SurfaceSettings s = settings();
+        floor.paintThin((int) run.x, (int) run.y, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), 1);
+        run.x += run.dirU;
+        run.y += run.dirV;
+        RUN_SIM.add(run);
+        com.simpleblood.Tally.count("step.across");
+        return true;
+    }
+
+    private static void stepAcross(ClientLevel level, Run run, boolean fed, int lifetime, boolean pattern) {
+        CanvasTile t = run.tile;
+        int px = (int) Math.floor(run.x), py = (int) Math.floor(run.y);
+        if (!t.inside(px, py)) {
+            RUNS.remove(run);
+            int ex = clampPixel(px, t.pw), ey = clampPixel(py, t.ph);
+            double sx = run.dirU * t.ux + run.dirV * t.vx, sz = run.dirU * t.uz + run.dirV * t.vz;
+            Direction edgeDir = axisDirection(sx, 0, sz);
+            Vec3 edge = t.pixelCenter(ex, ey).add(sx * (0.5 / t.res), 0, sz * (0.5 / t.res));
+            CanvasTile side = settings().wallsAndCeilings ? tileAt(level, t.pos, edgeDir, edge) : null;
+            boolean fedRun = run.source != null;
+            if (side != null && startRun(side, clampPixel(side.pixelX(edge), side.pw), 0, Math.max(1, run.remaining), run.volume,
+                    run.colour, run.depth, fedRun ? run.source : null, fedRun ? run.sourceX : 0, fedRun ? run.sourceY : 0)) {
+                com.simpleblood.Tally.count("step.over");
+                return;
+            }
+            letGo(level, t, edge.add(0, -0.02, 0), run.colour, Math.max(1, run.volume), Double.NaN);
+            return;
+        }
+        if (!t.paintable(px, py)) {
+            RUNS.remove(run);
+            int bx = clampPixel((int) Math.floor(run.x - run.dirU), t.pw), by = clampPixel((int) Math.floor(run.y - run.dirV), t.ph);
+            for (int k = 0; k < Math.max(1, run.volume); k++) t.paintThin(bx, by, run.colour, now, lifetime, RNG, pattern, 0);
+            return;
+        }
+        t.paintThin(px, py, run.colour, now, lifetime, RNG, pattern, RunSim.thin(run.travelled, t.res));
+        run.x += run.dirU;
+        run.y += run.dirV;
+        crept(run, fed);
+        if (!RUNS.contains(run)) {
+            for (int k = 0; k < Math.max(1, run.volume) - 1; k++) t.paintThin(px, py, run.colour, now, lifetime, RNG, pattern, 0);
+        }
+    }
+
+    private static void stepTurnedRun(ClientLevel level, Run run, boolean fed, int lifetime, boolean pattern) {
+        CanvasTile t = run.tile;
+        Slope slope = t.slope != null ? t.slope : slopeNow(level, t);
+        if (slope == null) {
+            RUNS.remove(run);
+            return;
+        }
+        if (!run.free) {
+            run.free = true;
+            run.x = run.column + 0.5;
+            run.y = run.row + 0.5;
+            com.simpleblood.Tally.count("tilt.run");
+        }
+        int px = (int) Math.floor(run.x), py = (int) Math.floor(run.y);
+        int carried = Math.max(1, run.volume);
+        if (slope.drips()) {
+            RUNS.remove(run);
+            dropFrom(level, t, t.pixelCenter(clampPixel(px, t.pw), clampPixel(py, t.ph)), run.colour, carried);
+            com.simpleblood.Tally.count("tilt.run.drop");
+            return;
+        }
+        if (!slope.slides()) {
+            RUNS.remove(run);
+            if (t.inside(px, py) && t.paintable(px, py)) {
+                for (int k = 0; k < carried; k++) t.paintThin(px, py, run.colour, now, lifetime, RNG, pattern, 0);
+            }
+            com.simpleblood.Tally.count("tilt.run.pool");
+            return;
+        }
+        if (!t.inside(px, py)) {
+            RUNS.remove(run);
+            if (!slope.turned() && py >= t.ph && px >= 0 && px < t.pw) {
+                flowOffWallBottom(level, t, px, run.remaining, run.colour, run.volume, run.depth, new boolean[1], run);
+                return;
+            }
+            if (t.custom ? roundLidEdge(level, run) : ontoNextBlock(run, px, py)) return;
+            dropFrom(level, t, t.pixelCenter(px, py), run.colour, carried);
+            com.simpleblood.Tally.count("tilt.run.off");
+            return;
+        }
+        if (!t.paintable(px, py)) {
+            RUNS.remove(run);
+            if (!slope.turned() && lidRunOn(level, t, t.pixelCenter(px, py), run.remaining, run.volume, run.colour, run.depth, run)) return;
+            dropFrom(level, t, t.pixelCenter(px, py), run.colour, carried);
+            com.simpleblood.Tally.count("tilt.run.off");
+            return;
+        }
+        t.paintThin(px, py, run.colour, now, lifetime, RNG, pattern, RunSim.thin(run.travelled, t.res));
+        run.x += slope.stepU();
+        run.y += slope.stepV();
+        crept(run, fed);
+    }
+
+    private static boolean ontoNextBlock(Run run, int px, int py) {
+        int[] xy = new int[2];
+        CanvasTile next = FLOW.across(run.tile, px, py, xy, true);
+        if (next == null || !next.paintable(xy[0], xy[1])) return false;
+        double fx = run.x - Math.floor(run.x), fy = run.y - Math.floor(run.y);
+        return startFreeRun(next, xy[0] + fx, xy[1] + fy, run.remaining, run.volume, run.colour, run.depth,
+                run.source, run.sourceX, run.sourceY, lipCell(next, xy[0], xy[1]));
+    }
+
+    private static boolean roundLidEdge(ClientLevel level, Run run) {
+        CanvasTile t = run.tile;
+        if (t.swayPivot == null || t.slope == null) return false;
+        double fu = Math.max(0, Math.min(t.pw, run.x)) / t.pw * t.w, fv = Math.max(0, Math.min(t.ph, run.y)) / t.ph * t.h;
+        Vec3 edge = new Vec3(t.ox + t.ux * fu + t.vx * fv, t.oy + t.uy * fu + t.vy * fv, t.oz + t.uz * fu + t.vz * fv);
+        double du = t.slope.stepU(), dv = t.slope.stepV();
+        double gx = t.ux * du + t.vx * dv, gy = t.uy * du + t.vy * dv, gz = t.uz * du + t.vz * dv;
+        double eps = 0.5 / t.res;
+        for (CanvasTile o : signTiles(level, t.pos, t.state)) {
+            if (o == t || !t.swayPivot.equals(o.swayPivot)) continue;
+            if (o.nx * gx + o.ny * gy + o.nz * gz < 0.3) continue;
+            double off = (edge.x - o.ox) * o.nx + (edge.y - o.oy) * o.ny + (edge.z - o.oz) * o.nz;
+            if (Math.abs(off) > 1.0e-3) continue;
+            double a = (edge.x - o.ox) * o.ux + (edge.y - o.oy) * o.uy + (edge.z - o.oz) * o.uz;
+            double b = (edge.x - o.ox) * o.vx + (edge.y - o.oy) * o.vy + (edge.z - o.oz) * o.vz;
+            if (a < -eps || a > o.w + eps || b < -eps || b > o.h + eps) continue;
+            double x = Math.max(0.5, Math.min(o.pw - 0.5, a / o.w * o.pw)), y = Math.max(0.5, Math.min(o.ph - 0.5, b / o.h * o.ph));
+            if (!o.paintable((int) x, (int) y)) continue;
+            slopeNow(level, o);
+            if (startFreeRun(o, x, y, Math.max(1, run.remaining), run.volume, run.colour, run.depth,
+                    run.source, run.sourceX, run.sourceY, lipCell(o, (int) x, (int) y))) {
+                com.simpleblood.Tally.count("tilt.wrap");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void crept(Run run, boolean fed) {
+        run.travelled++;
+        if (!fed) run.remaining--;
+        RUN_SIM.schedule(run);
+        if (run.remaining <= 0 && run.volume > 1) {
+            run.volume--;
+            run.remaining = Math.max(1, run.tile.res / 4);
+        }
+        if (run.remaining <= 0) RUNS.remove(run);
+    }
+
+    private static boolean lidRunOn(ClientLevel level, CanvasTile wall, Vec3 at, int remaining, int volume,
+                                    int colour, int depth, Run run) {
+        if (wall.swayPivot == null || !SignFaces.lidded(wall.state)) return false;
+        com.simpleblood.Tally.count(remaining > 0 ? "lid.edge" : "lid.edge.spent");
+        if (remaining <= 0) return false;
+        SignFaces.Pose pose = SignFaces.pose(level, wall.pos, level.getGameTime(), 1f);
+        if (pose.angle() != 0 || pose.slide() != 0) return false;
+        Direction facing = axisDirection(wall.nx, wall.ny, wall.nz);
+        for (CanvasTile t : signTiles(level, wall.pos, wall.state)) {
+            if (t == wall || t.swayPivot != null || axisDirection(t.nx, t.ny, t.nz) != facing) continue;
+            if (Math.abs((t.ox - wall.ox) * wall.nx + (t.oy - wall.oy) * wall.ny + (t.oz - wall.oz) * wall.nz) > 1.0e-3) continue;
+            double a = (at.x - t.ox) * t.ux + (at.y - t.oy) * t.uy + (at.z - t.oz) * t.uz;
+            double b = (at.x - t.ox) * t.vx + (at.y - t.oy) * t.vy + (at.z - t.oz) * t.vz;
+            if (a < 0 || a > t.w || b < 0 || b > t.h) continue;
+            int col = clampPixel(t.pixelX(at), t.pw), row = clampPixel(t.pixelY(at), t.ph);
+            if (!t.paintable(col, row)) continue;
+            boolean fed = run != null && run.source != null;
+            com.simpleblood.Tally.count("lid.runon");
+            return startRun(t, col, row, remaining, volume, colour, depth, fed ? run.source : null, fed ? run.sourceX : 0, fed ? run.sourceY : 0);
+        }
+        com.simpleblood.Tally.count("lid.edge.nobase");
+        return false;
     }
 
     private static void flowOffWallBottom(ClientLevel level, CanvasTile wall, int column, int remaining,
@@ -665,13 +1061,15 @@ public final class BloodSurfaces {
         Direction face = wall.face;
         Vec3 bottom = wall.pixelCenter(column, wall.ph - 1).add(0, -0.5 / wall.res, 0);
 
+        if (lidRunOn(level, wall, bottom.add(0, -0.5 / wall.res, 0), remaining, volume, colour, depth, run)) return;
+
         if (wall.custom) {
             CanvasTile floor = tileAt(level, wall.pos.below(), Direction.UP, bottom);
             if (floor != null && Math.abs(floor.oy - bottom.y) < 0.05 && depth + 1 <= MAX_FLOW_DEPTH) {
                 stampAt(level, floor, bottom, colour, Math.max(1, volume), depth + 1);
             } else if (!dropped[0]) {
                 dropped[0] = true;
-                BloodParticle.spawnDroplet(level, bottom.x, bottom.y - 0.05, bottom.z, colour, Math.max(1, volume), Double.NaN);
+                letGo(level, wall, bottom.add(0, -0.05, 0), colour, Math.max(1, volume), Double.NaN);
             }
             return;
         }
@@ -688,7 +1086,7 @@ public final class BloodSurfaces {
         if (ground != null && ground.face() == Direction.UP && Math.abs(ground.point().y - bottom.y) < 0.05) {
             CanvasTile floor = tileAt(level, ground.pos(), Direction.UP, ground.point());
             if (floor != null && Math.abs(floor.oy - bottom.y) < 0.05) {
-                if (depth + 1 <= MAX_FLOW_DEPTH) {
+                if (depth + 1 <= MAX_FLOW_DEPTH && !acrossStep(level, wall, floor, ground.point(), remaining, volume, colour, depth, run)) {
                     stampAt(level, floor, ground.point(), colour, Math.max(1, volume), depth + 1);
                 }
                 return;
@@ -744,22 +1142,313 @@ public final class BloodSurfaces {
         }
         if (!dropped[0]) {
             dropped[0] = true;
-            BloodParticle.spawnDroplet(level, bottom.x, bottom.y - 0.05, bottom.z, colour, Math.max(1, volume), Double.NaN);
+            letGo(level, wall, bottom.add(0, -0.05, 0), colour, Math.max(1, volume), Double.NaN);
         }
+    }
+
+    private static final int DRIP_POOL = 24;
+    private static final double DROP_CLEAR = 0.04;
+    private static final int LIP_COOLDOWN = 12;
+    private static final int[] LIP = new int[2];
+    private static final int[] RELEASED = new int[3];
+
+    private static void tilt(ClientLevel level, CanvasTile tile, SimpleBloodConfig.SurfaceSettings s) {
+        com.simpleblood.compat.CreateKinetics.Part spin = spinOf(level, tile);
+        if (spin != null && Math.abs(spin.rpm()) >= com.simpleblood.compat.CreateKinetics.FLING_RPM) return;
+        Slope slope = slopeNow(level, tile);
+        boolean turned = slope != null && slope.turned();
+        if (turned && !tile.turning) {
+            tile.turnDrips = TURN_DROPS;
+            tile.turnPours = TURN_TRICKLES;
+        }
+        tile.turning = turned;
+        if (!turned || tile.isEmpty()) return;
+        if (slope.drips()) {
+            if (tile.turnDrips <= 0 || RNG.nextInt(DRIP_POOL) >= tile.count()) return;
+            if (tile.releaseLowest(slope, now, RNG, RELEASED)) {
+                dropFrom(level, tile, tile.pixelCenter(RELEASED[0], RELEASED[1]), RELEASED[2], 1);
+                com.simpleblood.Tally.count("tilt.drip");
+                if (--tile.turnDrips == 0) tile.settleExcess(now, LOWEST);
+            }
+        } else if (slope.slides() && s.wallsAndCeilings && tile.turnPours > 0 && tile.downhillRim(slope, now, RNG, LIP)) {
+            if (spill(tile, slope, LIP[0], LIP[1])) tile.turnPours--;
+        }
+    }
+
+    private static boolean spill(CanvasTile tile, Slope slope, int x, int y) {
+        double sx = x + 0.5 + slope.stepU(), sy = y + 0.5 + slope.stepV();
+        int cell = lipCell(tile, (int) Math.floor(sx), (int) Math.floor(sy));
+        Integer until = RUN_COOLDOWN.get(new RunKey(tile.key, cell));
+        if (until != null && until > now) return false;
+        if (CanvasTile.body(tile, x, y, FLOW, RunSim.BODY_TILES).excess() <= 0) return false;
+        int budget = RUN_SIM.pour(tile, x, y);
+        if (budget == 0) {
+            RUN_COOLDOWN.put(new RunKey(tile.key, cell), now + 20);
+            return false;
+        }
+        if (startFreeRun(tile, sx, sy, budget, 1, tile.colourAt(x, y), 0, tile, x, y, cell)) {
+            com.simpleblood.Tally.count("tilt.pour");
+            return true;
+        }
+        return false;
+    }
+
+    private static int lipCell(CanvasTile tile, int x, int y) {
+        return -1 - (y * (tile.pw + 2) + x + 1);
+    }
+
+    private static boolean startFreeRun(CanvasTile tile, double x, double y, int budget, int volume, int colour, int depth,
+                                        CanvasTile source, int sourceX, int sourceY, int cell) {
+        if (depth > MAX_FLOW_DEPTH || budget <= 0) return false;
+        RunKey key = new RunKey(tile.key, cell);
+        Integer until = RUN_COOLDOWN.get(key);
+        if (until != null && until > now) return false;
+        RUN_COOLDOWN.put(key, now + LIP_COOLDOWN);
+        int px = (int) Math.floor(x), py = (int) Math.floor(y);
+        Slope slope = tile.slope != null ? tile.slope : slopeNow(trackedLevel, tile);
+        if (tile.inside(px, py) && tile.paintable(px, py)) {
+            SimpleBloodConfig.SurfaceSettings s = settings();
+            tile.paintThin(px, py, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), 1);
+            if (slope != null) {
+                x += slope.stepU();
+                y += slope.stepV();
+            }
+            if (budget-- <= 1) return true;
+        }
+        Run run = new Run(tile, px, py, budget, volume, colour, depth, source, sourceX, sourceY);
+        run.free = true;
+        run.x = x;
+        run.y = y;
+        RUN_SIM.add(run);
+        return true;
+    }
+
+    private static Slope slopeNow(ClientLevel level, CanvasTile tile) {
+        boolean lid = tile.swayPivot != null && SignFaces.lidded(tile.state);
+        com.simpleblood.compat.BodyPose sub = subLevelPose(level, tile);
+        com.simpleblood.compat.CreateKinetics.Part spin = spinOf(level, tile);
+        if (!lid && sub == null && spin == null) return null;
+        Vec3 u = new Vec3(tile.ux, tile.uy, tile.uz), v = new Vec3(tile.vx, tile.vy, tile.vz), n = new Vec3(tile.nx, tile.ny, tile.nz);
+        if (lid) {
+            SignFaces.Pose pose = SignFaces.pose(level, tile.pos, level.getGameTime(), 1f);
+            if (pose.angle() != 0) {
+                u = SurfaceRenderer.swing(u, tile.swayAxis, pose.angle());
+                v = SurfaceRenderer.swing(v, tile.swayAxis, pose.angle());
+                n = SurfaceRenderer.swing(n, tile.swayAxis, pose.angle());
+            }
+        }
+        if (spin != null) {
+            double a = spin.angleNow(1f);
+            u = SurfaceRenderer.swing(u, spin.axis, a);
+            v = SurfaceRenderer.swing(v, spin.axis, a);
+            n = SurfaceRenderer.swing(n, spin.axis, a);
+        }
+        if (sub != null) {
+            u = sub.turn(u);
+            v = sub.turn(v);
+            n = sub.turn(n);
+        }
+        if (tile.slope == null) tile.slope = new Slope();
+        tile.slope.set(u.y, v.y, n.y, tile.uy, tile.vy, tile.ny);
+        return tile.slope;
+    }
+
+    private static com.simpleblood.compat.BodyPose subLevelPose(ClientLevel level, CanvasTile tile) {
+        if (ContraptionRides.isPlot(tile.pos)) return ContraptionRides.logical(tile.pos);
+        if (Boolean.FALSE.equals(tile.onSubLevel) || !com.simpleblood.compat.SableSubLevels.present()) return null;
+        com.simpleblood.compat.SableSubLevels.Pose pose = com.simpleblood.compat.SableSubLevels.logical(tile.pos, level.getGameTime());
+        if (tile.onSubLevel == null) tile.onSubLevel = pose != null;
+        return pose;
+    }
+
+    private static Vec3 posed(ClientLevel level, CanvasTile tile, Vec3 rest) {
+        return posed(level, tile, rest, false);
+    }
+
+    private static Vec3 posed(ClientLevel level, CanvasTile tile, Vec3 rest, boolean before) {
+        Vec3 p = rest;
+        if (tile.swayPivot != null && SignFaces.lidded(tile.state)) {
+            SignFaces.Pose pose = SignFaces.pose(level, tile.pos, level.getGameTime(), before ? 0f : 1f);
+            if (pose.angle() != 0) p = tile.swayPivot.add(SurfaceRenderer.swing(p.subtract(tile.swayPivot), tile.swayAxis, pose.angle()));
+            if (pose.slide() != 0) p = p.add(tile.swayAxis.scale(pose.slide()));
+        }
+        com.simpleblood.compat.CreateKinetics.Part spin = spinOf(level, tile);
+        if (spin != null) {
+            double a = spin.angleNow(1f);
+            if (before) a -= spin.rpm() * 2 * Math.PI / 60 / 20;
+            p = spun(spin, p, a);
+        }
+        com.simpleblood.compat.BodyPose sub = subLevelPose(level, tile);
+        if (sub == null) return p;
+        return before ? sub.lastToWorld(p) : sub.toWorld(p);
+    }
+
+    public static final List<double[]> MOVING_DROPS = new ArrayList<>();
+
+    private static final double MAX_SURFACE_SPEED = 1.5;
+
+    private static Vec3 surfaceVelocity(ClientLevel level, CanvasTile tile, Vec3 rest) {
+        boolean lid = tile.swayPivot != null && SignFaces.lidded(tile.state);
+        if (!lid && spinOf(level, tile) == null && subLevelPose(level, tile) == null) return Vec3.ZERO;
+        Vec3 v = posed(level, tile, rest).subtract(posed(level, tile, rest, true));
+        double len = v.length();
+        return len > MAX_SURFACE_SPEED ? Vec3.ZERO : v;
+    }
+
+    private static void letGo(ClientLevel level, CanvasTile tile, Vec3 rest, int colour, int carried, double floorY) {
+        Vec3 at = posed(level, tile, rest);
+        Vec3 v = surfaceVelocity(level, tile, rest);
+        if (v.lengthSqr() < 1.0e-8) {
+            BloodParticle.spawnDroplet(level, at.x, at.y, at.z, colour, carried, floorY);
+        } else {
+            BloodParticle.spawnMoving(level, at.x, at.y, at.z, colour, carried, floorY, v.x, v.y - 0.02, v.z);
+            com.simpleblood.Tally.count("drop.moving");
+            com.simpleblood.Tally.add("drop.moving.speed.mm", Math.round(v.length() * 1000));
+            if (com.simpleblood.Tally.ON && MOVING_DROPS.size() < 256) MOVING_DROPS.add(new double[]{at.x, at.y, at.z, v.x, v.y, v.z});
+        }
+    }
+
+    private static final Map<Long, com.simpleblood.compat.CreateKinetics.Part> SPIN_PARTS = new HashMap<>();
+
+    private static Object spinningEntity(ClientLevel level, BlockPos pos) {
+        return ContraptionRides.isPlot(pos) ? ContraptionRides.blockEntity(pos) : level.getBlockEntity(pos);
+    }
+
+    static com.simpleblood.compat.CreateKinetics.Part spinOf(ClientLevel level, CanvasTile tile) {
+        if (tile.spinAsked) return tile.spin;
+        tile.spinAsked = true;
+        tile.spin = null;
+        if (!com.simpleblood.compat.CreateKinetics.present() || level == null) return null;
+        Object be = spinningEntity(level, tile.pos);
+        com.simpleblood.compat.CreateKinetics.Part part = SPIN_PARTS.get(tile.pos.asLong());
+        if (part == null || !part.alive(be)) {
+            part = com.simpleblood.compat.CreateKinetics.part(tile.state, be, Vec3.atCenterOf(tile.pos), CreateParts.of(tile.state) != null);
+            if (part == null) SPIN_PARTS.remove(tile.pos.asLong());
+            else SPIN_PARTS.put(tile.pos.asLong(), part);
+        }
+        if (part != null && (isPartTile(tile) || part.turns(tile.face, tile.custom))) tile.spin = part;
+        return tile.spin;
+    }
+
+    private static final double FLING_RATE = 1.5;
+    private static final double FLING_CLEAR = 0.06;
+
+    private static void fling(ClientLevel level, CanvasTile tile) {
+        com.simpleblood.compat.CreateKinetics.Part part = spinOf(level, tile);
+        if (part == null || tile.isEmpty()) return;
+        double rpm = part.rpm();
+        double over = Math.abs(rpm) - com.simpleblood.compat.CreateKinetics.FLING_RPM;
+        if (over <= 0) return;
+        double perTick = FLING_RATE * over / com.simpleblood.compat.CreateKinetics.FLING_RPM * Math.min(1, tile.count() / 32.0) / 20;
+        if (RNG.nextDouble() >= perTick) return;
+        int[] unit = tile.releaseUnit(RNG);
+        if (unit == null) return;
+        double a = part.angleNow(1f);
+        Vec3 r = SurfaceRenderer.swing(tile.pixelCenter(unit[0], unit[1]).subtract(part.centre), part.axis, a);
+        Vec3 out = r.subtract(part.axis.scale(r.dot(part.axis)));
+        Vec3 n = SurfaceRenderer.swing(new Vec3(tile.nx, tile.ny, tile.nz), part.axis, a);
+        Vec3 at = part.centre.add(r).add(n.scale(FLING_CLEAR)).add(out.lengthSqr() > 1.0e-6 ? out.normalize().scale(FLING_CLEAR) : Vec3.ZERO);
+        Vec3 velocity = surfaceVelocity(level, tile, tile.pixelCenter(unit[0], unit[1]));
+        com.simpleblood.compat.BodyPose sub = subLevelPose(level, tile);
+        if (sub != null) at = sub.toWorld(at);
+        BloodParticle.spawnFlung(level, at.x, at.y, at.z, unit[2], 1, velocity.x, velocity.y, velocity.z);
+        com.simpleblood.Tally.count("create.fling");
+    }
+
+    private static void dropFrom(ClientLevel level, CanvasTile tile, Vec3 rest, int colour, int volume) {
+        letGo(level, tile, rest.add(tile.nx * DROP_CLEAR, tile.ny * DROP_CLEAR, tile.nz * DROP_CLEAR), colour, Math.max(1, volume), Double.NaN);
+        com.simpleblood.Tally.count("tilt.drop");
+    }
+
+    private static final Map<Long, Integer> HEAT = new HashMap<>();
+    private static int heatRound = -1;
+
+    private static void heat(ClientLevel level, CanvasTile tile) {
+        if (tile.isEmpty()) return;
+        if (now >> 4 != heatRound) {
+            heatRound = now >> 4;
+            HEAT.clear();
+        }
+        int h = HEAT.computeIfAbsent(tile.pos.asLong(), k -> heatAt(level, tile.pos));
+        if (h == 0) return;
+        com.simpleblood.Tally.count("heat.dry");
+        tile.accelerateAging(16 * (h == 2 ? 11 : 2));
+        if (!tile.sizzled || RNG.nextInt(h == 2 ? 2 : 5) == 0) {
+            tile.sizzled = true;
+            Vec3 c = tile.center();
+            Vec3 at = c.add(tile.nx * 0.05, tile.ny * 0.05, tile.nz * 0.05);
+            com.simpleblood.BloodSounds.sizzle(level, at);
+            level.addParticle(net.minecraft.core.particles.ParticleTypes.SMOKE, at.x, at.y, at.z, 0, 0.02, 0);
+        }
+    }
+
+    private static int heatAt(ClientLevel level, BlockPos pos) {
+        if (ContraptionRides.isPlot(pos)) return 0;
+        if (isHot(level.getBlockState(pos))) return 2;
+        int warm = 0;
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dy = -2; dy <= 2; dy++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    m.set(pos.getX() + dx, pos.getY() + dy, pos.getZ() + dz);
+                    if (!isHot(level.getBlockState(m))) continue;
+                    if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) <= 1) return 2;
+                    warm = 1;
+                }
+            }
+        }
+        return warm;
+    }
+
+    public static boolean isSnow(BlockState state) {
+        return state.is(net.minecraft.tags.BlockTags.SNOW);
+    }
+
+    public static boolean isHot(BlockState state) {
+        if (state.isAir()) return false;
+        if (state.getFluidState().is(net.minecraft.tags.FluidTags.LAVA)) return true;
+        if (state.is(net.minecraft.tags.BlockTags.FIRE)) return true;
+        if (state.is(net.minecraft.world.level.block.Blocks.MAGMA_BLOCK) || state.is(net.minecraft.world.level.block.Blocks.LAVA_CAULDRON)) return true;
+        return state.getBlock() instanceof net.minecraft.world.level.block.CampfireBlock && net.minecraft.world.level.block.CampfireBlock.isLitCampfire(state);
     }
 
     private static final Map<Long, List<CanvasTile>> BY_POS = new HashMap<>();
     private static final Map<Long, BlockState> CHANGED = new LinkedHashMap<>();
+    private static final java.util.Set<Long> NEAR_CHANGED = new java.util.LinkedHashSet<>();
+    private static final Direction[] ALL_DIRECTIONS = Direction.values();
 
     public static void blockChanging(ClientLevel level, BlockPos pos) {
         try {
             if (BY_POS.isEmpty() || !RenderThread.on() || level != trackedLevel) return;
             long key = pos.asLong();
-            if (!BY_POS.containsKey(key) || CHANGED.containsKey(key)) return;
-            CHANGED.put(key, level.getBlockState(pos));
+            if (BY_POS.containsKey(key) && !CHANGED.containsKey(key)) CHANGED.put(key, level.getBlockState(pos));
+            if (BY_POS.containsKey(key)) NEAR_CHANGED.add(key);
+            for (Direction d : ALL_DIRECTIONS) {
+                long n = BlockPos.offset(key, d);
+                if (BY_POS.containsKey(n)) NEAR_CHANGED.add(n);
+            }
         } catch (Throwable t) {
             com.simpleblood.Guard.fail(com.simpleblood.Guard.Part.SURFACES, "following a block that changed", t);
         }
+    }
+
+    private static boolean grewOrShrank(ClientLevel level, BlockPos pos, BlockState was, BlockState is, List<CanvasTile> here) {
+        if (was.getBlock() != is.getBlock()) return false;
+        if (was.getBlock() instanceof SnowLayerBlock) {
+            boolean deeper = is.getValue(SnowLayerBlock.LAYERS) > was.getValue(SnowLayerBlock.LAYERS);
+            List<CanvasTile> rest = new ArrayList<>();
+            for (CanvasTile t : new ArrayList<>(here)) {
+                if (deeper && t.face == Direction.UP) remove(t);
+                else rest.add(t);
+            }
+            if (!rest.isEmpty()) carry(level, pos, rest, STAY);
+            return true;
+        }
+        if (was.getBlock() instanceof CakeBlock) {
+            carry(level, pos, new ArrayList<>(here), STAY);
+            return true;
+        }
+        return false;
     }
 
     private record Move(CanvasTile tile, BlockPos to, Direction by, PistonMovingBlockEntity mover) {}
@@ -767,6 +1456,21 @@ public final class BloodSurfaces {
     private record Carried(Vec3 at, Vec3 normal, CanvasTile.Lifted pixel, int res) {}
 
     private static void followChanges(ClientLevel level) {
+        if (CHANGED.isEmpty() && NEAR_CHANGED.isEmpty()) return;
+        followMoves(level);
+        if (NEAR_CHANGED.isEmpty()) return;
+        SimpleBloodConfig.SurfaceSettings s = settings();
+        for (Long key : NEAR_CHANGED) {
+            List<CanvasTile> here = BY_POS.get(key);
+            if (here == null) continue;
+            for (CanvasTile tile : here.toArray(new CanvasTile[0])) {
+                if (TILES.get(tile.key) == tile && checkBlock(level, tile, s, false) && tile.isEmpty()) remove(tile);
+            }
+        }
+        NEAR_CHANGED.clear();
+    }
+
+    private static void followMoves(ClientLevel level) {
         if (CHANGED.isEmpty()) return;
         List<Move> moves = new ArrayList<>();
         for (Map.Entry<Long, BlockState> e : CHANGED.entrySet()) {
@@ -775,6 +1479,8 @@ public final class BloodSurfaces {
             List<CanvasTile> here = BY_POS.get(e.getKey());
             if (was == is || here == null || here.isEmpty()) continue;
             if (pistonMoves(level, pos, was, is, here, moves)) continue;
+            if (grewOrShrank(level, pos, was, is, here)) continue;
+            if (is.isAir() && ContraptionRides.hold(pos, here)) continue;
             BlockMotion.Motion motion = BlockMotion.of(level, pos, was, is);
             if (motion != null) carry(level, pos, new ArrayList<>(here), motion);
         }
@@ -848,6 +1554,7 @@ public final class BloodSurfaces {
     }
 
     private static void carry(ClientLevel level, BlockPos pos, List<CanvasTile> tiles, BlockMotion.Motion motion) {
+        java.util.Set<CanvasTile> landed = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         List<Carried> carried = new ArrayList<>();
         for (CanvasTile t : tiles) {
             Vec3 n = new Vec3(t.nx, t.ny, t.nz);
@@ -864,13 +1571,45 @@ public final class BloodSurfaces {
             if (t == null || Math.abs((at.x - t.ox) * t.nx + (at.y - t.oy) * t.ny + (at.z - t.oz) * t.nz) > 0.03
                     || !t.place(c.pixel(), t.pixelX(at), t.pixelY(at), now)) {
                 lost.add(c);
+            } else {
+                landed.add(t);
             }
         }
-        for (int i = 0; i < lost.size(); i += 6) {
-            Carried c = lost.get(i);
-            BloodParticle.spawnDroplet(level, c.at().x, c.at().y, c.at().z, c.pixel().rgb(),
-                    Math.min(c.res() / 2, 1 + c.pixel().depth()), c.at().y - MAX_FALL);
+        letGoOfTurn(level, landed, lost);
+    }
+
+    private static final int TURN_DROPS = 4, TURN_TRICKLES = 2;
+    private static final int[] LOWEST = new int[3];
+
+    private static void letGoOfTurn(ClientLevel level, java.util.Set<CanvasTile> landed, List<Carried> lost) {
+        int drops = 0, trickles = 0;
+        for (CanvasTile t : landed) {
+            if (t.facesUp()) continue;
+            int excess = t.settleExcess(now, LOWEST);
+            if (excess <= 0) continue;
+            Vec3 at = t.pixelCenter(LOWEST[0], LOWEST[1]);
+            if (t.ny < -0.5) {
+                if (drops >= TURN_DROPS) continue;
+                drops++;
+                com.simpleblood.Tally.count("turn.drop");
+                letGo(level, t, at.add(0, -0.03, 0), LOWEST[2], Math.min(3, excess), Double.NaN);
+            } else if (Math.abs(t.ny) < 0.5 && trickles < TURN_TRICKLES && settings().wallsAndCeilings
+                    && startRun(t, LOWEST[0], LOWEST[1] + 1, Math.min(t.ph, 2 + excess), Math.min(3, 1 + excess / 4), LOWEST[2], 0)) {
+                trickles++;
+                com.simpleblood.Tally.count("turn.trickle");
+            }
         }
+        int wet = 0;
+        for (Carried c : lost) {
+            CanvasTile.Lifted px = c.pixel();
+            if (px.powder() || com.simpleblood.BloodMix.wetness(now, px.born(), px.life()) < 0.5f) continue;
+            if (wet++ % 6 != 0 || drops >= TURN_DROPS) continue;
+            drops++;
+            com.simpleblood.Tally.count("turn.drop");
+            BloodParticle.spawnDroplet(level, c.at().x, c.at().y, c.at().z, px.rgb(),
+                    Math.min(c.res() / 2, 1 + px.depth()), c.at().y - MAX_FALL);
+        }
+        com.simpleblood.Tally.add("turn.lost", lost.size());
     }
 
     private static boolean settle(ClientLevel level, CanvasTile tile) {
@@ -993,7 +1732,9 @@ public final class BloodSurfaces {
             if (tile == null) {
                 SignFaces.Rect r = rects.get(i);
                 Vec3 origin = r.origin().add(pos.getX(), pos.getY(), pos.getZ());
-                tile = new CanvasTile(key, pos, state, origin, r.u(), r.v(), r.w(), r.h(), res, now, null);
+                int pw = Math.max(1, Math.min(BloodCanvasAtlas.TILE, (int) Math.round(r.w() * res)));
+                int ph = Math.max(1, Math.min(BloodCanvasAtlas.TILE, (int) Math.round(r.h() * res)));
+                tile = new CanvasTile(key, pos, state, origin, r.u(), r.v(), r.w(), r.h(), res, now, SignFaces.mask(r, pw, ph), pw, ph);
                 if (r.n().x * tile.nx + r.n().y * tile.ny + r.n().z * tile.nz < 0) tile.flipNormal();
                 if (r.pivot() != null) {
                     tile.swayPivot = r.pivot().add(pos.getX(), pos.getY(), pos.getZ());
@@ -1043,24 +1784,133 @@ public final class BloodSurfaces {
         }
     }
 
+    private static final class WaterTint {
+        int colour;
+        float amount;
+        int shownStep = -1;
+        int shownTick;
+    }
+
+    private static final Map<Long, WaterTint> TINTS = new HashMap<>();
+    private static final Map<Long, Integer> WATER_COLOURS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final float TINT_PER_DROP = 0.025f, TINT_MAX = 0.5f, TINT_CLEARS = 1f / 1200;
+    private static final int TINT_STEPS = 64, TINT_REDRAW_TICKS = 5;
+    private static final float TINT_BLUE_PULL = 1.6f;
+    private static final double RIM_IN = 2.0 / 16, RIM_OUT = 14.0 / 16;
+
+    private static double cauldronWater(BlockState state) {
+        if (!state.is(net.minecraft.world.level.block.Blocks.WATER_CAULDRON)) return 0;
+        return (6 + 3 * state.getValue(net.minecraft.world.level.block.LayeredCauldronBlock.LEVEL)) / 16.0;
+    }
+
+    public static boolean inCauldronWater(ClientLevel level, double x, double y, double z) {
+        BlockPos pos = BlockPos.containing(x, y, z);
+        double h = cauldronWater(blockState(level, pos));
+        if (h <= 0) return false;
+        double lx = x - pos.getX(), ly = y - pos.getY(), lz = z - pos.getZ(), e = 1.0e-3;
+        return ly <= h + e && lx >= RIM_IN - e && lx <= RIM_OUT + e && lz >= RIM_IN - e && lz <= RIM_OUT + e;
+    }
+
+    public static void intoCauldron(ClientLevel level, Vec3 at, int colour) {
+        if (!RenderThread.on()) {
+            RenderThread.run(() -> intoCauldron(level, at, colour));
+            return;
+        }
+        BlockPos pos = BlockPos.containing(at);
+        double h = cauldronWater(blockState(level, pos));
+        if (h <= 0) return;
+        fogAt(level, new Vec3(at.x, Math.min(at.y, pos.getY() + h - 0.12), at.z), colour);
+        com.simpleblood.Tally.count("cauldron.cloud");
+        WaterTint t = TINTS.computeIfAbsent(pos.asLong(), k -> new WaterTint());
+        float was = t.amount;
+        t.amount = Math.min(TINT_MAX, was + TINT_PER_DROP);
+        t.colour = was <= 0 ? colour & 0xFFFFFF : mixRgb(t.colour, colour, TINT_PER_DROP / (was + TINT_PER_DROP));
+    }
+
+    private static int mixRgb(int a, int b, float k) {
+        int r = Math.round(((a >> 16) & 0xFF) * (1 - k) + ((b >> 16) & 0xFF) * k);
+        int g = Math.round(((a >> 8) & 0xFF) * (1 - k) + ((b >> 8) & 0xFF) * k);
+        int bl = Math.round((a & 0xFF) * (1 - k) + (b & 0xFF) * k);
+        return (r << 16) | (g << 8) | bl;
+    }
+
+    public static int cauldronWaterColour(BlockPos pos, int base) {
+        if (WATER_COLOURS.isEmpty() || pos == null) return base;
+        Integer tint = WATER_COLOURS.get(pos.asLong());
+        if (tint == null) return base;
+        float k = ((tint >>> 24) & 0xFF) / 255.0f, kBlue = Math.min(1, k * TINT_BLUE_PULL);
+        int r = Math.round(((base >> 16) & 0xFF) * (1 - k) + ((tint >> 16) & 0xFF) * k);
+        int g = Math.round(((base >> 8) & 0xFF) * (1 - k) + ((tint >> 8) & 0xFF) * k);
+        int bl = Math.round((base & 0xFF) * (1 - kBlue) + (tint & 0xFF) * kBlue);
+        return (base & 0xFF000000) | (r << 16) | (g << 8) | bl;
+    }
+
+    private static void tickTints(ClientLevel level) {
+        if (TINTS.isEmpty()) return;
+        float opacity = settings().opacity / 100.0f;
+        java.util.Iterator<Map.Entry<Long, WaterTint>> it = TINTS.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<Long, WaterTint> e = it.next();
+            WaterTint t = e.getValue();
+            BlockPos pos = BlockPos.of(e.getKey());
+            BlockState state = level.hasChunkAt(pos) ? level.getBlockState(pos) : null;
+            double h = state == null ? 0 : cauldronWater(state);
+            t.amount -= t.amount * TINT_CLEARS + 1.0e-5f;
+            if (h <= 0 || t.amount <= 0.01f) {
+                it.remove();
+                if (WATER_COLOURS.remove(e.getKey()) != null) redrawWater(level, pos);
+                continue;
+            }
+            int step = Math.round(t.amount * opacity * TINT_STEPS);
+            if (step != t.shownStep && now - t.shownTick >= TINT_REDRAW_TICKS) {
+                t.shownStep = step;
+                t.shownTick = now;
+                int amount = Math.min(255, Math.round(step * 255.0f / TINT_STEPS));
+                WATER_COLOURS.put(e.getKey(), (amount << 24) | (t.colour & 0xFFFFFF));
+                redrawWater(level, pos);
+            }
+        }
+    }
+
+    private static void redrawWater(ClientLevel level, BlockPos pos) {
+        level.setSectionDirtyWithNeighbors(SectionPos.blockToSectionCoord(pos.getX()),
+                SectionPos.blockToSectionCoord(pos.getY()), SectionPos.blockToSectionCoord(pos.getZ()));
+    }
+
+    private static void clearTints() {
+        TINTS.clear();
+        WATER_COLOURS.clear();
+    }
+
     private static void dripFromCeiling(ClientLevel level, CanvasTile tile) {
         if (tile.face != Direction.DOWN || tile.isEmpty()) return;
         if (RNG.nextDouble() > Math.min(0.5, tile.count() / 100.0)) return;
+        if (tile.slope != null && tile.slope.turned()) return;
         int[] unit = tile.releaseUnit(RNG);
         if (unit == null) return;
-        Vec3 p = tile.pixelCenter(unit[0], unit[1]);
-        BloodParticle.spawnDroplet(level, p.x, p.y - 0.03, p.z, unit[2], 1, Double.NaN);
+        letGo(level, tile, tile.pixelCenter(unit[0], unit[1]).add(0, -0.03, 0), unit[2], 1, Double.NaN);
     }
 
-    private static CanvasTile tileAt(ClientLevel level, BlockPos pos, Direction face, Vec3 point) {
+    static CanvasTile tileAt(ClientLevel level, BlockPos pos, Direction face, Vec3 point) {
         return tileAt(level, pos, face, point, true);
     }
 
     private static CanvasTile tileAt(ClientLevel level, BlockPos pos, Direction face, Vec3 point, boolean create) {
-        BlockState state = level.getBlockState(pos);
+        BlockState state = blockState(level, pos);
         if (sways(state)) return null;
+        if (com.simpleblood.compat.CreateKinetics.present()) {
+            CreateParts.Model part = CreateParts.of(state);
+            if ((part != null && part.partOnly()) || CreateParts.isWheelHelper(state)) {
+                return null;
+            }
+        }
         if (isHandDrawn(state)) {
             if (!create) return null;
+            if (SignFaces.lidded(state)
+                    && !SignFaces.onDrawn(state, point.subtract(pos.getX(), pos.getY(), pos.getZ()), face)) {
+                com.simpleblood.Tally.count("lid.miss");
+                return null;
+            }
             return nearestPlane(signTiles(level, pos, state), point, face);
         }
         if (isCrossModel(state)) {
@@ -1157,7 +2007,9 @@ public final class BloodSurfaces {
 
     private static boolean[] visiblePixels(ClientLevel level, CanvasTile t) {
         if (t.custom || level == null) return null;
-        boolean[] visible = null;
+        boolean[][] hidden = {null};
+        hidePartFaces(t, hidden);
+        boolean[] visible = hidden[0];
         for (int py = 0; py < t.ph; py++) {
             for (int px = 0; px < t.pw; px++) {
                 Vec3 p = t.pixelCenter(px, py);
@@ -1174,10 +2026,13 @@ public final class BloodSurfaces {
 
     private static boolean coveredAt(ClientLevel level, CanvasTile t, double x, double y, double z) {
         BlockPos at = BlockPos.containing(x, y, z);
-        if (at.equals(t.pos)) return visibleSolidAt(level, x, y, z);
-        BlockState state = level.getBlockState(at);
+        if (at.equals(t.pos) && !ContraptionRides.isPlot(at)) return visibleSolidAt(level, x, y, z);
+        BlockState state = blockState(level, at);
         if (state.isAir()) return false;
         double lx = x - at.getX(), ly = y - at.getY(), lz = z - at.getZ();
+        VoxelShape outline = state.getShape(level, at);
+        ModelFaces drawn = outline.isEmpty() ? null : modelFaces(state, outline);
+        if (drawn != null && !drawn.withinOutline) return drawn.insideSolid(lx, ly, lz);
         for (AABB b : state.getCollisionShape(level, at).toAabbs()) {
             if (b.inflate(0.002).contains(lx, ly, lz)) return true;
         }
@@ -1201,17 +2056,18 @@ public final class BloodSurfaces {
             if (score < tiltedScore) { tiltedScore = score; tilted = s; }
         }
         double[] flatScore = {Double.MAX_VALUE};
-        AABB flat = bestFlatFace(faces, face, lp, flatScore);
+        ModelFaces.Face flat = bestFlatFace(faces, face, lp, flatScore);
         if (tilted != null && tiltedScore <= 0.35 && tiltedScore < flatScore[0]) {
-            return slantedTile(level, pos, state, tilted, create);
+            return planeTile(level, pos, state, tilted.index(), create);
         }
         if (flat == null || flatScore[0] > 0.35) return null;
-        return quadFaceTile(level, pos, state, face, flat, create);
+        if (flat.cut() != null) return planeTile(level, pos, state, flat.quad(), create);
+        return quadFaceTile(level, pos, state, face, flat.box(), create);
     }
 
-    private static AABB bestFlatFace(ModelFaces faces, Direction face, Vec3 lp, double[] score) {
+    private static ModelFaces.Face bestFlatFace(ModelFaces faces, Direction face, Vec3 lp, double[] score) {
         double bestScore = Double.MAX_VALUE;
-        AABB bestBox = null;
+        ModelFaces.Face bestFace = null;
         double lx = lp.x, ly = lp.y, lz = lp.z;
         for (ModelFaces.Face f : faces.faces) {
             if (f.dir() != face) continue;
@@ -1226,24 +2082,137 @@ public final class BloodSurfaces {
             if (face.getAxis() != Direction.Axis.Y) outside += Math.max(0, Math.max(b.minY - ly, ly - b.maxY));
             if (face.getAxis() != Direction.Axis.Z) outside += Math.max(0, Math.max(b.minZ - lz, lz - b.maxZ));
             double d = plane * 4 + outside;
-            if (d < bestScore) { bestScore = d; bestBox = b; }
+            if (d < bestScore) { bestScore = d; bestFace = f; }
         }
         score[0] = bestScore;
-        return bestBox;
+        return bestFace;
+    }
+
+    public static long waterTint(BlockPos pos) {
+        WaterTint t = TINTS.get(pos.asLong());
+        return t == null ? 0 : Math.round(t.amount * 1000);
+    }
+
+    public static int bloodOnSeeThrough(ClientLevel level, CanvasTile t) {
+        if (isHandDrawn(t.state) || isPartTile(t)) return 0;
+        Vec3 base = Vec3.atLowerCornerOf(t.pos).add(modelOffset(level, t.pos, t.state));
+        Vec3 n = new Vec3(t.nx, t.ny, t.nz);
+        double du = 0.3 / t.pw, dv = 0.3 / t.ph;
+        int count = 0;
+        for (int py = 0; py < t.ph; py++) {
+            for (int px = 0; px < t.pw; px++) {
+                if (!t.filled(px, py)) continue;
+                boolean seen = false, asked = false;
+                for (int k = 0; k < 4 && !seen; k++) {
+                    double a = (px + 0.5) / t.pw + ((k & 1) == 0 ? -du : du), b = (py + 0.5) / t.ph + ((k & 2) == 0 ? -dv : dv);
+                    Vec3 p = new Vec3(t.ox + t.ux * a * t.w + t.vx * b * t.h, t.oy + t.uy * a * t.w + t.vy * b * t.h,
+                            t.oz + t.uz * a * t.w + t.vz * b * t.h).subtract(base);
+                    int s = BlockToneSampler.seenAt(t.state, p, n);
+                    if (s >= 0) asked = true;
+                    if (s == 1) seen = true;
+                }
+                if (asked && !seen) count++;
+            }
+        }
+        return count;
+    }
+
+    public static int bloodOffPart(CanvasTile t) {
+        CreateParts.Face f = partFace(t);
+        if (f == null) return 0;
+        int n = 0;
+        for (int py = 0; py < t.ph; py++) {
+            for (int px = 0; px < t.pw; px++) {
+                if (t.filled(px, py) && !f.seen((px + 0.5) / t.pw * f.w(), (py + 0.5) / t.ph * f.h())) n++;
+            }
+        }
+        return n;
+    }
+
+    public static String partMaskArt(CanvasTile t) {
+        CreateParts.Face f = partFace(t);
+        if (f == null) return "(not on a part)";
+        StringBuilder sb = new StringBuilder();
+        for (int py = 0; py < t.ph; py++) {
+            for (int px = 0; px < t.pw; px++) {
+                boolean seen = f.seen((px + 0.5) / t.pw * f.w(), (py + 0.5) / t.ph * f.h());
+                sb.append(t.filled(px, py) ? (seen ? '#' : 'X') : seen ? 'o' : '.');
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static CreateParts.Face partFace(CanvasTile t) {
+        if (!isPartTile(t)) return null;
+        CreateParts.Model m = CreateParts.of(t.state);
+        int i = -1 - t.key.box();
+        return m == null || i >= m.faces().size() ? null : m.faces().get(i);
+    }
+
+    public static boolean onTurningPart(CanvasTile t) {
+        return isPartTile(t);
+    }
+
+    static boolean isPartTile(CanvasTile t) {
+        return t.custom && t.key.box() < 0;
+    }
+
+    private static CanvasTile partTile(ClientLevel level, BlockPos pos, int face, boolean create) {
+        CanvasTile.Key key = new CanvasTile.Key(pos.asLong(), Direction.UP, -1 - face);
+        CanvasTile tile = TILES.get(key);
+        BlockState state = blockState(level, pos);
+        if (tile != null && tile.state != state) { remove(tile); tile = null; }
+        if (tile != null || !create) return tile;
+        CreateParts.Model model = CreateParts.of(state);
+        if (model == null || face >= model.faces().size()) return null;
+        CreateParts.Face f = model.faces().get(face);
+        SimpleBloodConfig.SurfaceSettings s = settings();
+        int res = s.resolution == 16 ? 16 : 8;
+        int per = 16 / res;
+        int pw = Math.max(1, Math.min(BloodCanvasAtlas.TILE, (f.pw() + per - 1) / per));
+        int ph = Math.max(1, Math.min(BloodCanvasAtlas.TILE, (f.ph() + per - 1) / per));
+        Vec3 origin = Vec3.atLowerCornerOf(pos).add(f.origin());
+        tile = new CanvasTile(key, pos, state, origin, f.u(), f.v(), f.w(), f.h(), res, now, f.mask(pw, ph), pw, ph);
+        if (TILES.size() >= s.maxTiles) evictOldest();
+        putTile(key, tile);
+        return tile;
+    }
+
+    private static void hidePartFaces(CanvasTile t, boolean[][] visible) {
+        if (t.custom || !com.simpleblood.compat.CreateKinetics.present()) return;
+        CreateParts.Model model = CreateParts.of(t.state);
+        if (model == null) return;
+        double bx = t.pos.getX(), by = t.pos.getY(), bz = t.pos.getZ();
+        for (CreateParts.Face f : model.faces()) {
+            if (f.n().x * t.nx + f.n().y * t.ny + f.n().z * t.nz < 0.99) continue;
+            for (int py = 0; py < t.ph; py++) {
+                for (int px = 0; px < t.pw; px++) {
+                    Vec3 p = t.pixelCenter(px, py);
+                    double x = p.x - bx, y = p.y - by, z = p.z - bz;
+                    if (Math.abs(f.off(x, y, z)) > 0.004 || !f.covers(x, y, z)) continue;
+                    if (visible[0] == null) {
+                        visible[0] = new boolean[t.pw * t.ph];
+                        java.util.Arrays.fill(visible[0], true);
+                    }
+                    visible[0][py * t.pw + px] = false;
+                }
+            }
+        }
     }
 
     private static final int SLANTED_KEY_BASE = 400;
 
-    private static CanvasTile slantedTile(ClientLevel level, BlockPos pos, BlockState state, ModelFaces.Slanted s, boolean create) {
-        CanvasTile.Key key = new CanvasTile.Key(pos.asLong(), Direction.UP, SLANTED_KEY_BASE + s.index());
+    private static CanvasTile planeTile(ClientLevel level, BlockPos pos, BlockState state, int index, boolean create) {
+        CanvasTile.Key key = new CanvasTile.Key(pos.asLong(), Direction.UP, SLANTED_KEY_BASE + index);
         CanvasTile tile = TILES.get(key);
         if (tile != null && tile.state != state) { remove(tile); tile = null; }
         if (tile == null && !create) return null;
         if (tile == null) {
             List<BlockToneSampler.QuadInfo> quads = BlockToneSampler.allQuads(state);
-            if (s.index() >= quads.size()) return null;
+            if (index >= quads.size()) return null;
             SimpleBloodConfig.SurfaceSettings cfg = settings();
-            tile = quadTile(key, pos, state, quads.get(s.index()), cfg.resolution == 16 ? 16 : 8, Vec3.ZERO);
+            tile = quadTile(key, pos, state, quads.get(index), cfg.resolution == 16 ? 16 : 8, Vec3.ZERO);
             if (tile == null) return null;
             if (TILES.size() >= cfg.maxTiles) evictOldest();
             putTile(key, tile);
@@ -1356,7 +2325,7 @@ public final class BloodSurfaces {
 
     private static void releaseAsDroplets(ClientLevel level, CanvasTile tile) {
         int count = tile.count();
-        if (count == 0) return;
+        if (count <= 0) return;
 
         if (tile.face == Direction.UP && !tile.custom) {
             Vec3 c = tile.center();
@@ -1365,6 +2334,7 @@ public final class BloodSurfaces {
                 double dist = c.y - below.point().y;
                 int landTick = now + (int) (4 + 4 * Math.sqrt(Math.max(0.25, dist)));
                 List<int[]> snap = tile.snapshot();
+                if (snap.isEmpty()) return;
                 FALLING.add(new FallingShape(snap, tile, below.point(), landTick));
                 int drops = Math.min(6, Math.max(1, count / 8));
                 for (int i = 0; i < drops; i++) {
@@ -1386,6 +2356,17 @@ public final class BloodSurfaces {
                 if (seen++ % group != 0) continue;
                 Vec3 p = tile.pixelCenter(px, py);
                 BloodParticle.spawnDroplet(level, p.x, p.y, p.z, tile.colourAt(px, py), carried, floorY);
+            }
+        }
+    }
+
+    private static void dropAll(ClientLevel level, CanvasTile tile) {
+        int group = Math.max(1, (int) Math.ceil(tile.count() / 8.0));
+        int seen = 0;
+        for (int py = 0; py < tile.ph; py++) {
+            for (int px = 0; px < tile.pw; px++) {
+                if (!tile.filled(px, py) || seen++ % group != 0) continue;
+                dropFrom(level, tile, tile.pixelCenter(px, py), tile.colourAt(px, py), Math.min(tile.res / 2, group));
             }
         }
     }
@@ -1551,18 +2532,97 @@ public final class BloodSurfaces {
         }
     };
 
+    private static final RunSim<Run> RUN_SIM = new RunSim<>(RUNS, FLOW, t -> TILES.get(t.key) == t, RNG, () -> now);
+
     private static boolean feedRun(CanvasTile tile, int px, int py, CanvasTile side, int column, int colour) {
-        for (Run run : RUNS) {
-            if (run.tile == side && run.column == column) {
-                if (run.source != null) return false;
-                run.source = tile;
-                run.sourceX = px;
-                run.sourceY = py;
-                run.remaining += Math.max(2, side.res / 4);
-                return true;
-            }
+        Run run = RUN_SIM.inColumn(side, column);
+        if (run != null) {
+            if (run.source != null) return false;
+            run.feedFrom(tile, px, py);
+            run.remaining += Math.max(2, side.res / 4);
+            return true;
         }
         return pourOver(tile, px, py, side, column, colour, 0);
+    }
+
+    private static Object resourceProbe;
+    private static int resourceProbeTick;
+
+    private static void watchResources(ClientLevel level) {
+        if (BlockToneSampler.reloading()) {
+            resourceProbeTick = 20;
+            return;
+        }
+        if (++resourceProbeTick < 20) return;
+        resourceProbeTick = 0;
+        Object probe = BlockToneSampler.probe();
+        if (probe == null) return;
+        Object was = resourceProbe;
+        resourceProbe = probe;
+        if (was != null && was != probe) resourcesChanged(level);
+    }
+
+    static void resourcesChanged(ClientLevel level) {
+        BlockToneSampler.clear();
+        CreateParts.clear();
+        ModelFaces.clear();
+        SignFaces.clear();
+        com.simpleblood.compat.InteractiveFoliage.clear();
+        com.simpleblood.mob.MobTextures.resourcesChanged();
+        List<CanvasTile> gone = new ArrayList<>();
+        for (CanvasTile t : TILES.values()) {
+            try {
+                if (!stillDrawn(level, t)) gone.add(t);
+            } catch (Throwable e) {
+                gone.add(t);
+            }
+        }
+        for (CanvasTile t : gone) {
+            releaseAsDroplets(level, t);
+            remove(t);
+        }
+        if ("block".equals(settings().highlightMode)) {
+            for (CanvasTile t : TILES.values()) {
+                if (t.custom) continue;
+                t.setBaseTones(BlockToneSampler.sample(t, RNG));
+                t.dirty = true;
+            }
+        }
+        com.simpleblood.Tally.count("resources.changed");
+        SimpleBlood.LOGGER.info("Resource packs changed: blood follows the new models ({} stains on faces no longer drawn fell off)", gone.size());
+    }
+
+    private static boolean stillDrawn(ClientLevel level, CanvasTile t) {
+        if (t.custom) {
+            int k = t.key.box();
+            if (k >= 300 && k < 400) return true;
+            if (isPartTile(t)) return false;
+            return planeStillDrawn(t);
+        }
+        if (isQuadTile(t)) return faceStillExists(level, t, t.state);
+        VoxelShape shape = t.state.getShape(level, t.pos);
+        return !shape.isEmpty() && modelFaces(t.state, shape) == null;
+    }
+
+    private static boolean planeStillDrawn(CanvasTile t) {
+        Vec3 o = new Vec3(t.ox, t.oy, t.oz);
+        Vec3[] want = {o, o.add(t.ux * t.w, t.uy * t.w, t.uz * t.w), o.add(t.vx * t.h, t.vy * t.h, t.vz * t.h)};
+        for (BlockToneSampler.QuadInfo q : BlockToneSampler.allQuads(t.state)) {
+            for (Vec3 c : q.corners()) {
+                Vec3 shift = o.subtract(c.add(t.pos.getX(), t.pos.getY(), t.pos.getZ()));
+                if (shift.lengthSqr() > 0.25) continue;
+                boolean all = true;
+                for (Vec3 w : want) {
+                    boolean found = false;
+                    for (Vec3 d : q.corners()) {
+                        if (w.distanceToSqr(d.add(t.pos.getX(), t.pos.getY(), t.pos.getZ()).add(shift)) < 1.0e-5) { found = true; break; }
+                    }
+                    if (!found) { all = false; break; }
+                }
+                if (all) return true;
+            }
+        }
+        return false;
     }
 
     public static void tick(Minecraft mc) {
@@ -1576,7 +2636,12 @@ public final class BloodSurfaces {
             return;
         }
         syncLevel(level);
+        watchResources(level);
+        com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "following Create's contraptions",
+                () -> ContraptionRides.tick(level));
+        com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "looking for large water wheels", () -> findWheels(level));
         drainPending(level);
+        tickTints(level);
         if (TILES.isEmpty()) return;
         //? if 1.20.1 {
         /*if (mc.isPaused()) {
@@ -1600,64 +2665,13 @@ public final class BloodSurfaces {
 
         int slice = now & 15;
         int i = 0;
+        boolean spinning = com.simpleblood.compat.CreateKinetics.present();
         CanvasTile[] snapshot = TILES.values().toArray(new CanvasTile[0]);
         for (CanvasTile tile : snapshot) {
             if (TILES.get(tile.key) != tile) continue;
-            if ((i++ & 15) == slice) {
-                if (!level.hasChunkAt(tile.pos)) {
-                    remove(tile);
-                    continue;
-                }
-                if (tile.mover != null) {
-                    if (!tile.mover.isRemoved() && level.getBlockEntity(tile.pos) == tile.mover) continue;
-                    tile.mover = null;
-                    tile.followsMover = false;
-                    if (!settle(level, tile)) continue;
-                }
-                BlockState current = level.getBlockState(tile.pos);
-                if (current != tile.state) {
-                    if (faceStillExists(level, tile, current)) {
-                        tile.rebind(current);
-                        refreshVisibility(level, tile);
-                    } else {
-                        releaseAsDroplets(level, tile);
-                        remove(tile);
-                        continue;
-                    }
-                }
-                if (!tileExposed(level, tile)) {
-                    remove(tile);
-                    continue;
-                }
-                if (inFluid(level, tile.custom ? tile.pos : tile.pos.relative(tile.face))) {
-                    List<int[]> washed = tile.washUnderWater(level);
-                    if (!washed.isEmpty()) {
-                        List<Vec3> at = new ArrayList<>(washed.size());
-                        List<Integer> colours = new ArrayList<>(washed.size());
-                        for (int[] w : washed) {
-                            Vec3 p = tile.pixelCenter(w[0], w[1]);
-                            at.add(p.add(tile.nx * 0.15, tile.ny * 0.15, tile.nz * 0.15));
-                            colours.add(w[2]);
-                        }
-                        cloudUp(level, at, colours);
-                    }
-                    if (tile.isEmpty()) {
-                        remove(tile);
-                        continue;
-                    }
-                }
-                dripFromCeiling(level, tile);
-                if (!tile.custom && tile.face == Direction.UP && !tile.isEmpty()) {
-                    int mask = sideExposure(level, tile.pos) | insetEdges(tile);
-                    int newlyOpen = mask & ~tile.exposedMask;
-                    if (mask != tile.exposedMask) refreshVisibility(level, tile);
-                    tile.exposedMask = mask;
-                    if (newlyOpen != 0) runOffNewEdges(level, tile, newlyOpen);
-                }
-                if (s.rainWashes && level.isRainingAt(tile.pos.relative(tile.face))) {
-                    tile.accelerateAging(16 * 6);
-                }
-            }
+            if ((i++ & 15) == slice && !checkBlock(level, tile, s, true)) continue;
+            if ((now & 1) == 0) tilt(level, tile, s);
+            if (spinning) fling(level, tile);
             if (((i + now) & 7) == 0 && tile.age(now, RNG)) tile.dirty = true;
             if (tile.hasRipples()) tile.dirty = true;
             if (tile.isEmpty()) {
@@ -1665,6 +2679,68 @@ public final class BloodSurfaces {
             }
         }
         flushUploads();
+    }
+
+    private static boolean checkBlock(ClientLevel level, CanvasTile tile, SimpleBloodConfig.SurfaceSettings s, boolean timed) {
+        boolean riding = ContraptionRides.isPlot(tile.pos);
+        if (riding ? ContraptionRides.at(tile.pos) == null : !level.hasChunkAt(tile.pos)) {
+            remove(tile);
+            return false;
+        }
+        if (tile.spinAsked && tile.spin != null && !tile.spin.alive(spinningEntity(level, tile.pos))) tile.spinAsked = false;
+        if (tile.mover != null) {
+            if (!tile.mover.isRemoved() && level.getBlockEntity(tile.pos) == tile.mover) return false;
+            tile.mover = null;
+            tile.followsMover = false;
+            if (!settle(level, tile)) return false;
+        }
+        BlockState current = blockState(level, tile.pos);
+        if (current != tile.state) {
+            if (faceStillExists(level, tile, current)) {
+                tile.rebind(current);
+                refreshVisibility(level, tile);
+            } else {
+                com.simpleblood.Tally.count("block.gone");
+                if (riding) dropAll(level, tile);
+                else releaseAsDroplets(level, tile);
+                remove(tile);
+                return false;
+            }
+        }
+        if (!tileExposed(level, tile)) {
+            remove(tile);
+            return false;
+        }
+        if (inFluid(level, tile.custom ? tile.pos : tile.pos.relative(tile.face)) || cauldronWater(current) > 0) {
+            List<int[]> washed = tile.washUnderWater(level);
+            if (!washed.isEmpty()) {
+                List<Vec3> at = new ArrayList<>(washed.size());
+                List<Integer> colours = new ArrayList<>(washed.size());
+                for (int[] w : washed) {
+                    Vec3 p = tile.pixelCenter(w[0], w[1]);
+                    at.add(p.add(tile.nx * 0.15, tile.ny * 0.15, tile.nz * 0.15));
+                    colours.add(w[2]);
+                }
+                cloudUp(level, at, colours);
+            }
+            if (tile.isEmpty()) {
+                remove(tile);
+                return false;
+            }
+        }
+        dripFromCeiling(level, tile);
+        if (!tile.custom && tile.face == Direction.UP && !tile.isEmpty()) {
+            int mask = sideExposure(level, tile.pos) | insetEdges(tile);
+            int newlyOpen = mask & ~tile.exposedMask;
+            if (mask != tile.exposedMask) refreshVisibility(level, tile);
+            tile.exposedMask = mask;
+            if (newlyOpen != 0) runOffNewEdges(level, tile, newlyOpen);
+        }
+        if (timed && !riding && s.rainWashes && level.isRainingAt(tile.pos.relative(tile.face))) {
+            tile.accelerateAging(16 * 6);
+        }
+        if (timed && s.heatDries) heat(level, tile);
+        return true;
     }
 
     private static final int RELAX_BUDGET = 48;
@@ -1722,6 +2798,36 @@ public final class BloodSurfaces {
         tile.dispose(BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null);
     }
 
+    static List<CanvasTile> tilesAt(BlockPos pos) {
+        return BY_POS.get(pos.asLong());
+    }
+
+    static List<CanvasTile> tilesIn(java.util.function.Predicate<BlockPos> which) {
+        List<CanvasTile> out = new ArrayList<>();
+        for (CanvasTile t : TILES.values()) if (which.test(t.pos)) out.add(t);
+        return out;
+    }
+
+    static void removeTile(CanvasTile tile) {
+        if (TILES.get(tile.key) == tile) remove(tile);
+        else tile.dispose(BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null);
+    }
+
+    static void dropOff(ClientLevel level, CanvasTile tile) {
+        releaseAsDroplets(level, tile);
+    }
+
+    static void addTile(CanvasTile tile) {
+        CanvasTile there = TILES.get(tile.key);
+        if (there != null && there != tile) remove(there);
+        if (TILES.size() >= settings().maxTiles) evictOldest();
+        putTile(tile.key, tile);
+    }
+
+    static BlockState blockState(ClientLevel level, BlockPos pos) {
+        return ContraptionRides.isPlot(pos) ? ContraptionRides.state(pos) : level.getBlockState(pos);
+    }
+
     private static void putTile(CanvasTile.Key key, CanvasTile tile) {
         CanvasTile old = TILES.put(key, tile);
         if (old != null && old != tile) unindex(old);
@@ -1746,8 +2852,10 @@ public final class BloodSurfaces {
         BloodCanvasAtlas atlas = BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null;
         for (CanvasTile t : TILES.values()) t.dispose(atlas);
         TILES.clear();
+        clearTints();
         BY_POS.clear();
         CHANGED.clear();
+        NEAR_CHANGED.clear();
         FALLING.clear();
         RUNS.clear();
         RUN_COOLDOWN.clear();
@@ -1755,6 +2863,11 @@ public final class BloodSurfaces {
         BlockToneSampler.clear();
         ModelFaces.clear();
         SignFaces.clear();
+        com.simpleblood.compat.InteractiveFoliage.clear();
+        ContraptionRides.clear();
+        SPIN_PARTS.clear();
+        wheels = new BlockPos[0];
+        wheelScan = Long.MIN_VALUE;
         SimpleBlood.LOGGER.debug("Surface blood cleared");
     }
 

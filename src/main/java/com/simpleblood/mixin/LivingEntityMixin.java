@@ -140,6 +140,12 @@ public class LivingEntityMixin implements BloodEntityAccess {
         } else if (SimpleBlood.isEnvironmentalNoBleed(entity)) {
             return;
         }
+        DamageSource source = freshSource || (simpleblood$recentSource != null && sourceAge >= 0 && sourceAge <= 10)
+                ? simpleblood$recentSource : null;
+
+        if (currentHealth <= 0.0f && previous > 0.0f && SimpleBlood.shouldEntityBleed(entity)) {
+            com.simpleblood.compat.PhysicsModRagdolls.entityDied(entity);
+        }
 
         boolean playerDied = entity instanceof Player && currentHealth <= 0.0f && previous > 0.0f;
         long now = System.currentTimeMillis();
@@ -159,15 +165,13 @@ public class LivingEntityMixin implements BloodEntityAccess {
         if (SimpleBlood.shouldEntityBleed(entity)) {
             SimpleBlood.LOGGER.debug("Spawning blood burst for {} with damage {}",
                     entity.getType().getDescriptionId(), damage);
-            HitContext ctx = HitContext.of(entity, damage, freshSource ? simpleblood$recentSource : null,
-                    simpleblood$critRecently(), previous);
+            HitContext ctx = HitContext.of(entity, damage, source, simpleblood$critRecently(), previous);
             simpleblood$lastContext = ctx;
             com.simpleblood.Tally.count("hit");
             com.simpleblood.Tally.count("hit." + ctx.weapon);
             if (ctx.smash) com.simpleblood.Tally.count("hit.smash");
             simpleblood$lastContextTick = entity.tickCount;
             simpleblood$setWound(ctx.wound);
-            DamageSource source = freshSource ? simpleblood$recentSource : null;
             float through = com.simpleblood.ArmorSparks.hit(clientWorld, entity, ctx, source);
             if (through < 1f) com.simpleblood.Tally.count("armor.absorbed");
             SimpleBloodClient.addBurstTask(new ClientBloodBurstTask(clientWorld, entity, ctx).scaled(through));
@@ -206,6 +210,10 @@ public class LivingEntityMixin implements BloodEntityAccess {
 
         if (!SimpleBlood.shouldBleedFrom(entity, damageSource)) {
             return;
+        }
+
+        if (SimpleBlood.shouldEntityBleed(entity)) {
+            com.simpleblood.compat.PhysicsModRagdolls.entityDied(entity);
         }
 
         var cfg = SimpleBloodClient.getConfig();

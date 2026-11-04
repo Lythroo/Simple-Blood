@@ -13,6 +13,10 @@ public abstract class Widget {
         boolean previewActive();
         java.util.EnumSet<com.simpleblood.surface.PreviewScene.Aspect> previewAspects();
         default com.simpleblood.SimpleBloodConfig previewConfig() { return null; }
+        default int previewFigure() { return 0; }
+        default com.simpleblood.BloodKind previewBloodKind() { return null; }
+        default com.simpleblood.HitContext.Weapon previewWeapon() { return null; }
+        default String previewItem() { return null; }
     }
 
     public int x, y, w, h;
@@ -300,11 +304,20 @@ public abstract class Widget {
             return (System.nanoTime() - START) / 1.0e9f;
         }
 
+        public static boolean enabled = true;
+
         public static float approach(float value, float target, float rate) {
+            if (!enabled) return target;
             if (rate <= 0) return value;
             float t = 1f - (float) Math.exp(-rate);
             float v = value + (target - value) * t;
             return Math.abs(target - v) < 0.0005f ? target : v;
+        }
+
+        public static float linear(float value, float target, float dt, float seconds) {
+            if (!enabled || seconds <= 0) return target;
+            float d = dt / seconds;
+            return value < target ? Math.min(target, value + d) : Math.max(target, value - d);
         }
 
         public static float easeOut(float t) {

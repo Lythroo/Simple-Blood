@@ -135,6 +135,7 @@ public final class SceneRenderer {
                 case 1 -> "blood_splash_" + d.sprite;
                 case 2 -> "blood_streak_" + streakIndex(view, d);
                 case 3 -> "blood_drop";
+                case 4 -> "blood_spray_" + sprayIndex(view, d);
                 default -> "blood_" + d.sprite;
             };
             byTexture.computeIfAbsent(tex, k -> new java.util.ArrayList<>()).add(d);
@@ -243,6 +244,12 @@ public final class SceneRenderer {
         //?}
     }
 
+    private static int sprayIndex(Quaternionf view, PreviewScene.Drop d) {
+        Vector3f v = view.transform(new Vector3f((float) d.vx, (float) d.vy, (float) d.vz));
+        double speed = Math.sqrt(d.vx * d.vx + d.vy * d.vy + d.vz * d.vz);
+        return com.simpleblood.particle.BloodSprayParticle.pick(v.x, -v.y, speed, d.shown);
+    }
+
     private static int streakIndex(Quaternionf view, PreviewScene.Drop d) {
         Vector3f v = view.transform(new Vector3f((float) d.vx, (float) d.vy, (float) d.vz));
         double angle = Math.atan2(-v.y, v.x);
@@ -276,6 +283,51 @@ public final class SceneRenderer {
         return zombieTexture;
     }
 
+    private static ModelPart playerWide, playerSlim;
+    private static Identifier ownSkin;
+    private static boolean ownSkinSlim;
+    //? if 1.20.1 {
+    /*private static final Identifier ALEX = com.simpleblood.Ids.vanilla("textures/entity/alex.png");
+    *///?} else {
+    private static final Identifier ALEX = com.simpleblood.Ids.vanilla("textures/entity/player/slim/alex.png");
+    //?}
+
+    private static Identifier ownSkin() {
+        if (ownSkin != null) return ownSkin;
+        Object[] skin = com.simpleblood.SkinColours.previewSkin();
+        if (skin == null) return null;
+        try {
+            com.mojang.blaze3d.platform.NativeImage image = com.mojang.blaze3d.platform.NativeImage.read((byte[]) skin[0]);
+            if (image.getHeight() < 64) return null;
+            //? if <=1.21.1 {
+            /*net.minecraft.client.renderer.texture.DynamicTexture texture = new net.minecraft.client.renderer.texture.DynamicTexture(image);
+            *///?} else {
+            net.minecraft.client.renderer.texture.DynamicTexture texture = new net.minecraft.client.renderer.texture.DynamicTexture(() -> "simpleblood preview skin", image);
+            //?}
+            Identifier id = com.simpleblood.Ids.mod("preview_skin");
+            Minecraft.getInstance().getTextureManager().register(id, texture);
+            ownSkinSlim = (Boolean) skin[1];
+            ownSkin = id;
+        } catch (Throwable t) {
+            SimpleBlood.LOGGER.debug("Preview skin unreadable: {}", t.toString());
+        }
+        return ownSkin;
+    }
+
+    private static ModelPart playerModel(boolean slim) {
+        try {
+            if (slim) {
+                if (playerSlim == null) playerSlim = Minecraft.getInstance().getEntityModels().bakeLayer(ModelLayers.PLAYER_SLIM);
+                return playerSlim;
+            }
+            if (playerWide == null) playerWide = Minecraft.getInstance().getEntityModels().bakeLayer(ModelLayers.PLAYER);
+            return playerWide;
+        } catch (Throwable t) {
+            SimpleBlood.LOGGER.warn("Preview player model unavailable", t);
+            return null;
+        }
+    }
+
     private static void drawMob(PreviewScene scene, PoseStack pose, Buffers buffers) {
         if (zombie == null) {
             try {
@@ -305,14 +357,30 @@ public final class SceneRenderer {
         pose.translate(0f, -1.501f, 0f);
         float sway = (float) Math.sin(mob.age * 0.067f) * 0.05f;
         float step = (float) Math.cos(mob.swing * 0.6662f) * 1.4f * mob.amount;
-        part(zombie, "right_arm", -1.45f + sway, 0.08f, 0f);
-        part(zombie, "left_arm", -1.45f - sway, -0.08f, 0f);
-        part(zombie, "right_leg", step, 0, 0);
-        part(zombie, "left_leg", -step, 0, 0);
-        part(zombie, "head", 0.05f, (float) Math.sin(mob.age * 0.03f) * 0.12f, 0);
+        ModelPart body = zombie;
+        Identifier texture = zombieTexture();
+        boolean player = false;
+        if (scene.figure == PreviewScene.YOU) {
+            Identifier own = ownSkin();
+            ModelPart model = own == null ? null : playerModel(ownSkinSlim);
+            if (model != null) { body = model; texture = own; player = true; }
+        } else if (scene.figure == PreviewScene.OTHER) {
+            ModelPart model = playerModel(true);
+            if (model != null) { body = model; texture = ALEX; player = true; }
+        }
+        float armX = player ? sway : -1.45f + sway;
+        part(body, "right_arm", armX, 0.08f, player ? 0.05f : 0f);
+        part(body, "left_arm", player ? -sway : -1.45f - sway, -0.08f, player ? -0.05f : 0f);
+        part(body, "right_sleeve", armX, 0.08f, player ? 0.05f : 0f);
+        part(body, "left_sleeve", player ? -sway : -1.45f - sway, -0.08f, player ? -0.05f : 0f);
+        part(body, "right_leg", step, 0, 0);
+        part(body, "left_leg", -step, 0, 0);
+        part(body, "right_pants", step, 0, 0);
+        part(body, "left_pants", -step, 0, 0);
+        part(body, "head", 0.05f, (float) Math.sin(mob.age * 0.03f) * 0.12f, 0);
         int overlay = OverlayTexture.pack(OverlayTexture.u(0f), OverlayTexture.v(mob.hurtTicks > 0 || mob.deathTicks > 0));
         int light = scene.dark() ? DIM : FULL_BRIGHT;
-        buffers.modelPart(zombie, pose, cutout(zombieTexture()), light, overlay);
+        buffers.modelPart(body, pose, cutout(texture), light, overlay);
         if (mob.armored) drawArmor(pose, buffers, sway, overlay, mob);
         pose.popPose();
         if (scene.coat() != null) drawCoat(scene, buffers);

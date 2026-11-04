@@ -30,7 +30,7 @@ public final class SurfaceRenderer {
         //?}
     }
 
-    private static float partialTick() {
+    static float partialTick() {
         //? if 1.20.1 {
         /*return net.minecraft.client.Minecraft.getInstance().getFrameTime();
         *///?} elif 1.21.1 {
@@ -50,26 +50,35 @@ public final class SurfaceRenderer {
 
     public static void render(ClientLevel level, Vec3 cam, PoseStack.Pose pose, VertexConsumer vc, boolean onSeeThrough) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (!onSeeThrough && cfg != null) {
+            com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on a physics ragdoll",
+                    () -> com.simpleblood.mob.RigidCoats.render(level, cam, pose, vc, partialTick()));
+        }
         if (cfg == null || !cfg.surfaces.enabled || BloodSurfaces.tileCount() == 0) return;
 
         double maxDistSq = (double) cfg.surfaces.renderDistance * cfg.surfaces.renderDistance;
+        if (!onSeeThrough) frames++;
 
         for (CanvasTile t : BloodSurfaces.tiles()) {
             if (t.slot < 0 || t.isEmpty()) continue;
 
-            Vec3 c = t.center();
+            com.simpleblood.compat.BodyPose sub = ContraptionRides.isPlot(t.pos)
+                    ? ContraptionRides.drawn(t.pos, frames, partialTick())
+                    : com.simpleblood.compat.SableSubLevels.drawn(t.pos, frames, partialTick());
+            if (sub == null && ContraptionRides.isPlot(t.pos)) continue;
+            Vec3 c = sub == null ? t.center() : sub.toWorld(t.center());
             double dx = c.x - cam.x, dy = c.y - cam.y, dz = c.z - cam.z;
             double distSq = dx * dx + dy * dy + dz * dz;
             if (distSq > maxDistSq) continue;
 
             int nowTick = BloodSurfaces.now();
             if (nowTick - t.lightTick >= 5) {
-                t.light = light(level, t);
-                t.onSeeThrough = seeThrough(t) || BlockToneSampler.isSeeThrough(level.getBlockState(t.pos));
+                t.light = light(level, t, sub);
+                t.onSeeThrough = seeThrough(t) || onBanner(t) || BlockToneSampler.isSeeThrough(BloodSurfaces.blockState(level, t.pos));
                 t.lightTick = nowTick;
             }
             if (t.onSeeThrough != onSeeThrough) continue;
-            double sway = t.swayPivot == null ? 0 : SignFaces.sway(level.getGameTime(), partialTick(), t.pos);
+            SignFaces.Pose moved = t.swayPivot == null ? SignFaces.STILL : SignFaces.pose(level, t.pos, level.getGameTime(), partialTick());
             int light = t.glow > 0 ? withBlockLight(t.light, t.glow) : t.light;
             double lift = 0.0025 + Math.sqrt(distSq) * 0.00012 + (t.swayPivot == null ? 0 : 0.004);
             Vec3 origin = cam;
@@ -77,9 +86,14 @@ public final class SurfaceRenderer {
                 float pt = partialTick();
                 origin = cam.subtract(t.mover.getXOff(pt), t.mover.getYOff(pt), t.mover.getZOff(pt));
             }
-            drawTile(t, pose, vc, origin, origin, light, lift, 255, sway);
+            com.simpleblood.compat.CreateKinetics.Part spin = BloodSurfaces.spinOf(level, t);
+            double spinAngle = spin == null ? 0 : spin.angle(frames, partialTick());
+            if (spinAngle != 0) com.simpleblood.Tally.count("create.spin.drawn");
+            drawTile(t, pose, vc, origin, origin, light, lift, 255, moved.angle(), moved.slide(), spin, spinAngle, sub);
         }
     }
+
+    private static long frames;
 
     static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift) {
         drawTile(t, pose, vc, cam, origin, light, lift, 255);
@@ -95,10 +109,22 @@ public final class SurfaceRenderer {
     }
 
     static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift, int grey) {
-        drawTile(t, pose, vc, cam, origin, light, lift, grey, 0);
+        drawTile(t, pose, vc, cam, origin, light, lift, grey, 0, 0);
     }
 
-    static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift, int grey, double sway) {
+    static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift, int grey,
+                         double sway, double slide) {
+        drawTile(t, pose, vc, cam, origin, light, lift, grey, sway, slide, null);
+    }
+
+    static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift, int grey,
+                         double sway, double slide, com.simpleblood.compat.BodyPose sub) {
+        drawTile(t, pose, vc, cam, origin, light, lift, grey, sway, slide, null, 0, sub);
+    }
+
+    static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift, int grey,
+                         double sway, double slide, com.simpleblood.compat.CreateKinetics.Part spin, double spinAngle,
+                         com.simpleblood.compat.BodyPose sub) {
         float texel = BloodCanvasAtlas.texel();
         Vec3 o = new Vec3(t.ox, t.oy, t.oz), u = new Vec3(t.ux, t.uy, t.uz), v = new Vec3(t.vx, t.vy, t.vz), n = new Vec3(t.nx, t.ny, t.nz);
         if (sway != 0 && t.swayPivot != null) {
@@ -106,6 +132,19 @@ public final class SurfaceRenderer {
             u = swing(u, t.swayAxis, sway);
             v = swing(v, t.swayAxis, sway);
             n = swing(n, t.swayAxis, sway);
+        }
+        if (slide != 0 && t.swayAxis != null) o = o.add(t.swayAxis.scale(slide));
+        if (spin != null && spinAngle != 0) {
+            o = spin.centre.add(swing(o.subtract(spin.centre), spin.axis, spinAngle));
+            u = swing(u, spin.axis, spinAngle);
+            v = swing(v, spin.axis, spinAngle);
+            n = swing(n, spin.axis, spinAngle);
+        }
+        if (sub != null) {
+            o = sub.toWorld(o);
+            u = sub.turn(u);
+            v = sub.turn(v);
+            n = sub.turn(n);
         }
         double nx = n.x, ny = n.y, nz = n.z;
         double cx = o.x + (u.x * t.w + v.x * t.h) * 0.5, cy = o.y + (u.y * t.w + v.y * t.h) * 0.5, cz = o.z + (u.z * t.w + v.z * t.h) * 0.5;
@@ -152,7 +191,11 @@ public final class SurfaceRenderer {
                 || b instanceof net.minecraft.world.level.block.IronBarsBlock;
     }
 
-    private static Vec3 swing(Vec3 p, Vec3 k, double angle) {
+    private static boolean onBanner(CanvasTile t) {
+        return t.state != null && t.state.getBlock() instanceof net.minecraft.world.level.block.AbstractBannerBlock;
+    }
+
+    static Vec3 swing(Vec3 p, Vec3 k, double angle) {
         double c = Math.cos(angle), s = Math.sin(angle);
         Vec3 kxp = k.cross(p);
         double kdp = k.dot(p);
@@ -200,8 +243,21 @@ public final class SurfaceRenderer {
     }
     *///?}
 
-    private static int light(ClientLevel level, CanvasTile t) {
+    public static int lightAt(ClientLevel level, net.minecraft.core.BlockPos p) {
+        //? if <26.1 {
+        /*return net.minecraft.client.renderer.LevelRenderer.getLightColor(level, p);
+        *///?} elif <26.2 {
+        return net.minecraft.client.renderer.LevelRenderer.getLightCoords(level, p);
+        //?} else {
+        /*return net.minecraft.util.LightCoordsUtil.getLightCoords(level, p);
+        *///?}
+    }
+
+    private static int light(ClientLevel level, CanvasTile t, com.simpleblood.compat.BodyPose sub) {
         var p = t.custom ? t.pos : t.pos.relative(t.face);
+        if (sub != null && ContraptionRides.isPlot(t.pos)) {
+            p = net.minecraft.core.BlockPos.containing(sub.toWorld(t.center().add(t.nx * 0.5, t.ny * 0.5, t.nz * 0.5)));
+        }
         //? if <26.1 {
         /*return net.minecraft.client.renderer.LevelRenderer.getLightColor(level, p);
         *///?} elif <26.2 {

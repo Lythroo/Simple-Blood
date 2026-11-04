@@ -225,15 +225,15 @@ public final class Guard {
     }
 
     private static List<Component> message(Part part, String report) {
-        MutableComponent head = Component.literal("Simple Blood: error in " + part.label + ". ").withStyle(ChatFormatting.RED);
+        MutableComponent head = Component.translatable("simpleblood.error.in", Component.translatable("simpleblood.error.part." + part.name().toLowerCase(java.util.Locale.ROOT))).withStyle(ChatFormatting.RED);
         if (part == Part.SCREEN) {
-            head.append(Component.literal("The screen was closed; you can open it again.").withStyle(ChatFormatting.GRAY));
+            head.append(Component.translatable("simpleblood.error.screen_closed").withStyle(ChatFormatting.GRAY));
         } else if (part.fuse) {
-            head.append(Component.literal("That part is off until you restart or run /simpleblood reset.").withStyle(ChatFormatting.GRAY));
+            head.append(Component.translatable("simpleblood.error.part_off").withStyle(ChatFormatting.GRAY));
         } else {
-            head.append(Component.literal("Everything else keeps running.").withStyle(ChatFormatting.GRAY));
+            head.append(Component.translatable("simpleblood.error.rest_runs").withStyle(ChatFormatting.GRAY));
         }
-        Component copyTip = Component.literal("Copies the full error report (also in " + REPORT_FILE + ")");
+        Component copyTip = Component.translatable("simpleblood.error.copy_tip", REPORT_FILE);
         Component openTip = Component.literal(ISSUES_URL);
         //? if <=1.21.1 {
         /*Style copy = Style.EMPTY.withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, report))
@@ -246,9 +246,9 @@ public final class Guard {
         Style open = Style.EMPTY.withClickEvent(new ClickEvent.OpenUrl(java.net.URI.create(ISSUES_URL)))
                 .withHoverEvent(new HoverEvent.ShowText(openTip));
         //?}
-        MutableComponent links = Component.literal("[Copy error]").withStyle(copy.withColor(ChatFormatting.YELLOW).withUnderlined(true))
+        MutableComponent links = Component.translatable("simpleblood.error.copy").withStyle(copy.withColor(ChatFormatting.YELLOW).withUnderlined(true))
                 .append(Component.literal("  "))
-                .append(Component.literal("[Report on GitHub]").withStyle(open.withColor(ChatFormatting.AQUA).withUnderlined(true)));
+                .append(Component.translatable("simpleblood.error.report").withStyle(open.withColor(ChatFormatting.AQUA).withUnderlined(true)));
         List<Component> lines = new ArrayList<>();
         lines.add(head);
         lines.add(links);
@@ -259,8 +259,8 @@ public final class Guard {
         try {
             Minecraft mc = Minecraft.getInstance();
             if (mc == null || mc.player != null) return;
-            Component title = Component.literal("Simple Blood: error");
-            Component text = Component.literal("See " + REPORT_FILE);
+            Component title = Component.translatable("simpleblood.error.toast_title");
+            Component text = Component.translatable("simpleblood.error.toast_text", REPORT_FILE);
             //? if 1.20.1 {
             /*SystemToast.add(mc.getToasts(), SystemToast.SystemToastIds.PERIODIC_NOTIFICATION, title, text);
             *///?} elif 1.21.1 {

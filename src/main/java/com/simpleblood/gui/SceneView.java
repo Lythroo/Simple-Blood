@@ -20,8 +20,8 @@ public final class SceneView {
         this.colour = colour;
         this.scene = new PreviewScene(kind, () -> this.colour.getAsInt());
         switch (kind) {
-            case COAT -> { baseYaw = 0.45f; pitch = 0.22f; focus = new Vec3(0.5, 1.35, 0.5); blocksAcross = 2.7f; blocksTall = 2.2f; }
-            case PUDDLE, RAIN, DRYING -> { baseYaw = 0.55f; pitch = 0.62f; focus = new Vec3(0.5, 1.15, 0.35); blocksAcross = 4.0f; blocksTall = 2.6f; }
+            case COAT, COAT_DRYING -> { baseYaw = 0.45f; pitch = 0.22f; focus = new Vec3(0.5, 1.35, 0.5); blocksAcross = 2.7f; blocksTall = 2.2f; }
+            case PUDDLE, RAIN, DRYING, MIX -> { baseYaw = 0.55f; pitch = 0.62f; focus = new Vec3(0.5, 1.15, 0.35); blocksAcross = 4.0f; blocksTall = 2.6f; }
             case FOOTPRINTS -> { baseYaw = 0.30f; pitch = 0.85f; focus = new Vec3(0.5, 1.1, 0.5); blocksAcross = 4.6f; blocksTall = 5.6f; }
             case WATER -> { baseYaw = 0.45f; pitch = 0.32f; focus = new Vec3(0.5, 1.55, 0.5); blocksAcross = 4.2f; blocksTall = 3.1f; }
             default -> { baseYaw = 0.45f; pitch = 0.38f; focus = new Vec3(0.5, 1.45, 0.5); blocksAcross = 4.2f; blocksTall = 3.4f; }
@@ -37,6 +37,15 @@ public final class SceneView {
     public void config(com.simpleblood.SimpleBloodConfig config) { scene.config(config); }
 
     public void show(java.util.EnumSet<PreviewScene.Aspect> aspects) { scene.show(aspects); }
+
+    public void figure(int figure) { scene.figure = figure; }
+
+    public void weapon(com.simpleblood.HitContext.Weapon weapon, String item) {
+        scene.fixedWeapon = weapon;
+        scene.fixedItem = item;
+    }
+
+    public void bloodKind(com.simpleblood.BloodKind kind) { scene.bleeds(kind); }
 
     public void trigger() { scene.trigger(); }
 

@@ -31,6 +31,8 @@ public final class MobBlood {
     private MobBlood() {}
 
     private static final Map<Integer, MobCoat> COATS = new HashMap<>();
+    private static final boolean RAGDOLL_MODELS = com.simpleblood.Platform.modIds().contains("ragdollified")
+            || com.simpleblood.Platform.modIds().contains("saros_ragdoll");
     private static final RandomSource RNG = RandomSource.create();
     private static final int MAX_COATS = 96;
     private static int now;
@@ -38,6 +40,21 @@ public final class MobBlood {
 
     private static SimpleBloodConfig.MobCoatSettings settings() {
         return SimpleBloodClient.getConfig().mobCoat;
+    }
+
+    static MobCoat coatOf(int entityId) {
+        return COATS.get(entityId);
+    }
+
+    static int now() {
+        return now;
+    }
+
+    static void drawPosed(MobCoat coat, List<ModelFacesOfMob.Face> posed, float[] fade, PoseStack.Pose pose, VertexConsumer vc, Vec3 camera, int light) {
+        coat.onRagdoll = now;
+        com.simpleblood.Tally.count("coat.ragdoll");
+        List<Quad> quads = prepare(coat, posed, fade, camera, light);
+        if (!quads.isEmpty()) draw(quads, pose, vc);
     }
 
     public static boolean has(int entityId) {
@@ -50,6 +67,8 @@ public final class MobBlood {
 
     public static void death(LivingEntity entity, HitContext ctx) {
         splat(entity, ctx, true);
+        MobCoat coat = COATS.get(entity.getId());
+        if (coat != null) coat.onRagdoll = now;
     }
 
     private static void splat(LivingEntity e, HitContext ctx, boolean death) {
@@ -64,14 +83,23 @@ public final class MobBlood {
         }
         float amount = Math.max(0, cfg.mobCoat.amount) / 100f;
         if (amount <= 0) return;
+        com.simpleblood.Tally.count("coat.splat");
+        coat.lastPos = e.position();
         float damage = ctx != null ? ctx.damage : 4f;
         float size = Math.max(0.5f, Math.min(1.6f, 0.6f + damage / 10f)) * amount * (death ? 1.25f : 1f);
         int units = death || damage >= 8 ? 4 : damage >= 4 ? 3 : 2;
-        HitContext.Weapon weapon = ctx != null && cfg.weaponFlavourEnabled() ? ctx.weapon : HitContext.Weapon.NONE;
+        HitContext.Weapon weapon = ctx != null && cfg.weaponFlavourEnabled() ? ctx.style : HitContext.Weapon.NONE;
         Vec3 base = e.position();
         Vec3 centre = base.add(0, e.getBbHeight() * 0.55, 0);
         if (ctx != null && ctx.direction != null && weapon != HitContext.Weapon.EXPLOSION && weapon != HitContext.Weapon.FALL) {
             Vec3 at = ctx.wound != null ? ctx.wound : centre.subtract(ctx.direction.scale(e.getBbWidth() * 0.5));
+            if (weapon == HitContext.Weapon.SPEAR && (damage >= 5 || ctx.crit || death)) {
+                Vec3 exit = ctx.exitPoint();
+                exit = new Vec3(exit.x, at.y, exit.z);
+                coat.pending.add(new MobCoat.Splat(exit.subtract(base), ctx.direction.scale(-1), HitContext.Weapon.NONE,
+                        size * 0.6f, units, now));
+                com.simpleblood.Tally.count("coat.exit");
+            }
             coat.pending.add(new MobCoat.Splat(at.subtract(base), ctx.direction, weapon, size, units, now));
         } else {
             for (int i = 0; i < 3; i++) {
@@ -88,6 +116,52 @@ public final class MobBlood {
         if (coat == null) return 0;
         int n = 0;
         for (MobFace f : coat.faces.values()) n += f.count;
+        return n;
+    }
+
+    public static List<String> describeCoat(int entityId) {
+        MobCoat coat = COATS.get(entityId);
+        List<String> out = new ArrayList<>();
+        if (coat == null) return out;
+        ClientLevel level = Minecraft.getInstance().level;
+        Entity e = level == null ? null : level.getEntity(entityId);
+        Vec3 feet = e == null ? Vec3.ZERO : e.position();
+        for (Map.Entry<Object, MobFace> m : coat.faces.entrySet()) {
+            if (m.getValue().count == 0) continue;
+            ModelFacesOfMob.Face drawn = null;
+            if (coat.lastFaces != null) for (ModelFacesOfMob.Face f : coat.lastFaces) if (f.key.equals(m.getKey())) { drawn = f; break; }
+            if (drawn == null) {
+                out.add(String.format(java.util.Locale.ROOT, "%3d px  not drawn  (%s)", m.getValue().count, m.getKey()));
+                continue;
+            }
+            Vec3 c = drawn.at(0.5, 0.5);
+            Vec3 g = new Vec3(drawn.wx(1) - drawn.wx(0), drawn.wy(1) - drawn.wy(0), drawn.wz(1) - drawn.wz(0))
+                    .cross(new Vec3(drawn.wx(3) - drawn.wx(0), drawn.wy(3) - drawn.wy(0), drawn.wz(3) - drawn.wz(0))).normalize();
+            out.add(String.format(java.util.Locale.ROOT, "%3d px  at (%+.2f %+.2f %+.2f)  facing (%+.2f %+.2f %+.2f)  wound (%+.2f %+.2f %+.2f)  %dx%d%s",
+                    m.getValue().count, c.x - feet.x, c.y - feet.y, c.z - feet.z, drawn.wnx, drawn.wny, drawn.wnz,
+                    g.x, g.y, g.z, drawn.pw, drawn.ph, ""));
+            StringBuilder corners = new StringBuilder("        corners");
+            for (int k = 0; k < 4; k++) {
+                corners.append(String.format(java.util.Locale.ROOT, " (%+.3f %+.3f %+.3f | %.4f %.4f)",
+                        drawn.wx(k) - feet.x, drawn.wy(k) - feet.y, drawn.wz(k) - feet.z, drawn.u[k], drawn.v[k]));
+            }
+            out.add(corners.toString());
+        }
+        return out;
+    }
+
+    public static int coatStrokes(int entityId) {
+        MobCoat coat = COATS.get(entityId);
+        return coat == null ? 0 : coat.strokes;
+    }
+
+    public static int coatUnits(int entityId) {
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null) return 0;
+        int n = 0;
+        for (MobFace f : coat.faces.values()) {
+            for (int y = 0; y < f.ph; y++) for (int x = 0; x < f.pw; x++) n += f.depthAt(x, y);
+        }
         return n;
     }
 
@@ -316,7 +390,7 @@ public final class MobBlood {
     private static Frame frame;
 
     public static void submit(int entityId, Object state, net.minecraft.client.model.geom.ModelPart root, PoseStack pose,
-                              net.minecraft.client.renderer.SubmitNodeCollector collector, int light) {
+                              net.minecraft.client.renderer.SubmitNodeCollector collector, int light, Object texture) {
         frame = null;
         boolean coated = COATS.containsKey(entityId);
         if (!coated && !WoundAnchors.wants(entityId) && !CORPSES.containsKey(entityId)) return;
@@ -324,9 +398,11 @@ public final class MobBlood {
         Frame f = new Frame(entityId, state, SurfaceRenderer.cameraPos(), light);
         com.simpleblood.compat.EmfPoses.pose(state, root);
         ModelFacesOfMob.collect(root, pose, f.camera, f.faces, f.cubes);
+        textured(f.faces, 0, texture);
         WoundAnchors.posed(entityId, f.faces);
         lieDown(entityId, f.faces);
         if (!coated) return;
+        if (ModelFacesOfMob.shaped) COATS.get(entityId).noteShapes(f.faces);
         frame = f;
         collector.submitCustomGeometry(new PoseStack(),
                 (net.minecraft.client.renderer.rendertype.RenderType) SurfaceRenderer.renderType(),
@@ -335,18 +411,44 @@ public final class MobBlood {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public static void layerModel(net.minecraft.client.model.Model<?> model, Object state, PoseStack pose) {
+    public static void layerModel(net.minecraft.client.model.Model<?> model, Object state, PoseStack pose, Object texture) {
         Frame f = frame;
         if (f == null || f.state != state) return;
         ((net.minecraft.client.model.Model) model).setupAnim(state);
         com.simpleblood.compat.EmfPoses.pose(state, model.root());
+        int from = f.faces.size();
         ModelFacesOfMob.collect(model.root(), pose, f.camera, f.faces, f.cubes);
+        textured(f.faces, from, texture);
+    }
+
+    private static void textured(List<ModelFacesOfMob.Face> faces, int from, Object texture) {
+        MobTextures.Alpha alpha = MobTextures.of(texture);
+        if (alpha == null) return;
+        for (int i = from; i < faces.size(); i++) faces.get(i).alpha = alpha;
+    }
+
+    static void drawOnRagdoll(int entityId, List<ModelFacesOfMob.Face> drawn, PoseStack.Pose pose, VertexConsumer vc, int light) {
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null || coat.shapes.isEmpty()) return;
+        List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
+        for (ModelFacesOfMob.Face face : drawn) {
+            Object key = face.shape == 0 ? null : coat.shapes.get(face.shape);
+            if (key == null) continue;
+            face.key = key;
+            posed.add(face);
+        }
+        if (posed.isEmpty()) return;
+        com.simpleblood.Tally.count("coat.ragdoll");
+        coat.onRagdoll = now;
+        List<Quad> quads = prepare(coat, posed, SurfaceRenderer.cameraPos(), light);
+        if (!quads.isEmpty()) draw(quads, pose, vc);
     }
 
     private static void drawFrame(Frame f, PoseStack.Pose pose, VertexConsumer vc) {
         if (frame == f) frame = null;
         MobCoat coat = COATS.get(f.entityId);
         if (coat == null || f.faces.isEmpty()) return;
+        coat.lastFaces = f.faces;
         List<Quad> quads = prepare(coat, f.faces, f.camera, f.light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
     }
@@ -360,6 +462,8 @@ public final class MobBlood {
      ^/
     public static void render(int entityId, boolean invisible, net.minecraft.client.renderer.MultiBufferSource buffers, int light) {
         Vec3 camera = SurfaceRenderer.cameraPos();
+        // Drawn without the game's model parts (Epic Fight's animated meshes): no faces, so no
+        // blood on the body (a known issue); its blood on the ground and on weapons is unchanged.
         List<ModelFacesOfMob.Face> posed = ModelFacesOfMob.collectCaught(camera);
         if (!com.simpleblood.compat.ShaderPacks.inShadowPass()) {
             WoundAnchors.posed(entityId, posed);
@@ -367,25 +471,31 @@ public final class MobBlood {
         }
         MobCoat coat = COATS.get(entityId);
         if (coat == null || invisible || posed.isEmpty() || com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
+        coat.lastFaces = posed;
         List<Quad> quads = prepare(coat, posed, camera, light);
         if (quads.isEmpty()) return;
         draw(quads, new PoseStack().last(), buffers.getBuffer((net.minecraft.client.renderer.RenderType) SurfaceRenderer.renderType()));
     }
     *///?}
 
-    record Quad(float[] p, float[] u, float[] v, int light, float nx, float ny, float nz) {}
+    record Quad(float[] p, float[] u, float[] v, int light, float nx, float ny, float nz, int alpha) {}
 
     private static List<Quad> prepare(MobCoat coat, List<ModelFacesOfMob.Face> posed, Vec3 camera, int light) {
+        return prepare(coat, posed, null, camera, light);
+    }
+
+    private static List<Quad> prepare(MobCoat coat, List<ModelFacesOfMob.Face> posed, float[] fade, Vec3 camera, int light) {
         SimpleBloodConfig.MobCoatSettings s = settings();
         int lifetime = Math.max(1, s.lifetimeSeconds) * 20;
         coat.lastSeen = now;
         if (!coat.pending.isEmpty()) {
             ClientLevel level = Minecraft.getInstance().level;
             Entity e = level == null ? null : level.getEntity(coat.entityId);
-            if (e != null) {
+            Vec3 origin = e != null ? e.position() : coat.lastPos;
+            if (origin != null) {
                 for (MobCoat.Splat sp : coat.pending) {
                     if (now - sp.made() > 40) continue;
-                    MobCoat.Splat placed = new MobCoat.Splat(sp.at().add(e.position()), sp.dir(), sp.weapon(), sp.size(), sp.units(), sp.made(), sp.colour(), sp.drop());
+                    MobCoat.Splat placed = new MobCoat.Splat(sp.at().add(origin), sp.dir(), sp.weapon(), sp.size(), sp.units(), sp.made(), sp.colour(), sp.drop());
                     coat.paint(placed, posed, now, lifetime, RNG);
                 }
             }
@@ -395,17 +505,24 @@ public final class MobBlood {
             coat.lastSim = now;
             coat.flow(posed, now, lifetime, RNG, s.runs, s.drips);
         }
-        return quadsOf(coat, posed, light, now);
+        return quadsOf(coat, posed, fade, light, now);
     }
 
     static List<Quad> quadsOf(MobCoat coat, List<ModelFacesOfMob.Face> posed, int light, int stamp) {
+        return quadsOf(coat, posed, null, light, stamp);
+    }
+
+    static List<Quad> quadsOf(MobCoat coat, List<ModelFacesOfMob.Face> posed, float[] fade, int light, int stamp) {
         List<Quad> quads = new ArrayList<>();
         float texel = BloodCanvasAtlas.texel();
-        for (ModelFacesOfMob.Face f : posed) {
+        for (int fi = 0; fi < posed.size(); fi++) {
+            ModelFacesOfMob.Face f = posed.get(fi);
             MobFace canvas = coat.faces.get(f.key);
             if (canvas == null) continue;
             canvas.lastSeen = stamp;
             if (canvas.count == 0 || canvas.slot < 0) continue;
+            int alpha = fade == null ? 255 : Math.round(255 * Math.max(0f, Math.min(1f, fade[fi])));
+            if (alpha <= 0) continue;
             double cx = f.p[0], cy = f.p[1], cz = f.p[2];
             float lift = 0.002f + (float) Math.sqrt(cx * cx + cy * cy + cz * cz) * 0.0001f;
             float[] p = new float[12];
@@ -421,7 +538,7 @@ public final class MobBlood {
                 v[k] = v0 + f.t[k] * canvas.ph * texel;
             }
             int lit = canvas.glow > 0 ? withBlockLight(light, canvas.glow) : light;
-            quads.add(new Quad(p, u, v, lit, f.nx, f.ny, f.nz));
+            quads.add(new Quad(p, u, v, lit, f.nx, f.ny, f.nz, alpha));
         }
         return quads;
     }
@@ -429,16 +546,16 @@ public final class MobBlood {
     static void draw(List<Quad> quads, PoseStack.Pose pose, VertexConsumer vc) {
         for (Quad q : quads) {
             for (int k = 0; k < 4; k++) {
-                vertex(vc, pose, q.p()[k * 3], q.p()[k * 3 + 1], q.p()[k * 3 + 2], q.u()[k], q.v()[k], q.light(), q.nx(), q.ny(), q.nz());
+                vertex(vc, pose, q.p()[k * 3], q.p()[k * 3 + 1], q.p()[k * 3 + 2], q.u()[k], q.v()[k], q.light(), q.nx(), q.ny(), q.nz(), q.alpha());
             }
         }
     }
 
     private static void vertex(VertexConsumer vc, PoseStack.Pose pose, float x, float y, float z,
-                               float u, float v, int light, float nx, float ny, float nz) {
+                               float u, float v, int light, float nx, float ny, float nz, int alpha) {
         //? if 1.20.1 {
         /*vc.vertex(pose.pose(), x, y, z)
-                .color(255, 255, 255, 255)
+                .color(255, 255, 255, alpha)
                 .uv(u, v)
                 .overlayCoords(OverlayTexture.NO_OVERLAY)
                 .uv2(light)
@@ -446,7 +563,7 @@ public final class MobBlood {
                 .endVertex();
         *///?} else {
         vc.addVertex(pose, x, y, z)
-                .setColor(255, 255, 255, 255)
+                .setColor(255, 255, 255, alpha)
                 .setUv(u, v)
                 .setOverlay(OverlayTexture.NO_OVERLAY)
                 .setLight(light)
@@ -466,6 +583,9 @@ public final class MobBlood {
             lastLevel = level;
         }
         if (level != null) tickCorpses(level);
+        if (level != null) noteBodies(level);
+        RigidCoats.tick();
+        ModelFacesOfMob.shaped = RAGDOLL_MODELS;
         if (level == null || COATS.isEmpty()) return;
         //? if 1.20.1 {
         /*boolean still = mc.isPaused();
@@ -485,19 +605,21 @@ public final class MobBlood {
             while (it.hasNext()) {
                 MobCoat coat = it.next();
                 Entity e = level.getEntity(coat.entityId);
-                if (e == null || e.isRemoved()) {
+                boolean onRagdoll = now - coat.onRagdoll < 40;
+                if ((e == null || e.isRemoved()) && !onRagdoll) {
                     coat.dispose(atlas);
                     it.remove();
                     continue;
                 }
-                coat.wash = e.isUnderWater() ? 40 : e.isInWater() || inWaterCauldron(level, e) ? 12 : rainWashes && e.isInWaterOrRain() ? 3 : 0;
+                if (e == null || e.isRemoved()) coat.wash = 0;
+                else coat.wash = e.isUnderWater() ? 40 : e.isInWater() || inWaterCauldron(level, e) ? 12 : rainWashes && e.isInWaterOrRain() ? 3 : 0;
                 if (coat.rinsed > 0) {
                     coat.rinsed--;
                     coat.wash = Math.max(coat.wash, 40);
                 }
                 coat.bleed(now, Math.max(1, settings().lifetimeSeconds) * 20, RNG);
                 coat.age(now, atlas);
-                fall(level, coat);
+                fall(level, coat, e);
                 if (coat.isEmpty() && now - coat.lastSeen > 100) {
                     coat.dispose(atlas);
                     it.remove();
@@ -511,9 +633,10 @@ public final class MobBlood {
         }
     }
 
-    private static void fall(ClientLevel level, MobCoat coat) {
+    private static void fall(ClientLevel level, MobCoat coat, Entity e) {
         if (coat.drips.isEmpty()) return;
         try {
+            if (e != null && !e.isRemoved()) BloodParticle.carryMotionOf(e);
             for (MobCoat.Drip d : coat.drips) {
                 int c = d.colour();
                 BloodParticle.setCurrentBloodColor(new BloodColor.Color(((c >> 16) & 0xFF) / 255f, ((c >> 8) & 0xFF) / 255f, (c & 0xFF) / 255f));
@@ -530,7 +653,34 @@ public final class MobBlood {
         }
     }
 
+    public record Body(LivingEntity entity, net.minecraft.world.phys.AABB box) {}
+
+    private static volatile List<Body> bodies = List.of();
+    private static volatile boolean bodiesWanted;
+
+    public static List<Body> bodies() {
+        bodiesWanted = true;
+        return bodies;
+    }
+
+    private static void noteBodies(ClientLevel level) {
+        Entity player = Minecraft.getInstance().player;
+        if (!bodiesWanted || player == null || !catchesDrops()) {
+            if (!bodies.isEmpty()) bodies = List.of();
+            return;
+        }
+        List<Body> near = new ArrayList<>();
+        for (Entity e : level.entitiesForRendering()) {
+            if (e instanceof LivingEntity living && !e.isRemoved() && e.distanceToSqr(player) < 64 * 64) {
+                near.add(new Body(living, e.getBoundingBox()));
+            }
+        }
+        bodies = near;
+    }
+
     public static void clear() {
+        bodies = List.of();
+        RigidCoats.clear();
         WoundAnchors.clear();
         CORPSES.clear();
         clearCoats();

@@ -69,7 +69,7 @@ public final class Giblets {
                     vy *= 0.3;
                     vz *= 0.3;
                 }
-                Minecraft.getInstance().particleEngine.createParticle(BloodParticles.GIBLET,
+                ClientBloodParticleSpawner.create(BloodParticles.GIBLET,
                         from.x + (rng.nextDouble() - 0.5) * spread, from.y + (rng.nextDouble() - 0.5) * spread,
                         from.z + (rng.nextDouble() - 0.5) * spread, vx, vy, vz);
             }

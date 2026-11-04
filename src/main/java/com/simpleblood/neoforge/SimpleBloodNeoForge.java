@@ -48,6 +48,7 @@ public class SimpleBloodNeoForge {
         event.registerSpriteSet(BloodParticles.BLOOD_SPLASH, sprites -> new BloodParticle.Factory(sprites, true));
         event.registerSpriteSet(BloodParticles.BLOOD_DROP, com.simpleblood.particle.BloodDropParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BLOOD_STREAK, com.simpleblood.particle.BloodStreakParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BLOOD_SPRAY, com.simpleblood.particle.BloodSprayParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BLOOD_FOG, BloodFogParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BONE_CHIP, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.BONE));
         event.registerSpriteSet(BloodParticles.METAL_FLAKE, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.METAL));
@@ -121,6 +122,7 @@ public class SimpleBloodNeoForge {
         event.registerSpriteSet(BloodParticles.BLOOD_SPLASH, sprites -> new BloodParticle.Factory(sprites, true));
         event.registerSpriteSet(BloodParticles.BLOOD_DROP, com.simpleblood.particle.BloodDropParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BLOOD_STREAK, com.simpleblood.particle.BloodStreakParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BLOOD_SPRAY, com.simpleblood.particle.BloodSprayParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BLOOD_FOG, BloodFogParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.BONE_CHIP, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.BONE));
         event.registerSpriteSet(BloodParticles.METAL_FLAKE, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.METAL));

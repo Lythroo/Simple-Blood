@@ -106,6 +106,19 @@ public class BloodParticle extends SingleQuadParticle {
         spawnPaintsSurfaces.remove();
         spawnExact.remove();
         spawnLifeScale.remove();
+        clearCarry();
+        spawnCarried.remove();
+        spawnVanishes.remove();
+    }
+
+    public static void setCarried(int pixels) {
+        spawnCarried.set(Math.max(0, pixels));
+    }
+
+    private static final ThreadLocal<Boolean> spawnVanishes = ThreadLocal.withInitial(() -> false);
+
+    public static void setVanishOnLanding(boolean vanish) {
+        spawnVanishes.set(vanish);
     }
 
     public static void setShouldDespawnInWater(boolean shouldDespawn) {
@@ -137,13 +150,36 @@ public class BloodParticle extends SingleQuadParticle {
     private static final ThreadLocal<Double> spawnFloorY = ThreadLocal.withInitial(() -> Double.NaN);
     private static final ThreadLocal<Boolean> spawnExact = ThreadLocal.withInitial(() -> false);
     private static final ThreadLocal<Float> spawnLifeScale = ThreadLocal.withInitial(() -> 1.0f);
+    private static final ThreadLocal<double[]> spawnCarry = ThreadLocal.withInitial(() -> new double[4]);
+    private static final double MAX_CARRY = 1.5;
+
+    public static void carryMotionOf(net.minecraft.world.entity.Entity e) {
+        double[] c = spawnCarry.get();
+        double vx = e.getX() - e.xo, vy = e.getY() - e.yo, vz = e.getZ() - e.zo;
+        boolean sane = vx * vx + vy * vy + vz * vz <= MAX_CARRY * MAX_CARRY;
+        c[0] = sane ? vx : 0;
+        c[1] = sane ? vy : 0;
+        c[2] = sane ? vz : 0;
+        c[3] = sane ? 1 : 0;
+    }
+
+    private static final double[] NO_CARRY = new double[4];
+
+    static double[] carriedMotion() {
+        double[] c = spawnCarry.get();
+        return c[3] != 0 ? c : NO_CARRY;
+    }
+
+    public static void clearCarry() {
+        spawnCarry.get()[3] = 0;
+    }
 
     public static void setBallistic(boolean exact, float lifeScale) {
         spawnExact.set(exact);
         spawnLifeScale.set(lifeScale);
     }
 
-    static boolean ballisticSpawn() { return spawnExact.get(); }
+    public static boolean ballisticSpawn() { return spawnExact.get(); }
 
     static float nextLifeScale() { return spawnLifeScale.get(); }
 
@@ -153,16 +189,58 @@ public class BloodParticle extends SingleQuadParticle {
 
     public static void spawnDroplet(ClientLevel level, double x, double y, double z, int colour,
                                     int carried, double floorY) {
+        spawnDroplet(level, x, y, z, colour, carried, floorY, 0.0, -0.02, 0.0);
+    }
+
+    public static void spawnFlung(ClientLevel level, double x, double y, double z, int colour, int carried,
+                                  double vx, double vy, double vz) {
         if (!RenderThread.on()) {
-            RenderThread.run(() -> spawnDroplet(level, x, y, z, colour, carried, floorY));
+            RenderThread.run(() -> spawnFlung(level, x, y, z, colour, carried, vx, vy, vz));
             return;
         }
+        boolean prevExact = spawnExact.get();
+        spawnExact.set(true);
+        try {
+            spawnDroplet(level, x, y, z, colour, carried, Double.NaN, vx, vy, vz);
+        } finally {
+            spawnExact.set(prevExact);
+        }
+    }
+
+    public static void spawnMoving(ClientLevel level, double x, double y, double z, int colour, int carried, double floorY,
+                                   double vx, double vy, double vz) {
+        if (!RenderThread.on()) {
+            RenderThread.run(() -> spawnMoving(level, x, y, z, colour, carried, floorY, vx, vy, vz));
+            return;
+        }
+        boolean prevExact = spawnExact.get();
+        spawnExact.set(true);
+        try {
+            Particle p = spawnDroplet(level, x, y, z, colour, carried, floorY, vx, vy, vz);
+            if (p != null && com.simpleblood.Tally.ON && MOVING_FOR_TEST.size() < 256) {
+                MOVING_FOR_TEST.add(new MovingDrop(p, level.getGameTime(), x, z, vx, vz));
+            }
+        } finally {
+            spawnExact.set(prevExact);
+        }
+    }
+
+    public record MovingDrop(Particle particle, long tick, double x, double z, double vx, double vz) {}
+
+    public static final java.util.List<MovingDrop> MOVING_FOR_TEST = new java.util.ArrayList<>();
+
+    private static Particle spawnDroplet(ClientLevel level, double x, double y, double z, int colour,
+                                         int carried, double floorY, double vx, double vy, double vz) {
+        if (!RenderThread.on()) {
+            RenderThread.run(() -> spawnDroplet(level, x, y, z, colour, carried, floorY, vx, vy, vz));
+            return null;
+        }
         int depth = runoffDepth.get();
-        if (depth >= 2) return;
+        if (depth >= 2) return null;
         BlockPos at = BlockPos.containing(x, y, z);
-        if (level.getBlockState(at).isCollisionShapeFullBlock(level, at)) return;
+        if (level.getBlockState(at).isCollisionShapeFullBlock(level, at)) return null;
         com.simpleblood.SimpleBloodConfig budgetCfg = SimpleBloodClient.getConfig();
-        if (budgetCfg != null && alive.get() > budgetCfg.particleBudget() * 5 / 4) return;
+        if (budgetCfg != null && alive.get() > budgetCfg.particleBudget() * 5 / 4) return null;
         BloodColor.Color prev = currentBloodColor.get();
         boolean prevFog = shouldTransformToFog.get();
         boolean prevMelt = shouldDespawnInWater.get();
@@ -182,8 +260,8 @@ public class BloodParticle extends SingleQuadParticle {
         spawnCarried.set(carried);
         spawnFloorY.set(floorY);
         try {
-            Minecraft.getInstance().particleEngine.createParticle(BloodParticles.BLOOD_DROP,
-                    x, y, z, 0.0, -0.02, 0.0);
+            return Minecraft.getInstance().particleEngine.createParticle(BloodParticles.BLOOD_DROP,
+                    x, y, z, vx, vy, vz);
         } finally {
             runoffDepth.set(depth);
             spawnCarried.set(0);
@@ -213,6 +291,7 @@ public class BloodParticle extends SingleQuadParticle {
     private static final int SOAK_TICKS = 6;
     boolean splash;
     private final boolean mayPaint;
+    private final boolean vanishes;
     protected float landingScale = 1f;
     protected final com.simpleblood.BloodKind kind;
     protected final boolean glows;
@@ -249,6 +328,13 @@ public class BloodParticle extends SingleQuadParticle {
             this.yd = velY;
             this.zd = velZ;
         }
+        double[] carry = spawnCarry.get();
+        if (carry[3] != 0) {
+            this.xd += carry[0];
+            this.yd += carry[1];
+            this.zd += carry[2];
+            com.simpleblood.Tally.count("particle.carried");
+        }
 
         float lifetimeMultiplier = SimpleBloodClient.getConfig().particleLifetimeMultiplier();
 
@@ -265,6 +351,7 @@ public class BloodParticle extends SingleQuadParticle {
         this.kind = currentKind.get();
         this.glows = spawnGlows.get();
         this.mayPaint = spawnPaintsSurfaces.get();
+        this.vanishes = spawnVanishes.get();
         this.chainDepth = runoffDepth.get();
         this.carriedPixels = spawnCarried.get();
         this.floorY = spawnFloorY.get();
@@ -287,8 +374,14 @@ public class BloodParticle extends SingleQuadParticle {
         }
     }
 
+    private volatile boolean ticked;
+
     @Override
     public void remove() {
+        if (!ticked && !this.removed && com.simpleblood.compat.AsyncParticlesTicks.evictingSpawns()
+                && com.simpleblood.compat.AsyncParticlesTicks.hold(this::putBack)) {
+            return;
+        }
         if (counted) {
             counted = false;
             countDeath();
@@ -341,8 +434,14 @@ public class BloodParticle extends SingleQuadParticle {
         return false;
     }
 
+    private void putBack() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == this.level) mc.particleEngine.add(this);
+    }
+
     @Override
     public void tick() {
+        ticked = true;
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;
@@ -360,20 +459,32 @@ public class BloodParticle extends SingleQuadParticle {
         Vec3 from = new Vec3(fromX, fromY, fromZ), to = new Vec3(x, y, z);
         if (from.distanceToSqr(to) > 16 * 16) return false;
         net.minecraft.world.phys.AABB path = new net.minecraft.world.phys.AABB(from, to).inflate(0.05);
-        for (net.minecraft.world.entity.LivingEntity e : level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, path)) {
-            net.minecraft.world.phys.AABB box = e.getBoundingBox();
-            if (box.inflate(0.3).contains(born)) continue;
-            java.util.Optional<Vec3> at = box.clip(from, to);
-            if (at.isEmpty() && !box.contains(to)) continue;
-            Vec3 dir = to.subtract(from);
-            dir = dir.lengthSqr() < 1.0e-8 ? new Vec3(0, -1, 0) : dir.normalize();
-            int rgb = ((int) (baseRed * 255) << 16) | ((int) (baseGreen * 255) << 8) | (int) (baseBlue * 255);
-            if (rgb == 0) rgb = 0x010101;
-            if (glows) rgb |= com.simpleblood.BloodColor.GLOW_BIT;
-            com.simpleblood.mob.MobBlood.landed(e, at.orElse(to), dir, rgb, splash ? 1.2f : 0.8f);
-            return true;
+        if (com.simpleblood.RenderThread.on()) {
+            for (net.minecraft.world.entity.LivingEntity e : level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, path)) {
+                if (stains(e, e.getBoundingBox(), from, to)) return true;
+            }
+            return false;
+        }
+        for (com.simpleblood.mob.MobBlood.Body b : com.simpleblood.mob.MobBlood.bodies()) {
+            if (b.box().intersects(path) && stains(b.entity(), b.box(), from, to)) return true;
         }
         return false;
+    }
+
+    private boolean stains(net.minecraft.world.entity.LivingEntity e, net.minecraft.world.phys.AABB box, Vec3 from, Vec3 to) {
+        if (box.inflate(0.3).contains(born)) return false;
+        java.util.Optional<Vec3> at = box.clip(from, to);
+        if (at.isEmpty() && !box.contains(to)) return false;
+        Vec3 d = to.subtract(from);
+        Vec3 dir = d.lengthSqr() < 1.0e-8 ? new Vec3(0, -1, 0) : d.normalize();
+        int rgb = ((int) (baseRed * 255) << 16) | ((int) (baseGreen * 255) << 8) | (int) (baseBlue * 255);
+        if (rgb == 0) rgb = 0x010101;
+        if (glows) rgb |= com.simpleblood.BloodColor.GLOW_BIT;
+        int colour = rgb;
+        Vec3 point = at.orElse(to);
+        float size = splash ? 1.2f : 0.8f;
+        com.simpleblood.RenderThread.run(() -> com.simpleblood.mob.MobBlood.landed(e, point, dir, colour, size));
+        return true;
     }
 
     void animate(SpriteSet frames, int shapes, int ticksPerFrame, net.minecraft.util.RandomSource random) {
@@ -403,6 +514,26 @@ public class BloodParticle extends SingleQuadParticle {
                 this.remove();
                 return;
             }
+        }
+
+        if (kind == com.simpleblood.BloodKind.LIQUID && mayPaint && SimpleBloodClient.getConfig().surfaces.enabled
+                && com.simpleblood.surface.BloodSurfaces.inCauldronWater(level, x, y, z)) {
+            Vec3 at = new Vec3(x, y, z);
+            if (age > 0 && chainDepth == 0) com.simpleblood.BloodSounds.intoWater(level, at);
+            int rgb = (Math.round(baseRed * 255) << 16) | (Math.round(baseGreen * 255) << 8) | Math.round(baseBlue * 255);
+            com.simpleblood.surface.BloodSurfaces.intoCauldron(level, at, rgb);
+            this.remove();
+            return;
+        }
+
+        if (kind == com.simpleblood.BloodKind.LIQUID && SimpleBloodClient.getConfig().surfaces.heatDries
+                && level.getFluidState(net.minecraft.core.BlockPos.containing(x, y, z)).is(net.minecraft.tags.FluidTags.LAVA)) {
+            com.simpleblood.Tally.count("heat.lava");
+            Vec3 at = new Vec3(x, y, z);
+            com.simpleblood.BloodSounds.sizzle(level, at);
+            RenderThread.run(() -> level.addParticle(net.minecraft.core.particles.ParticleTypes.SMOKE, at.x, at.y + 0.1, at.z, 0, 0.03, 0));
+            this.remove();
+            return;
         }
 
         if (shouldMeltInWater && isInWater()) {
@@ -475,12 +606,19 @@ public class BloodParticle extends SingleQuadParticle {
             } else if (hereState.getCollisionShape(level, here).isEmpty()) {
                 thin = entered && BloodSurfaces.isCrossModel(hereState) && !BloodSurfaces.sways(hereState);
             }
+            if (!thin && BloodSurfaces.movingBodiesCross(level, new Vec3(prevX, prevY, prevZ), new Vec3(x, y, z))) {
+                thin = true;
+            }
             if (thin && depositOnSurface(prevX, prevY, prevZ, wantX, wantY, wantZ, false)) {
                 this.remove();
                 return;
             }
         }
 
+        if (blocked && vanishes) {
+            this.remove();
+            return;
+        }
         if (blocked && !isOnGround) {
             boolean paints = SimpleBloodClient.getConfig().surfaces.enabled && kind.paintsSurfaces() && mayPaint;
 
@@ -693,12 +831,15 @@ public class BloodParticle extends SingleQuadParticle {
         }
         Vec3 to = from.add(dir.scale((len + this.bbWidth + 0.05) / len));
 
-        BloodSurfaces.Hit hit = BloodSurfaces.trace(level, from, to);
+        BloodSurfaces.Hit hit = BloodSurfaces.traceMove(level, from, to);
         if (hit == null && onGround) {
             hit = BloodSurfaces.trace(level, new Vec3(x, y + 0.05, z), new Vec3(x, y - 0.2, z));
         }
         if (hit == null && touching) hit = traceToContact();
-        if (hit == null) return false;
+        if (hit == null) {
+            com.simpleblood.Tally.count(RenderThread.on() ? "drop.miss" : "drop.miss.async");
+            return false;
+        }
 
         int colour = ((int) (baseRed * 255) << 16) | ((int) (baseGreen * 255) << 8) | (int) (baseBlue * 255);
         if (glows) colour |= BloodColor.GLOW_BIT;
@@ -709,6 +850,7 @@ public class BloodParticle extends SingleQuadParticle {
         } else {
             int base = 1 + random.nextInt(2) + (quadSize > 0.22f ? 1 : 0);
             if (splash) base += 2 + random.nextInt(2);
+            if (kind == com.simpleblood.BloodKind.POWDER) base = 1 + random.nextInt(2);
             int res = SimpleBloodClient.getConfig().surfaces.resolution;
             float areaScale = res >= 16 ? 3.0f : 1.0f;
             pixels = Math.max(amount > 0 ? 1 : 0, Math.round(base * amount * areaScale * landingScale));
@@ -719,6 +861,7 @@ public class BloodParticle extends SingleQuadParticle {
         boolean powder = kind == com.simpleblood.BloodKind.POWDER;
         BloodSurfaces.Hit landed = hit;
         if (!RenderThread.on()) {
+            com.simpleblood.Tally.count("drop.later");
             BloodSurfaces.depositLater(level, landed, colour, pixels, travel, powder, result -> landedSound(landed, result));
             return true;
         }

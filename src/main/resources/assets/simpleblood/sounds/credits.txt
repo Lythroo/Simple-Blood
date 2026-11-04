@@ -1,0 +1,12 @@
+Simple Blood's own sounds, all released under CC0 (public domain) by their authors.
+Credit is not required, but here it is with thanks.
+
+squelch2-3              "Meat Slap 2/3" by magnuswaker      https://freesound.org/people/magnuswaker/packs/29802/
+squelch4                 "Gushing Flesh" by magnuswaker        https://freesound.org/people/magnuswaker/sounds/563315/
+death2                   "Gore Rend" by magnuswaker            https://freesound.org/people/magnuswaker/sounds/563491/
+sizzle1-3                "Burning Flesh" by magnuswaker        https://freesound.org/people/magnuswaker/sounds/641415/
+stump1                   "Blood Gush" by FlaxGod               https://freesound.org/people/FlaxGod/sounds/654101/
+giblet1-3                "Three Flesh Impacts" by jawbutch     https://freesound.org/people/jawbutch/sounds/344409/
+slap1                    "Heavy, wet impact" by puppetmaster685719  https://freesound.org/people/puppetmaster685719/sounds/626405/
+
+Trimmed, faded and evened out for the mod.

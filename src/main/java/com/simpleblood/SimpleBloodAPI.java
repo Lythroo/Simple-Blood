@@ -167,6 +167,14 @@ public final class SimpleBloodAPI {
         if (type != null) nonBleedingDamageTypes.remove(type);
     }
 
+    /** @return {@code true} if this damage type is a developer-registered non-bleeding one. */
+    public static boolean isNonBleedingDamageType(net.minecraft.core.Holder<DamageType> type) {
+        for (ResourceKey<DamageType> key : nonBleedingDamageTypes) {
+            if (type.is(key)) return true;
+        }
+        return false;
+    }
+
     /** @return {@code true} if this source matches a developer-registered non-bleeding damage type. */
     public static boolean isNonBleedingDamageType(DamageSource source) {
         if (nonBleedingDamageTypes.isEmpty()) return false;
@@ -342,6 +350,9 @@ public final class SimpleBloodAPI {
     public static boolean hasMetalBody(LivingEntity entity) {
         BloodSettings s = getEntityBloodSettings(entity);
         if (s != null && s.getMetalBody() != null) return s.getMetalBody();
+        String armor = SimpleBlood.armorOf(entity);
+        if (armor.equals("metal")) return true;
+        if (armor.equals("armor")) return false; // armoured, not metal through and through
         return SimpleBlood.bloodKindOf(entity) == BloodKind.METAL;
     }
 

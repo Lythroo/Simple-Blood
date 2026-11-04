@@ -138,8 +138,19 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         UnderwaterParticles.add(this);
     }
 
+    private volatile boolean ticked;
+
+    private void putBack() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == this.level) mc.particleEngine.add(this);
+    }
+
     @Override
     public void remove() {
+        if (!ticked && !this.removed && com.simpleblood.compat.AsyncParticlesTicks.evictingSpawns()
+                && com.simpleblood.compat.AsyncParticlesTicks.hold(this::putBack)) {
+            return;
+        }
         if (counted) {
             counted = false;
             BloodParticle.countDeath();
@@ -151,6 +162,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
 
     @Override
     public void tick() {
+        ticked = true;
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;
@@ -249,6 +261,16 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
     }
 
     private void bleed(net.minecraft.core.particles.SimpleParticleType type, double vx, double vy, double vz) {
+        if (!com.simpleblood.RenderThread.on()) {
+            double px = x, py = y, pz = z;
+            com.simpleblood.RenderThread.run(() -> bleedAt(type, px, py, pz, vx, vy, vz));
+            return;
+        }
+        bleedAt(type, x, y, z, vx, vy, vz);
+    }
+
+    private void bleedAt(net.minecraft.core.particles.SimpleParticleType type, double px, double py, double pz,
+                         double vx, double vy, double vz) {
         BloodParticle.setCurrentBloodColor(blood);
         BloodParticle.setCurrentKind(com.simpleblood.BloodKind.LIQUID);
         BloodParticle.setGlowing(bloodGlows);
@@ -257,7 +279,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         BloodParticle.setEntitySizeMultiplier(bloodSize);
         BloodParticle.setBallistic(true, 1.0f);
         try {
-            com.simpleblood.ClientBloodParticleSpawner.emit(level, type, x, y, z, vx, vy, vz);
+            com.simpleblood.ClientBloodParticleSpawner.emit(level, type, px, py, pz, vx, vy, vz);
         } finally {
             BloodParticle.resetSpawnState();
         }

@@ -78,8 +78,19 @@ public class BloodFogParticle extends SingleQuadParticle implements DrawnBeforeW
 
     private final boolean beforeWater = !(shaders && glows);
 
+    private volatile boolean ticked;
+
+    private void putBack() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == this.level) mc.particleEngine.add(this);
+    }
+
     @Override
     public void remove() {
+        if (!ticked && !this.removed && com.simpleblood.compat.AsyncParticlesTicks.evictingSpawns()
+                && com.simpleblood.compat.AsyncParticlesTicks.hold(this::putBack)) {
+            return;
+        }
         if (counted) {
             counted = false;
             BloodParticle.countDeath();
@@ -154,6 +165,7 @@ public class BloodFogParticle extends SingleQuadParticle implements DrawnBeforeW
 
     @Override
     public void tick() {
+        ticked = true;
         if (!com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.PARTICLES)) {
             this.remove();
             return;

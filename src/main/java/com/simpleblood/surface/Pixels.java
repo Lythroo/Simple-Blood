@@ -23,7 +23,7 @@ public final class Pixels {
         //?}
     }
 
-    static int alpha(NativeImage image, int x, int y) {
+    public static int alpha(NativeImage image, int x, int y) {
         //? if <=1.21.1 {
         /*return (image.getPixelRGBA(x, y) >>> 24) & 0xFF;
         *///?} else {

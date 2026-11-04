@@ -15,6 +15,14 @@ public final class Screens {
         *///?}
     }
 
+    public static boolean overlayShown(Minecraft mc) {
+        //? if <26.2 {
+        return mc.getOverlay() != null;
+        //?} else {
+        /*return mc.gui.overlay() != null;
+        *///?}
+    }
+
     public static void open(Minecraft mc, Screen screen) {
         //? if <26.2 {
         mc.setScreen(screen);

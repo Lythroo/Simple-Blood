@@ -30,6 +30,7 @@ public final class BloodParticles {
     public static final SimpleParticleType BLOOD_SPLASH = simple("blood_splash");
     public static final SimpleParticleType BLOOD_DROP   = simple("blood_drop");
     public static final SimpleParticleType BLOOD_STREAK = simple("blood_streak");
+    public static final SimpleParticleType BLOOD_SPRAY  = simple("blood_spray");
     public static final SimpleParticleType BLOOD_FOG    = simple("blood_fog");
     public static final SimpleParticleType BONE_CHIP    = simple("bone_chip");
     public static final SimpleParticleType BONE_DUST    = simple("bone_dust");
@@ -58,6 +59,7 @@ public final class BloodParticles {
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BLOOD_SPLASH_H = REGISTRY.register("blood_splash", () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BLOOD_DROP_H   = REGISTRY.register("blood_drop",   () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BLOOD_STREAK_H = REGISTRY.register("blood_streak", () -> newSimple());
+    private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BLOOD_SPRAY_H  = REGISTRY.register("blood_spray", () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BLOOD_FOG_H    = REGISTRY.register("blood_fog",    () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BONE_CHIP_H    = REGISTRY.register("bone_chip",    () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BONE_DUST_H    = REGISTRY.register("bone_dust",    () -> newSimple());
@@ -73,6 +75,7 @@ public final class BloodParticles {
     public static SimpleParticleType BLOOD_SPLASH;
     public static SimpleParticleType BLOOD_DROP;
     public static SimpleParticleType BLOOD_STREAK;
+    public static SimpleParticleType BLOOD_SPRAY;
     public static SimpleParticleType BLOOD_FOG;
     public static SimpleParticleType BONE_CHIP;
     public static SimpleParticleType BONE_DUST;
@@ -93,6 +96,7 @@ public final class BloodParticles {
         BLOOD_SPLASH = BLOOD_SPLASH_H.get();
         BLOOD_DROP   = BLOOD_DROP_H.get();
         BLOOD_STREAK = BLOOD_STREAK_H.get();
+        BLOOD_SPRAY  = BLOOD_SPRAY_H.get();
         BLOOD_FOG    = BLOOD_FOG_H.get();
         BONE_CHIP    = BONE_CHIP_H.get();
         BONE_DUST    = BONE_DUST_H.get();
@@ -114,6 +118,7 @@ public final class BloodParticles {
     private static final RegistryObject<SimpleParticleType> BLOOD_SPLASH_H = REGISTRY.register("blood_splash", () -> newSimple());
     private static final RegistryObject<SimpleParticleType> BLOOD_DROP_H   = REGISTRY.register("blood_drop",   () -> newSimple());
     private static final RegistryObject<SimpleParticleType> BLOOD_STREAK_H = REGISTRY.register("blood_streak", () -> newSimple());
+    private static final RegistryObject<SimpleParticleType> BLOOD_SPRAY_H  = REGISTRY.register("blood_spray", () -> newSimple());
     private static final RegistryObject<SimpleParticleType> BLOOD_FOG_H    = REGISTRY.register("blood_fog",    () -> newSimple());
     private static final RegistryObject<SimpleParticleType> BONE_CHIP_H    = REGISTRY.register("bone_chip",    () -> newSimple());
     private static final RegistryObject<SimpleParticleType> BONE_DUST_H    = REGISTRY.register("bone_dust",    () -> newSimple());
@@ -129,6 +134,7 @@ public final class BloodParticles {
     public static SimpleParticleType BLOOD_SPLASH;
     public static SimpleParticleType BLOOD_DROP;
     public static SimpleParticleType BLOOD_STREAK;
+    public static SimpleParticleType BLOOD_SPRAY;
     public static SimpleParticleType BLOOD_FOG;
     public static SimpleParticleType BONE_CHIP;
     public static SimpleParticleType BONE_DUST;
@@ -149,6 +155,7 @@ public final class BloodParticles {
         BLOOD_SPLASH = BLOOD_SPLASH_H.get();
         BLOOD_DROP   = BLOOD_DROP_H.get();
         BLOOD_STREAK = BLOOD_STREAK_H.get();
+        BLOOD_SPRAY  = BLOOD_SPRAY_H.get();
         BLOOD_FOG    = BLOOD_FOG_H.get();
         BONE_CHIP    = BONE_CHIP_H.get();
         BONE_DUST    = BONE_DUST_H.get();

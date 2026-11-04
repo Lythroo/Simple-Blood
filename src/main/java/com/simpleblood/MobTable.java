@@ -73,6 +73,7 @@ public final class MobTable {
             SimpleBloodConfig.VanillaEntities.EntitySettings s = new SimpleBloodConfig.VanillaEntities.EntitySettings(
                     g.enabled, g.canDripAtLowHealth, g.transformToStains, g.bloodColor, g.getKind());
             s.glows = g.glows;
+            s.armor = g.armor;
             cfg.vanillaEntities.entities.put(path, s);
             added++;
         }
@@ -105,6 +106,8 @@ public final class MobTable {
             rule("sculk warden", "sculk", BloodKind.LIQUID, 0x0F4B58, true, true),
     };
 
+    private static final String[] ARMOURED = {"knight", "paladin", "templar", "armored", "armoured", "juggernaut"};
+
     public static SimpleBloodConfig.ModdedEntities.ModdedEntitySettings guess(Identifier id) {
         String[] words = id.getPath().toLowerCase(Locale.ROOT).split("[_/.\\-]+");
         Rule match = null;
@@ -128,6 +131,9 @@ public final class MobTable {
         if (match != null) s.kind = match.kind().key();
         for (String word : words) {
             if (word.equals("glow") || word.equals("glowing") || word.equals("luminous") || word.equals("radiant")) s.glows = true;
+            if (match == null || match.kind() != BloodKind.METAL) {
+                for (String stem : ARMOURED) if (word.contains(stem)) s.armor = "armor";
+            }
         }
         return s;
     }

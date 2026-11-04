@@ -1,59 +1,69 @@
 package com.simpleblood.gui;
 
+import com.simpleblood.Lang;
+
 import com.simpleblood.SimpleBlood;
 import com.simpleblood.SimpleBloodClient;
 import com.simpleblood.SimpleBloodConfig;
 import com.simpleblood.Guard;
 import com.simpleblood.surface.BloodSurfaces;
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.IntConsumer;
 
 public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     private static final Gson GSON = new Gson();
-    private static final int TITLE_H = 26;
-    private static final int FOOTER_H = 22;
-    private static final int TAB_BAR_ROOM = 8;
-    private int sidebar = 96;
+    private static final int TITLE_H = 24;
+    private static final int FOOTER_H = 24;
+    private static final int PAGE_HEAD = 38;
+    private int sidebar = 100;
     private int margin = 8;
-    private int paneW = 160;
+    private int paneW = 180;
 
     private final Screen parent;
     private final String backup;
     private final List<Pages.Page> pages = Pages.all();
     private int page;
-    private int prevPage = -1;
-    private float pageAnim = 1f;
 
     private final Widget.Container root = new Widget.Container();
-    private final Widget.Container tabs = new Widget.Container();
+    private final Widget.Container top = new Widget.Container();
     private final Widget.ScrollPanel tabList = new Widget.ScrollPanel();
     private Widgets.TextField search;
     private String searchText = "";
     private final Widget.Container header = new Widget.Container();
     private final Widget.ScrollPanel list = new Widget.ScrollPanel();
     private final Widget.Container footer = new Widget.Container();
+    private final Widget.Container paneBox = new Widget.Container();
+    private Widgets.Button replay, slow, backToDefault;
+    private Widgets.ResetButton resetPage;
     private ColourPicker picker;
+    private Widget.Container popup;
     private boolean saved;
 
     private final java.util.EnumMap<com.simpleblood.surface.PreviewScene.Kind, SceneView> scenes = new java.util.EnumMap<>(com.simpleblood.surface.PreviewScene.Kind.class);
     private Widget.PreviewSource previewRow;
     private Widget.PreviewSource hoverRow;
     private float previewHover;
-    private float previewSwap;
-    private String previewName;
-    private static final float PREVIEW_DELAY = 0.15f;
+    private static final float PREVIEW_DELAY = 0.12f;
+    private boolean slowMotion;
+    private int tickCount;
+
+    private int changed;
+    private float changedAt = -1;
 
     private float lastTime = Widget.Anim.now();
     private String toast;
     private float toastUntil;
 
     public BloodConfigScreen(Screen parent) {
-        super(Component.literal("Simple Blood"));
+        super(Component.literal(Lang.t("simpleblood.screen.simple_blood")));
         this.parent = parent;
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         this.backup = cfg == null ? null : GSON.toJson(cfg);
@@ -102,9 +112,28 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     @Override
     public void openPicker(int current, IntConsumer apply, String note) {
+        Widgets.Dropdown.close();
         picker = new ColourPicker(current, apply, () -> picker = null, note);
         picker.layout(width, height);
     }
+
+    @Override
+    public void openPopup(Widget.Container panel) {
+        Widgets.Dropdown.close();
+        popup = panel;
+    }
+
+    @Override
+    public void closePopup() {
+        Widgets.Dropdown.close();
+        popup = null;
+    }
+
+    @Override
+    public int screenWidth() { return width; }
+
+    @Override
+    public int screenHeight() { return height; }
 
     @Override
     public void rebuildPage() {
@@ -130,21 +159,29 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     private void layout() {
         root.clear();
         root.x = 0; root.y = 0; root.w = width; root.h = height;
-        margin = width < 520 ? 6 : 10;
+        Widgets.Dropdown.close();
+        popup = null;
+        margin = width < 520 ? 6 : 8;
         int longest = 0;
-        for (Pages.Page p : pages) longest = Math.max(longest, this.font.width(p.title()));
-        sidebar = Math.min(Math.max(width < 520 ? 84 : 104, longest + 16 + 6 + TAB_BAR_ROOM), width / 4);
-        tabs.x = margin; tabs.y = TITLE_H + margin; tabs.w = sidebar; tabs.h = height - TITLE_H - FOOTER_H - margin * 2;
+        for (Pages.Page p : pages) longest = Math.max(longest, this.font.width(p.title()) + 22);
+        for (String c : categories()) longest = Math.max(longest, this.font.width(c) + 18);
+        sidebar = Math.min(Math.max(width < 520 ? 82 : 96, longest + 8), width / 5);
+        tabList.x = margin; tabList.y = TITLE_H + margin; tabList.w = sidebar; tabList.h = height - TITLE_H - FOOTER_H - margin * 2;
+        tabList.padding = 3;
         footer.x = 0; footer.y = height - FOOTER_H; footer.w = width; footer.h = FOOTER_H;
         layoutContent();
         previewRow = null;
         hoverRow = null;
-        root.add(tabs);
+        root.add(top);
+        root.add(tabList);
         root.add(header);
         root.add(list);
+        root.add(paneBox);
         root.add(footer);
+        buildTop();
         buildTabs();
         buildFooter();
+        buildPane();
         buildPage(true);
         if (picker != null) picker.layout(width, height);
     }
@@ -153,9 +190,24 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         int contentX = margin + sidebar + margin;
         int contentW = width - contentX - margin;
         boolean pane = hasPane();
-        paneW = pane ? Math.max(124, Math.min(200, Math.round(contentW * 0.38f))) : 0;
-        list.x = contentX; list.w = pane ? contentW - paneW - margin : contentW;
-        header.x = contentX; header.w = list.w;
+        if (pane) {
+            paneW = Math.max(130, Math.min(360, Math.round(contentW * 0.42f)));
+            int listW = Math.min(440, contentW - paneW - margin);
+            int extra = contentW - listW - margin - paneW;
+            int grow = Math.max(0, Math.min(extra, 360 - paneW));
+            paneW += grow;
+            extra -= grow;
+            list.x = contentX + Math.max(0, extra) / 2;
+            list.w = listW;
+        } else {
+            paneW = 0;
+            list.x = contentX;
+            list.w = contentW;
+        }
+        header.x = list.x; header.w = list.w;
+        paneBox.visible = pane;
+        paneBox.x = list.x + list.w + margin; paneBox.y = TITLE_H + margin;
+        paneBox.w = paneW; paneBox.h = height - paneBox.y - FOOTER_H - margin;
     }
 
     private boolean hasPane() {
@@ -166,120 +218,176 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         return !searchText.isBlank();
     }
 
-    private void buildTabs() {
-        tabs.clear();
-        tabList.clear();
-        int inner = sidebar - 8;
+    private List<String> categories() {
+        List<String> out = new ArrayList<>();
+        for (Pages.Page p : pages) if (!out.contains(p.group())) out.add(p.group());
+        return out;
+    }
+
+    private void buildTop() {
+        top.clear();
+        top.x = 0; top.y = 0; top.w = width; top.h = TITLE_H + margin + PAGE_HEAD;
+        int sw = Math.min(150, width / 4);
         search = new Widgets.TextField();
-        search.hint = "Search...";
+        search.hint = Lang.t("simpleblood.screen.search_every_setting");
         search.set(searchText);
-        search.x = tabs.x + 4; search.y = tabs.y + 4; search.w = inner; search.h = 18;
-        search.tooltip = List.of("Find a setting on any page");
+        search.x = width - margin - sw; search.y = (TITLE_H - 16) / 2; search.w = sw; search.h = 16;
         search.onChange = text -> {
             boolean was = searching();
             searchText = text;
             if (searching() || was) {
-                pageAnim = was ? 1f : 0f;
+                Widgets.Dropdown.close();
+                layoutContent();
+                buildTabs();
                 buildPage(true);
             }
         };
-        tabs.add(search);
-        tabList.x = tabs.x + 2; tabList.y = search.y + search.h + 4; tabList.w = sidebar - 4; tabList.h = tabs.y + tabs.h - tabList.y - 2;
-        tabList.padding = 2;
-        int y = 0;
-        String group = null;
-        for (int i = 0; i < pages.size(); i++) {
-            final int idx = i;
-            Pages.Page p = pages.get(i);
-            if (!p.group().equals(group)) {
-                group = p.group();
-                Widgets.Label label = new Widgets.Label(group.toUpperCase(java.util.Locale.ROOT));
-                label.colour = Widgets.TEXT_DIM;
-                label.x = 4; label.y = y + (i == 0 ? 2 : 6);
-                tabList.add(label);
-                y = label.y + 11;
+        top.add(search);
+    }
+
+    private void buildTabs() {
+        tabList.clear();
+        String open = searching() ? null : pages.get(page).group();
+        int y = 2, inner = tabList.w - 4, shownY = -1;
+        for (String cat : categories()) {
+            int first = -1;
+            for (int i = 0; i < pages.size(); i++) if (pages.get(i).group().equals(cat)) { first = i; break; }
+            final int firstPage = first;
+            boolean isOpen = cat.equals(open);
+            CategoryTab ct = new CategoryTab(cat, isOpen, () -> selectPage(firstPage));
+            ct.x = 2; ct.y = y; ct.w = inner; ct.h = 17;
+            tabList.add(ct);
+            y += 18;
+            if (!isOpen) continue;
+            int n = 0;
+            for (int i = 0; i < pages.size(); i++) {
+                Pages.Page p = pages.get(i);
+                if (!p.group().equals(cat)) continue;
+                final int idx = i;
+                Tab t = new Tab(p.title(), () -> selectPage(idx), () -> page == idx && !searching(), n++);
+                t.x = 2; t.y = y; t.w = inner; t.h = 15;
+                t.tooltip = List.of(p.hint());
+                tabList.add(t);
+                if (idx == page) shownY = y;
+                y += 15;
             }
-            Tab t = new Tab(p.title(), () -> selectPage(idx), () -> page == idx && !searching());
-            t.x = 2; t.y = y; t.w = tabList.w - t.x - TAB_BAR_ROOM; t.h = 17;
-            t.tooltip = List.of(p.hint());
-            tabList.add(t);
-            y += 19;
+            y += 3;
         }
-        tabs.add(tabList);
+        if (shownY >= 0) tabList.scrollTo(shownY + 30 - tabList.h);
     }
 
     private void buildFooter() {
         footer.clear();
-        int bw = width < 520 ? 54 : 62, bh = 16, gap = 6;
-        int total = bw * 3 + gap * 2;
-        int x0 = (width - total) / 2;
+        int bh = 16, gap = 6;
         int y0 = footer.y + (FOOTER_H - bh) / 2;
-        Widgets.Button done = new Widgets.Button("Save", this::save);
+        int bw = width < 520 ? 54 : 70;
+        Widgets.Button done = new Widgets.Button(Lang.t("simpleblood.screen.done"), this::save);
         done.accent = true;
-        done.x = x0; done.y = y0; done.w = bw; done.h = bh;
-        Widgets.Button cancel = new Widgets.Button("Cancel", this::cancel);
-        cancel.x = x0 + bw + gap; cancel.y = y0; cancel.w = bw; cancel.h = bh;
-        Widgets.Button reset = new Widgets.Button("Undo", () -> {
+        done.x = width - margin - bw; done.y = y0; done.w = bw; done.h = bh;
+        Widgets.Button cancel = new Widgets.Button(Lang.t("simpleblood.screen.cancel"), this::cancel);
+        cancel.tooltip = List.of(Lang.t("simpleblood.screen.close_and_put_everything_back"));
+        cancel.x = done.x - gap - bw; cancel.y = y0; cancel.w = bw; cancel.h = bh;
+        Widgets.Button undo = new Widgets.Button(Lang.t("simpleblood.screen.undo"), () -> {
             restore();
             BloodSurfaces.clear();
-            toast("Undone");
+            toast(Lang.t("simpleblood.screen.undone"));
             buildPage(true);
         });
-        reset.tooltip = List.of("Back to how things were when you opened this screen");
-        reset.x = x0 + (bw + gap) * 2; reset.y = y0; reset.w = bw; reset.h = bh;
-        Widgets.Button defaults = new Widgets.Button("Reset to defaults", () -> {
-            SimpleBloodConfig fresh = new SimpleBloodConfig();
-            fresh.vanillaEntities.initializeDefaults();
-            SimpleBloodClient.setConfig(fresh);
-            BloodSurfaces.clear();
-            toast("Back to defaults");
-            buildPage(true);
-        });
-        defaults.tooltip = List.of("Every setting back to how the mod comes, mob colours and kinds too",
-                "Cancel or Undo brings your settings back");
-        int dw = this.font.width(defaults.text) + 14;
-        int centreRight = x0 + total + gap;
-        if (width - margin - dw < centreRight) {
-            defaults.text = "Defaults";
-            dw = this.font.width(defaults.text) + 14;
-        }
-        defaults.x = width - margin - dw; defaults.y = y0; defaults.w = dw; defaults.h = bh;
+        undo.tooltip = List.of(Lang.t("simpleblood.screen.back_to_how_things_were"));
+        int uw = this.font.width(Lang.t("simpleblood.screen.undo")) + 16;
+        undo.x = margin + 4 + this.font.width(Lang.t("simpleblood.screen.unsaved_changes", 999)) + 10; undo.y = y0; undo.w = uw; undo.h = bh;
         footer.add(done);
         footer.add(cancel);
-        footer.add(reset);
-        footer.add(defaults);
+        footer.add(undo);
+    }
+
+    private void buildPane() {
+        paneBox.clear();
+        replay = new Widgets.Button(Lang.t("simpleblood.screen.replay"), () -> {
+            if (previewRow != null && previewRow.previewKind() != null) {
+                SceneView v = scenes.get(previewRow.previewKind());
+                if (v != null) v.trigger();
+            }
+        });
+        slow = new Widgets.Button(Lang.t("simpleblood.screen.slow"), () -> slowMotion = !slowMotion);
+        slow.tooltip = List.of(Lang.t("simpleblood.screen.plays_the_scene_at_a"));
+        backToDefault = new Widgets.Button(Lang.t("simpleblood.screen.back_to_default"), () -> {
+            if (previewRow instanceof Widgets.Row r && r.reset() != null) {
+                r.reset().run();
+                refreshList();
+            }
+        });
+        for (Widgets.Button b : List.of(replay, slow, backToDefault)) {
+            b.h = 14;
+            b.visible = false;
+            paneBox.add(b);
+        }
     }
 
     private void buildPage(boolean withHeader) {
         layoutContent();
         list.clear();
         if (withHeader) header.clear();
-        int top = TITLE_H + margin;
+        int listTop = TITLE_H + margin + PAGE_HEAD;
         Pages.Builder b = new Pages.Builder(list, header, this, !withHeader);
-        header.y = top;
-        list.y = top;
-        list.h = height - top - FOOTER_H - margin;
+        header.y = listTop;
+        list.y = listTop;
+        list.h = height - listTop - FOOTER_H - margin;
         if (searching()) Pages.search(b, pages, searchText);
         else pages.get(page).build().accept(b);
         int headerH = withHeader ? b.headerHeight() : header.h;
         header.h = headerH;
-        list.y = top + headerH;
+        list.y = listTop + headerH;
         list.h = height - list.y - FOOTER_H - margin;
         if (withHeader) {
             previewRow = null;
             hoverRow = null;
+            if (resetPage != null) top.children().remove(resetPage);
+            resetPage = new Widgets.ResetButton(Lang.t("simpleblood.screen.reset_page"), () -> {
+                resetAll(list);
+                toast(Lang.t("simpleblood.screen.page_reset"));
+                refreshList();
+            });
+            resetPage.tooltip = List.of(Lang.t("simpleblood.screen.puts_every_amber_setting_on"));
+            resetPage.y = TITLE_H + margin + 10 + (18 - resetPage.h) / 2;
+            resetPage.visible = false;
+            top.add(resetPage);
         }
-        for (Widget w : header.children()) w.y += 0;
+    }
+
+    private static int countChanged(Widget.Container c) {
+        int n = 0;
+        for (Widget w : c.children()) {
+            if (w instanceof Widgets.Row r) {
+                if (r.changed() && r.reset() != null) n++;
+            } else if (w instanceof Widget.Container k) {
+                n += countChanged(k);
+            }
+        }
+        return n;
+    }
+
+    private static void resetAll(Widget.Container c) {
+        for (Widget w : new ArrayList<>(c.children())) {
+            if (w instanceof Widgets.Row r) {
+                if (r.changed() && r.reset() != null) r.reset().run();
+            } else if (w instanceof Widget.Container k) {
+                resetAll(k);
+            }
+        }
     }
 
     @Override
     public void tick() {
-        guarded("the previews moving", com.simpleblood.surface.PreviewScene::tickAll);
+        if (!slowMotion || tickCount++ % 3 == 0) guarded("the previews moving", com.simpleblood.surface.PreviewScene::tickAll);
     }
 
     @Override
     public void removed() {
         Widget.stopHoverTracking();
+        Widgets.Dropdown.close();
+        root.blur();
+        if (picker != null) picker.blur();
         cleanup("closing the settings screen", () -> {
             for (SceneView v : scenes.values()) v.dispose();
             scenes.clear();
@@ -291,7 +399,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         for (int i = c.children().size() - 1; i >= 0; i--) {
             Widget w = c.children().get(i);
             if (!w.visible || !w.contains(mx, my)) continue;
-            if (w instanceof Widget.PreviewSource src && src.previewKind() != null) return src;
+            if (w instanceof Widget.PreviewSource src) return src;
             if (w instanceof Widget.Container k) {
                 Widget.PreviewSource inner = previewSourceAt(k, mx, my);
                 if (inner != null) return inner;
@@ -302,9 +410,20 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
 
     private static Widget.PreviewSource activeSource(Widget.Container c) {
         for (Widget w : c.children()) {
-            if (w instanceof Widget.PreviewSource src && src.previewKind() != null && src.previewActive()) return src;
+            if (w instanceof Widget.PreviewSource src && src.previewActive()) return src;
             if (w instanceof Widget.Container k) {
                 Widget.PreviewSource inner = activeSource(k);
+                if (inner != null) return inner;
+            }
+        }
+        return null;
+    }
+
+    private static Widget.PreviewSource firstSource(Widget.Container c) {
+        for (Widget w : c.children()) {
+            if (w instanceof Widget.PreviewSource src) return src;
+            if (w instanceof Widget.Container k) {
+                Widget.PreviewSource inner = firstSource(k);
                 if (inner != null) return inner;
             }
         }
@@ -316,9 +435,10 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         int pw = paneW, ph = height - py - FOOTER_H - margin;
         panel(g, px, py, px + pw, py + ph);
 
+        boolean overList = picker == null && !Widgets.Dropdown.anyOpen() && list.contains(mx, my);
         Widget.PreviewSource src = picker != null ? null : activeSource(list);
         boolean active = src != null;
-        if (src == null && picker == null) src = previewSourceAt(list, mx, my);
+        if (src == null && overList) src = previewSourceAt(list, mx, my);
         if (src != hoverRow) {
             hoverRow = src;
             previewHover = 0;
@@ -328,71 +448,82 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         boolean fresh = false;
         if (src != null && (active || previewHover >= PREVIEW_DELAY) && src != previewRow) {
             previewRow = src;
-            previewSwap = 0f;
             fresh = true;
         }
         if (previewRow == null) {
             previewRow = firstSource(list);
             fresh = previewRow != null;
         }
-        previewSwap = Math.min(1f, previewSwap + dt * 5f);
-        float a = Widget.Anim.easeOut(previewSwap);
+        float a = 1f;
 
-        int ix = px + 4, iy = py + 4, iw = pw - 8;
-        if (previewRow == null) {
-            g.textCentered("Hover something", px + pw / 2, py + ph / 2 - 4, Widgets.TEXT_DARK);
-            return;
+        int ix = px + 5, iw = pw - 10;
+        int y = py + 5;
+        replay.visible = slow.visible = backToDefault.visible = false;
+        if (previewRow == null) return;
+
+        if (previewRow.previewKind() != null) {
+            SceneView view = scenes.computeIfAbsent(previewRow.previewKind(), k -> new SceneView(k, () -> 0x7A0F0F));
+            java.util.function.IntSupplier colour = previewRow.previewColour();
+            view.colour(colour != null ? colour : () -> 0x660303);
+            view.show(previewRow.previewAspects());
+            view.config(previewRow.previewConfig());
+            view.figure(previewRow.previewFigure());
+            view.bloodKind(previewRow.previewBloodKind());
+            view.weapon(previewRow.previewWeapon(), previewRow.previewItem());
+            if (fresh) view.trigger();
+            int sh = Math.max(60, Math.min(iw, ph - 118));
+            view.draw(g, ix, y, iw, sh, dt);
+            g.fill(ix + 3, y + 3, ix + 9 + g.textWidth(Lang.t("simpleblood.screen.live_preview")), y + 15, 0xA0000000);
+            g.text(Lang.t("simpleblood.screen.live_preview"), ix + 6, y + 5, 0xFFE2DED8);
+            y += sh + 4;
+            String caption = view.scene().caption();
+            replay.w = g.textWidth(Lang.t("simpleblood.screen.replay")) + 12;
+            slow.w = g.textWidth(Lang.t("simpleblood.screen.slow")) + 12;
+            slow.x = ix + iw - slow.w; slow.y = y;
+            replay.x = slow.x - 4 - replay.w; replay.y = y;
+            slow.accent = slowMotion;
+            replay.visible = slow.visible = true;
+            if (caption != null && !caption.isEmpty()) g.textClipped(caption, ix + 1, y + 3, replay.x - ix - 6, Widgets.DESC);
+            y += 20;
+            g.fill(ix, y - 3, ix + iw, y - 2, 0x20FFFFFF);
         }
+
         String name = previewRow.previewName() == null ? "" : previewRow.previewName();
-        SceneView view = scenes.computeIfAbsent(previewRow.previewKind(), k -> new SceneView(k, () -> 0x7A0F0F));
-        java.util.function.IntSupplier colour = previewRow.previewColour();
-        view.colour(colour != null ? colour : () -> config().player.clientPlayerBloodColor);
-        view.show(previewRow.previewAspects());
-        view.config(previewRow.previewConfig());
-        if (fresh) view.trigger();
-
-        if (!name.isEmpty()) g.textClipped(name, ix + 2, iy + 2, iw - 4, Gfx.alpha(Widgets.TEXT, a));
-        int sy = iy + (name.isEmpty() ? 0 : 13);
-        int sh = Math.min(Math.round(iw * view.aspect()), ph - (sy - py) - 8);
-        view.draw(g, ix, sy, iw, sh, dt);
-        String caption = view.scene().caption();
-        if (caption != null && !caption.isEmpty()) {
-            g.fill(ix, sy + sh - 12, ix + iw, sy + sh, 0x90000000);
-            g.textClipped(caption, ix + 4, sy + sh - 10, iw - 8, Gfx.alpha(Widgets.TEXT, a));
-        }
-        if (a < 1f) g.fill(ix, sy, ix + iw, sy + sh, Gfx.alpha(0xFF000000, 1f - a));
+        boolean changedRow = previewRow instanceof Widgets.Row r && r.changed();
+        g.textClipped(name, ix + 1, y + 2, iw - 2, Gfx.alpha(changedRow ? Widgets.CHANGED : Widgets.TEXT, a));
+        y += 14;
         String text = previewRow.previewText();
         if (text != null && !text.isEmpty()) {
-            int ty = sy + sh + 5;
-            for (String line : g.wrap(text, iw - 4)) {
-                if (ty + 10 > py + ph - 3) break;
-                g.text(line, ix + 2, ty, Gfx.alpha(Widgets.TEXT_DIM, a));
-                ty += 10;
+            for (String line : g.wrap(text, iw - 2)) {
+                if (y + 10 > py + ph - 22) break;
+                g.text(line, ix + 1, y, Gfx.alpha(0xFFC9C5BF, a));
+                y += 10;
             }
         }
-    }
-
-    private static Widget.PreviewSource firstSource(Widget.Container c) {
-        for (Widget w : c.children()) {
-            if (w instanceof Widget.PreviewSource src && src.previewKind() != null) return src;
-            if (w instanceof Widget.Container k) {
-                Widget.PreviewSource inner = firstSource(k);
-                if (inner != null) return inner;
-            }
+        if (previewRow instanceof Widgets.Row r && r.side instanceof Widgets.PlayButton
+                && com.simpleblood.BloodSounds.previewPlaying() != null && !com.simpleblood.BloodSounds.previewFiles().isEmpty()) {
+            y += 3;
+            g.textClipped(Lang.t("simpleblood.screen.playing", com.simpleblood.BloodSounds.previewFiles()), ix + 1, y, iw - 2, Widgets.ACCENT);
+            y += 10;
         }
-        return null;
+        if (changedRow && ((Widgets.Row) previewRow).reset() != null) {
+            backToDefault.w = Math.min(iw, g.textWidth(backToDefault.text) + 14);
+            backToDefault.x = ix; backToDefault.y = Math.min(y + 4, py + ph - 19);
+            backToDefault.visible = true;
+        }
     }
 
     private void selectPage(int idx) {
+        Widgets.Dropdown.close();
+        popup = null;
         if (searching()) {
             searchText = "";
             if (search != null) search.set("");
             page = -1;
         }
         if (idx == page) return;
-        prevPage = page;
         page = idx;
-        pageAnim = 0f;
+        buildTabs();
         buildPage(true);
     }
 
@@ -440,62 +571,112 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         guarded("drawing the settings screen", () -> drawAll(g, mx, my));
     }
 
+    private int changedCount(float now) {
+        if (changedAt >= 0 && now - changedAt < 0.5f) return changed;
+        changedAt = now;
+        SimpleBloodConfig cfg = config();
+        if (cfg == null) return changed = 0;
+        if (backup == null) return changed = 0;
+        JsonElement mine = GSON.toJsonTree(cfg), base = GSON.fromJson(backup, JsonElement.class);
+        return changed = differences(mine, base);
+    }
+
+    private static int differences(JsonElement a, JsonElement b) {
+        if (a instanceof JsonObject oa && b instanceof JsonObject ob) {
+            int n = 0;
+            for (String k : oa.keySet()) n += ob.has(k) ? differences(oa.get(k), ob.get(k)) : 1;
+            return n;
+        }
+        return java.util.Objects.equals(a, b) ? 0 : 1;
+    }
+
     private void drawAll(Gfx g, int mx, int my) {
         float now = Widget.Anim.now();
         float dt = Math.min(0.1f, now - lastTime);
         lastTime = now;
+        SimpleBloodConfig cfg = config();
+        Widget.Anim.enabled = cfg == null || cfg.general.menuAnimations;
+        Widgets.Slider.sounds = cfg == null || cfg.general.sliderSounds;
 
-        g.fill(0, 0, width, TITLE_H, 0xB0000000);
-        g.fill(0, TITLE_H - 1, width, TITLE_H, 0x60FFFFFF);
-        g.text("Simple Blood", margin + 2, 9, Widgets.TEXT);
-        g.textRight(searching() ? "Search" : pages.get(page).title(), width - margin - 2, 9, Widgets.TEXT_DIM);
+        g.fill(0, 0, width, TITLE_H, 0xD0161619);
+        g.fill(0, TITLE_H - 1, width, TITLE_H, Widgets.EDGE);
+        g.text(Lang.t("simpleblood.screen.simple_blood"), margin + 2, (TITLE_H - 8) / 2, Widgets.TEXT);
+        String where = searching() ? Lang.t("simpleblood.screen.search") : pages.get(page).group() + "  /  " + pages.get(page).title();
+        g.text(where, margin + 2 + this.font.width(Lang.t("simpleblood.screen.simple_blood")) + 12, (TITLE_H - 8) / 2, 0xFF8C8882);
 
-        panel(g, tabs.x, tabs.y, tabs.x + tabs.w, tabs.y + tabs.h);
-        panel(g, list.x, header.y, list.x + list.w, list.y + list.h);
+        panel(g, tabList.x, tabList.y, tabList.x + tabList.w, tabList.y + tabList.h);
+        panel(g, list.x, TITLE_H + margin, list.x + list.w, list.y + list.h);
         if (hasPane()) drawPreview(g, mx, my, dt);
-        g.fill(0, footer.y, width, height, 0xB0000000);
-        g.fill(0, footer.y, width, footer.y + 1, 0x60FFFFFF);
+        g.fill(0, footer.y, width, height, 0xD0161619);
+        g.fill(0, footer.y, width, footer.y + 1, Widgets.EDGE);
+        int n = changedCount(now);
+        g.text(n == 0 ? Lang.t("simpleblood.screen.no_unsaved_changes") : Lang.t(n == 1 ? "simpleblood.screen.unsaved_change" : "simpleblood.screen.unsaved_changes", n), margin + 4, footer.y + (FOOTER_H - 8) / 2, n == 0 ? 0xFF8C8882 : Widgets.CHANGED);
 
-        pageAnim = Math.min(1f, pageAnim + dt * 6f);
-        float ease = Widget.Anim.easeOut(pageAnim);
-        int slide = Math.round((1f - ease) * 10f);
-        list.x += slide;
-        header.x += slide;
-        Widget.hoverTop(picker != null ? picker.hovered(mx, my) : root.hovered(mx, my));
-        tabs.render(g, mx, my, dt);
+        int hy = TITLE_H + margin + 10;
+        String title = searching() ? Lang.t("simpleblood.screen.search") : pages.get(page).title();
+        String hint = searching() ? Lang.t("simpleblood.screen.settings_on_every_page") : pages.get(page).hint();
+        int pageChanges = resetPage != null && !searching() && pages.get(page).searchable() ? countChanged(list) : 0;
+        if (resetPage != null) {
+            resetPage.visible = pageChanges > 0;
+            resetPage.count = pageChanges;
+            resetPage.w = resetPage.fitWidth(g, pageChanges);
+            resetPage.x = list.x + list.w - 10 - resetPage.w;
+        }
+        int titleW = list.w - 20 - (resetPage != null && resetPage.visible ? resetPage.w + 8 : 0);
+        g.textClipped(title, list.x + 10, hy, titleW, Widgets.TEXT);
+        g.textClipped(hint, list.x + 10, hy + 11, titleW, Widgets.DESC);
+        g.fill(list.x + 10, list.y - 2 - (header.h > 0 ? header.h : 0), list.x + list.w - 10, list.y - 1 - (header.h > 0 ? header.h : 0), 0x30FFFFFF);
+        boolean covered = picker != null || Widgets.Dropdown.anyOpen() || popup != null;
+        Widget.hoverTop(picker != null ? picker.hovered(mx, my) : Widgets.Dropdown.anyOpen() ? null
+                : popup != null ? popup.hovered(mx, my) : root.hovered(mx, my));
+        top.render(g, mx, my, dt);
+        tabList.render(g, mx, my, dt);
         header.render(g, mx, my, dt);
         list.render(g, mx, my, dt);
-        list.x -= slide;
-        header.x -= slide;
-        if (pageAnim < 1f) g.fill(list.x, header.y, list.x + list.w, list.y + list.h, Gfx.alpha(0xFF000000, 0.5f * (1f - ease)));
+        paneBox.render(g, mx, my, dt);
         footer.render(g, mx, my, dt);
 
-        if (toast != null && now < toastUntil) {
-            float a = Math.min(1f, (toastUntil - now) / 0.4f);
-            int tw = g.textWidth(toast) + 12;
-            int tx = (width - tw) / 2, ty = footer.y - 22;
-            g.fill(tx, ty, tx + tw, ty + 16, Gfx.alpha(0xF0202020, a));
-            g.outline(tx, ty, tx + tw, ty + 16, Gfx.alpha(Widgets.ACCENT, a));
-            g.text(toast, tx + 6, ty + 4, Gfx.alpha(Widgets.TEXT, a));
+        if (popup != null) {
+            g.layer();
+            g.fill(0, 0, width, height, 0x90000000);
+            popup.render(g, mx, my, dt);
         }
 
-        if (picker == null) {
+        if (Widgets.Dropdown.anyOpen()) {
+            g.layer();
+            Widgets.Dropdown.renderOpen(g, mx, my, dt);
+        }
+
+        if (toast != null && now < toastUntil) {
+            float ta = Math.min(1f, (toastUntil - now) / 0.4f);
+            int tw = g.textWidth(toast) + 12;
+            int tx = (width - tw) / 2, ty = footer.y - 22;
+            g.fill(tx, ty, tx + tw, ty + 16, Gfx.alpha(0xF0222226, ta));
+            g.outline(tx, ty, tx + tw, ty + 16, Gfx.alpha(Widgets.ACCENT, ta));
+            g.text(toast, tx + 6, ty + 4, Gfx.alpha(Widgets.TEXT, ta));
+        }
+
+        if (!covered) {
             Widget over = root.hovered(mx, my);
             if (over != null && over.tooltip != null) g.tooltip(over.tooltip, mx, my);
-        } else {
+        } else if (picker == null && popup != null && !Widgets.Dropdown.anyOpen()) {
+            Widget over = popup.hovered(mx, my);
+            if (over != null && over.tooltip != null) g.tooltip(over.tooltip, mx, my);
+        } else if (picker != null) {
             g.layer();
             picker.render(g, mx, my, dt);
         }
     }
 
     private void panel(Gfx g, int x1, int y1, int x2, int y2) {
-        g.fill(x1, y1, x2, y2, 0x90000000);
-        g.bevel(x1, y1, x2, y2, 0x30FFFFFF, 0x80000000);
+        g.fill(x1, y1, x2, y2, Widgets.PANEL);
+        g.outline(x1, y1, x2, y2, Widgets.EDGE);
+        g.fill(x1 + 1, y1 + 1, x2 - 1, y1 + 2, 0x18FFFFFF);
     }
 
     private boolean dimWorld(Gfx g) {
         if (minecraft.level == null) return false;
-        g.gradient(0, 0, width, height, 0x70000000, 0x90000000);
+        g.gradient(0, 0, width, height, 0x60000000, 0x80000000);
         return true;
     }
 
@@ -568,6 +749,15 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
             focusAfterClick(picker, mx, my, button);
             return true;
         }
+        if (Widgets.Dropdown.anyOpen()) {
+            Widgets.Dropdown.clickOpen(mx, my);
+            return true;
+        }
+        if (popup != null) {
+            if (popup.contains(mx, my)) focusAfterClick(popup, mx, my, button);
+            else popup = null;
+            return true;
+        }
         root.blur();
         boolean handled = root.mouseClicked(mx, my, button);
         Widget over = root.hovered(mx, my);
@@ -583,15 +773,24 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     }
 
     private boolean releaseAt(double mx, double my, int button) {
-        return (picker != null ? picker : root).mouseReleased(mx, my, button);
+        return (picker != null ? picker : popup != null ? popup : root).mouseReleased(mx, my, button);
     }
 
     private boolean dragTo(double mx, double my, int button, double dx, double dy) {
-        return (picker != null ? picker : root).mouseDragged(mx, my, button, dx, dy);
+        return (picker != null ? picker : popup != null ? popup : root).mouseDragged(mx, my, button, dx, dy);
     }
 
     private boolean keyDown(int key, int modifiers) {
         if (picker != null) return picker.keyPressed(key, modifiers) || key == Keys.ESCAPE;
+        if (Widgets.Dropdown.anyOpen() && key == Keys.ESCAPE) {
+            Widgets.Dropdown.close();
+            return true;
+        }
+        if (popup != null) {
+            if (key == Keys.ESCAPE) popup = null;
+            else popup.keyPressed(key, modifiers);
+            return true;
+        }
         if (root.keyPressed(key, modifiers)) return true;
         if (key == Keys.ESCAPE) {
             save();
@@ -612,7 +811,8 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     public boolean mouseScrolled(double mx, double my, double dx, double dy) {
     //?}
         return guarded("scrolling", () -> {
-            if (picker != null) return true;
+            if (picker != null || popup != null) return true;
+            Widgets.Dropdown.close();
             return root.mouseScrolled(mx, my, dy);
         });
     }
@@ -660,29 +860,65 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
     }
     //?}
 
-    private static final class Tab extends Widget {
+    private static final class CategoryTab extends Widget {
         private final String text;
+        private final boolean open;
         private final Runnable onClick;
-        private final java.util.function.BooleanSupplier selected;
-        private float sel;
 
-        Tab(String text, Runnable onClick, java.util.function.BooleanSupplier selected) {
+        CategoryTab(String text, boolean open, Runnable onClick) {
             this.text = text;
+            this.open = open;
             this.onClick = onClick;
-            this.selected = selected;
         }
 
         @Override
         protected void draw(Gfx g, int mx, int my, float dt) {
-            boolean on = selected.getAsBoolean();
-            sel = Anim.approach(sel, on ? 1f : 0f, dt * 14f);
-            boolean over = hot(mx, my);
-            g.button(x, y, w, h, true, over || on);
-            if (sel > 0.01f) {
-                int barH = Math.round((h - 6) * sel);
-                g.fill(x + 2, y + (h - barH) / 2, x + 4, y + (h + barH) / 2, Widgets.ACCENT);
+            if (hover > 0.01f && !open) g.fill(x, y, x + w, y + h, Gfx.alpha(0xFFFFFFFF, 0.06f * hover));
+            int c = open ? Widgets.TEXT : Gfx.mix(0xFFC9C5BF, Widgets.TEXT, hover);
+            g.text(text, x + 6, y + (h - 8) / 2 + 1, c);
+            if (open) g.fill(x + 6, y + h - 2, x + 6 + g.textWidth(text), y + h - 1, 0x60FFFFFF);
+        }
+
+        @Override
+        public boolean mouseClicked(double mx, double my, int button) {
+            if (button != Keys.MOUSE_LEFT || !contains(mx, my)) return false;
+            if (!open) {
+                Widgets.click();
+                onClick.run();
             }
-            g.textClipped(text, x + 8 + Math.round(2 * sel), y + (h - 8) / 2, w - 14, on ? Widgets.TEXT : Gfx.mix(Widgets.TEXT_DIM, Widgets.TEXT, hover));
+            return true;
+        }
+    }
+
+    private static final class Tab extends Widget {
+        private final String text;
+        private final Runnable onClick;
+        private final java.util.function.BooleanSupplier selected;
+        private final int order;
+        private float sel, appear = Float.NaN;
+
+        Tab(String text, Runnable onClick, java.util.function.BooleanSupplier selected, int order) {
+            this.text = text;
+            this.onClick = onClick;
+            this.selected = selected;
+            this.order = order;
+        }
+
+        @Override
+        protected void draw(Gfx g, int mx, int my, float dt) {
+            float a = 1f;
+            int dx = 0;
+            boolean on = selected.getAsBoolean();
+            sel = Anim.linear(sel, on ? 1f : 0f, dt, 0.14f);
+            if (sel > 0.01f) {
+                g.fill(x + 10, y, x + w, y + h, Gfx.alpha(0xFF34343A, sel * a));
+                int barH = Math.round(h * sel);
+                g.fill(x + 10, y + (h - barH) / 2, x + 12, y + (h + barH) / 2, Gfx.alpha(Widgets.ACCENT, a));
+            } else if (hover > 0.01f) {
+                g.fill(x + 10, y, x + w, y + h, Gfx.alpha(0xFFFFFFFF, 0.05f * hover * a));
+            }
+            int c = on ? Widgets.TEXT : Gfx.mix(0xFF9E9A94, Widgets.TEXT, hover);
+            g.textClipped(text, x + 17 + dx, y + (h - 8) / 2 + 1, w - 20, Gfx.alpha(c, a));
         }
 
         @Override

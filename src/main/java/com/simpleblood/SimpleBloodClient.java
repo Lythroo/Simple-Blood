@@ -23,6 +23,8 @@ public final class SimpleBloodClient {
     }
 
     public static SimpleBloodConfig getConfig() {
+        SimpleBloodConfig preview = Capture.config();
+        if (preview != null) return preview;
         SimpleBloodConfig cfg = config;
         if (cfg == null) {
             cfg = SimpleBloodConfig.defaults();
@@ -42,8 +44,10 @@ public final class SimpleBloodClient {
 
     public static void clientTick(Minecraft client) {
         Guard.tick(client);
+        Guard.run(Guard.Part.PARTICLES, "putting back blood AsyncParticles dropped", () -> com.simpleblood.compat.AsyncParticlesTicks.tick(client));
         Guard.run(Guard.Part.OTHER, "the Blood button or /simpleblood", () -> com.simpleblood.gui.ConfigAccess.tick(client));
         Guard.run(Guard.Part.OTHER, "reading your blood colour from your skin", SkinColours::tickOwn);
+        Guard.run(Guard.Part.OTHER, "telling of mods with known issues", () -> com.simpleblood.compat.KnownIssues.tick(client));
         if (config != null) {
             if (Guard.ok(Guard.Part.SURFACES)) {
                 Guard.run(Guard.Part.SURFACES, "blood on blocks moving and drying", () -> com.simpleblood.surface.BloodSurfaces.tick(client));
@@ -59,6 +63,7 @@ public final class SimpleBloodClient {
             lastLevel = client.level;
             com.simpleblood.particle.BloodParticle.resetBudget();
             com.simpleblood.particle.DebrisPieceParticle.forgetLying();
+            WeaponKinds.forget();
             activeBursts.clear();
             if (client.level != null) Guard.reset();
             if (client.level != null && config != null) Guard.run(Guard.Part.OTHER, "matching the mob table to this game", () -> MobTable.sync(config));

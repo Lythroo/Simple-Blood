@@ -22,6 +22,7 @@ final class MobFace {
     int glow;
     int lastSeen;
     private NativeImage image, spec;
+    boolean[] drawn;
 
     MobFace(int pw, int ph) {
         this.pw = pw;
@@ -46,17 +47,20 @@ final class MobFace {
         return rgb[y * pw + x];
     }
 
-    void add(int x, int y, int units, int colour, int now, int lifetime, RandomSource rng) {
+    boolean add(int x, int y, int units, int colour, int now, int lifetime, RandomSource rng) {
         int i = y * pw + x;
+        if (drawn != null && !drawn[i]) return false;
         if (depth[i] == 0) {
             count++;
             tone[i] = (byte) rng.nextInt(TONE.length);
             life[i] = Math.max(20, (int) (lifetime * (0.85f + rng.nextFloat() * 0.3f)));
         }
+        rgb[i] = depth[i] == 0 ? colour : com.simpleblood.BloodMix.join(rgb[i], depth[i], colour, units,
+                com.simpleblood.BloodMix.wetness(now, born[i], life[i]), com.simpleblood.BloodMix.spot(x, y, pw * 131 + ph), rng.nextFloat());
         born[i] = now;
-        rgb[i] = colour;
         depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + units);
         dirty = true;
+        return true;
     }
 
     int take(int x, int y) {

@@ -1,0 +1,38 @@
+{
+  "hit.squelch": {
+    "sounds": [
+      "simpleblood:squelch2",
+      "simpleblood:squelch3",
+      "simpleblood:squelch4"
+    ]
+  },
+  "death.splat": {
+    "sounds": [
+      "simpleblood:death2"
+    ]
+  },
+  "slap": {
+    "sounds": [
+      "simpleblood:slap1"
+    ]
+  },
+  "giblet.land": {
+    "sounds": [
+      "simpleblood:giblet1",
+      "simpleblood:giblet2",
+      "simpleblood:giblet3"
+    ]
+  },
+  "sizzle": {
+    "sounds": [
+      "simpleblood:sizzle1",
+      "simpleblood:sizzle2",
+      "simpleblood:sizzle3"
+    ]
+  },
+  "stump": {
+    "sounds": [
+      "simpleblood:stump1"
+    ]
+  }
+}

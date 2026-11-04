@@ -11,8 +11,10 @@
     "ModelPartAccessor",
     "LivingEntityRendererMixin",
     "SpriteContentsAccessor",
+    "BiomeColorsMixin",
     "GuiRenderStateAccessor",
-    "ScreenInvoker"${extraMixins}
+    "ScreenInvoker",
+    "PhysicsModMeshMixin"${extraMixins}
   ],
   "injectors": {
     "defaultRequire": 1

@@ -19,7 +19,7 @@ public abstract class RenderLayerMixin {
     private static void simpleblood$layerModel(Model<?> model, Identifier texture, PoseStack pose, SubmitNodeCollector collector,
                                                int light, LivingEntityRenderState state, int colour, int order, CallbackInfo ci) {
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "blood on a mob's layers",
-                () -> MobBlood.layerModel(model, state, pose));
+                () -> MobBlood.layerModel(model, state, pose, texture));
     }
 }
 //?}

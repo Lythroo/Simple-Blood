@@ -12,7 +12,7 @@ import net.minecraft.world.phys.Vec3;
 
 public final class HitContext {
 
-    public enum Weapon { NONE, BLADE, AXE, MACE, ARROW, EXPLOSION, FALL, OTHER }
+    public enum Weapon { NONE, BLADE, AXE, MACE, ARROW, SPEAR, EXPLOSION, FALL, OTHER }
 
     public final LivingEntity entity;
     public final float damage;
@@ -21,6 +21,7 @@ public final class HitContext {
     public final Vec3 sourcePos;
     public final boolean crit;
     public final Weapon weapon;
+    public final Weapon style;
     public final boolean overkill;
     public final float charge;
     public final Vec3 wound;
@@ -46,7 +47,7 @@ public final class HitContext {
     }
 
     private HitContext(LivingEntity entity, float damage, float severity, Vec3 direction, Vec3 sourcePos,
-                       boolean crit, Weapon weapon, boolean overkill, float charge, Vec3 wound, boolean smash) {
+                       boolean crit, Weapon weapon, String item, boolean overkill, float charge, Vec3 wound, boolean smash) {
         this.entity = entity;
         this.damage = damage;
         this.severity = severity;
@@ -54,6 +55,7 @@ public final class HitContext {
         this.sourcePos = sourcePos;
         this.crit = crit;
         this.weapon = weapon;
+        this.style = styleOf(weapon, item);
         this.overkill = overkill;
         this.charge = charge;
         this.wound = wound;
@@ -124,8 +126,57 @@ public final class HitContext {
             wound = clampToBody(entity, entity.position().add(0, fromAbove ? entity.getBbHeight() : 0, 0));
             smash = damage >= healthBefore;
         }
-        return new HitContext(entity, damage, severity, direction, sourcePos, crit, weapon, overkill, charge, wound, smash);
+        return new HitContext(entity, damage, severity, direction, sourcePos, crit, weapon, heldItem(source), overkill, charge, wound, smash);
     }
+
+    private static String heldItem(DamageSource source) {
+        if (source == null || !(source.getEntity() instanceof LivingEntity living) || source.getDirectEntity() != living) return null;
+        ItemStack held = living.getMainHandItem();
+        return held.isEmpty() ? null : BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
+    }
+
+    static Weapon styleOf(Weapon weapon, String item) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || cfg.directional == null) return weapon;
+        if (item != null && cfg.directional.itemWounds != null) {
+            String own = cfg.directional.itemWounds.get(item);
+            if (own != null) for (Weapon w : WOUNDS) if (w.name().equalsIgnoreCase(own)) return w;
+        }
+        return styleOf(weapon);
+    }
+
+    public static HitContext replay(LivingEntity entity, float damage, Vec3 direction, Weapon weapon, boolean crit,
+                                    float charge, Vec3 wound, boolean smash) {
+        return replay(entity, damage, direction, weapon, null, crit, charge, wound, smash);
+    }
+
+    public static HitContext replay(LivingEntity entity, float damage, Vec3 direction, Weapon weapon, String item, boolean crit,
+                                    float charge, Vec3 wound, boolean smash) {
+        float max = Math.max(1.0f, entity.getMaxHealth());
+        float severity = Math.min(1.0f, 0.6f * Math.min(1.0f, damage / 20.0f) + 0.4f * Math.min(1.0f, damage / max));
+        if (crit) severity = Math.min(1.0f, severity * 1.3f);
+        Vec3 from = entity.position().add(0, entity.getBbHeight() * 0.5, 0).subtract(direction.scale(2));
+        return new HitContext(entity, damage, severity, direction, from, crit, weapon, item, false, charge, wound, smash);
+    }
+
+    static Weapon styleOf(Weapon weapon) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || cfg.directional == null) return weapon;
+        String picked = switch (weapon) {
+            case BLADE -> cfg.directional.swordWound;
+            case AXE -> cfg.directional.axeWound;
+            case MACE -> cfg.directional.maceWound;
+            case ARROW -> cfg.directional.arrowWound;
+            case SPEAR -> cfg.directional.spearWound;
+            case OTHER, NONE -> cfg.directional.fistWound;
+            default -> null;
+        };
+        if (picked == null) return weapon;
+        for (Weapon w : WOUNDS) if (w.name().equalsIgnoreCase(picked)) return w;
+        return weapon;
+    }
+
+    public static final Weapon[] WOUNDS = {Weapon.BLADE, Weapon.AXE, Weapon.MACE, Weapon.ARROW, Weapon.SPEAR, Weapon.OTHER};
 
     private static Vec3 clampToBody(LivingEntity entity, Vec3 p) {
         double hw = entity.getBbWidth() * 0.5, h = entity.getBbHeight();
@@ -141,17 +192,15 @@ public final class HitContext {
         if (source == null) return Weapon.NONE;
         if (source.is(DamageTypes.FALL)) return Weapon.FALL;
         if (source.is(DamageTypeTags.IS_EXPLOSION)) return Weapon.EXPLOSION;
+        //? if >=1.21.11 {
+        if (source.is(DamageTypes.SPEAR)) return Weapon.SPEAR;
+        //?}
         if (source.is(DamageTypeTags.IS_PROJECTILE)) return Weapon.ARROW;
 
         Entity attacker = source.getEntity();
         if (attacker instanceof LivingEntity living) {
             ItemStack held = living.getMainHandItem();
-            if (!held.isEmpty()) {
-                String id = BuiltInRegistries.ITEM.getKey(held.getItem()).getPath();
-                if (id.endsWith("sword") || id.contains("blade") || id.contains("dagger") || id.contains("katana")) return Weapon.BLADE;
-                if (id.endsWith("_axe") || id.equals("axe") || id.contains("battleaxe") || id.contains("cleaver")) return Weapon.AXE;
-                if (id.contains("mace") || id.contains("hammer") || id.contains("club")) return Weapon.MACE;
-            }
+            if (!held.isEmpty()) return WeaponKinds.of(held.getItem()).weapon() == Weapon.ARROW ? Weapon.OTHER : WeaponKinds.of(held.getItem()).weapon();
             return Weapon.OTHER;
         }
         return Weapon.OTHER;

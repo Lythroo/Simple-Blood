@@ -17,6 +17,10 @@ public final class Tally {
         if (ON) COUNTS.computeIfAbsent(what, k -> new AtomicLong()).incrementAndGet();
     }
 
+    public static void add(String what, long n) {
+        if (ON && n > 0) COUNTS.computeIfAbsent(what, k -> new AtomicLong()).addAndGet(n);
+    }
+
     public static long get(String what) {
         AtomicLong n = COUNTS.get(what);
         return n == null ? 0 : n.get();

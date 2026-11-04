@@ -9,6 +9,12 @@ public final class BloodSpray {
 
     private BloodSpray() {}
 
+    static float share = 1f;
+
+    private static float amount() {
+        return SimpleBloodClient.getConfig().masterAmount() * share;
+    }
+
     public static boolean isDirectional(HitContext ctx) {
         return ctx != null && ctx.direction != null
                 && ctx.weapon != HitContext.Weapon.EXPLOSION && ctx.weapon != HitContext.Weapon.FALL
@@ -24,14 +30,17 @@ public final class BloodSpray {
         RandomSource rng = world.getRandom();
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         boolean flavour = cfg.weaponFlavourEnabled();
-        HitContext.Weapon weapon = flavour ? ctx.weapon : HitContext.Weapon.OTHER;
+        HitContext.Weapon weapon = flavour ? ctx.style : HitContext.Weapon.OTHER;
 
         boolean liquid = SimpleBlood.bloodKindOf(ctx.entity) == BloodKind.LIQUID;
+        if (firstTick) com.simpleblood.Tally.count("wound." + weapon.name());
         if (firstTick && liquid) {
+            Capture.part = Capture.Part.FLAVOUR;
             if (flavour) {
                 switch (weapon) {
                     case BLADE -> sweep(world, ctx, velocityAdjust);
                     case ARROW -> pierce(world, ctx, velocityAdjust);
+                    case SPEAR -> skewer(world, ctx, velocityAdjust);
                     case MACE -> {
                         BloodSounds.splat(world, ctx.entity.position(), ctx.smash ? 1.0f : 0.5f);
                         slamStain(world, ctx);
@@ -42,9 +51,11 @@ public final class BloodSpray {
                     default -> { }
                 }
             }
+            Capture.part = Capture.Part.SPLASH;
             boolean blunt = weapon == HitContext.Weapon.MACE || weapon == HitContext.Weapon.AXE;
             if (!ctx.smash && ctx.severity > (blunt ? 0.35f : 0.5f)) geyser(world, ctx, velocityAdjust);
         }
+        Capture.part = Capture.Part.DIRECTIONAL;
         if (count <= 0) return;
 
         float speed = 0.28f + 0.45f * ctx.severity;
@@ -53,6 +64,7 @@ public final class BloodSpray {
             case BLADE -> { lateral = 0.75f; vertical = 0.12f; up = 0.05f; }
             case AXE   -> { speed *= 0.9f; lateral = 0.4f; vertical = 0.35f; up = -0.02f; sizeMult = 1.35f; count = Math.max(1, count * 3 / 4); }
             case ARROW -> { speed *= 1.4f; lateral = 0.18f; vertical = 0.15f; up = 0.02f; }
+            case SPEAR -> { speed *= 0.8f; lateral = 0.2f; vertical = 0.25f; up = -0.02f; sizeMult = 1.2f; }
             case MACE  -> { speed *= 1.15f; lateral = 1.0f; vertical = 0.1f; up = -0.15f; }
             default -> { }
         }
@@ -97,7 +109,7 @@ public final class BloodSpray {
         Vec3 side = new Vec3(-d.z, 0, d.x).normalize();
         Vec3 exit = (ctx.wound != null ? ctx.wound : ctx.entryPoint()).add(0, ctx.entity.getBbHeight() * 0.05, 0);
         float charge = 0.25f + 0.75f * ctx.charge;
-        int count = Math.round((3 + ctx.severity * 6 + (ctx.crit ? 2 : 0)) * charge * SimpleBloodClient.getConfig().masterAmount());
+        int count = Math.round((3 + ctx.severity * 6 + (ctx.crit ? 2 : 0)) * charge * amount());
         double halfArc = Math.toRadians(ctx.crit ? 40 : 60);
         float speed = (0.20f + 0.16f * ctx.severity) * (0.6f + 0.4f * ctx.charge);
         for (int i = 0; i < count; i++) {
@@ -114,7 +126,7 @@ public final class BloodSpray {
 
     private static void geyser(ClientLevel world, HitContext ctx, float velocityAdjust) {
         RandomSource rng = world.getRandom();
-        int count = Math.round((4 + ctx.severity * 8) * (0.4f + 0.6f * ctx.charge) * SimpleBloodClient.getConfig().masterAmount());
+        int count = Math.round((4 + ctx.severity * 8) * (0.4f + 0.6f * ctx.charge) * amount());
         Vec3 from = ctx.wound != null ? ctx.wound : ctx.entity.position().add(0, ctx.entity.getBbHeight() * 0.7, 0);
         float speed = 0.30f + 0.35f * ctx.severity;
         BloodParticle.setBallistic(true, 2.0f);
@@ -134,7 +146,7 @@ public final class BloodSpray {
 
     private static void explosion(ClientLevel world, HitContext ctx, float velocityAdjust) {
         RandomSource rng = world.getRandom();
-        int count = Math.round(750 * SimpleBloodClient.getConfig().masterAmount());
+        int count = Math.round(750 * amount());
         Vec3 c = ctx.entity.position().add(0, ctx.entity.getBbHeight() * 0.5, 0);
         double hw = ctx.entity.getBbWidth() * 0.5, hh = ctx.entity.getBbHeight() * 0.5;
         BloodParticle.setBallistic(true, 2.5f);
@@ -155,7 +167,7 @@ public final class BloodSpray {
 
     private static void pierce(ClientLevel world, HitContext ctx, float velocityAdjust) {
         RandomSource rng = world.getRandom();
-        int count = Math.round((2 + ctx.severity * 5) * SimpleBloodClient.getConfig().masterAmount());
+        int count = Math.round((2 + ctx.severity * 5) * amount());
         Vec3 d = ctx.direction;
         Vec3 side = new Vec3(-d.z, 0, d.x).normalize();
         Vec3 exit = ctx.exitPoint();
@@ -172,11 +184,56 @@ public final class BloodSpray {
         }
     }
 
+    private static void skewer(ClientLevel world, HitContext ctx, float velocityAdjust) {
+        RandomSource rng = world.getRandom();
+        float master = amount();
+        Vec3 d = ctx.direction;
+        Vec3 side = new Vec3(-d.z, 0, d.x).normalize();
+        Vec3 exit = ctx.exitPoint();
+        Vec3 entry = ctx.wound != null ? ctx.wound : ctx.entryPoint();
+        exit = new Vec3(exit.x, entry.y, exit.z);
+        boolean through = ctx.damage >= 5 || ctx.crit || ctx.overkill;
+        if (through) {
+            int count = Math.round((5 + ctx.severity * 10 + (ctx.crit ? 3 : 0)) * master);
+            float speed = 0.26f + 0.34f * ctx.severity;
+            for (int i = 0; i < count; i++) {
+                double a = (rng.nextDouble() * 2 - 1) * Math.toRadians(9);
+                Vec3 dir = d.scale(Math.cos(a)).add(side.scale(Math.sin(a))).normalize();
+                double s = speed * (0.6 + rng.nextDouble() * 0.7);
+                Vec3 v = dir.scale(s).add(0, 0.02 + rng.nextDouble() * 0.05, 0);
+                Vec3 p = exit.add(side.scale((rng.nextDouble() - 0.5) * 0.12)).add(0, (rng.nextDouble() - 0.5) * 0.12, 0);
+                if (i % 2 == 0) {
+                    ClientBloodParticleSpawner.emit(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
+                            v.x * velocityAdjust, v.y * velocityAdjust, v.z * velocityAdjust);
+                } else {
+                    ClientBloodParticleSpawner.emit(world, ctx.entity, true, p.x, p.y, p.z,
+                            v.x * velocityAdjust, v.y * velocityAdjust, v.z * velocityAdjust);
+                }
+            }
+        }
+        int gush = Math.round((4 + ctx.severity * 6) * master);
+        Vec3 back = d.scale(-1);
+        float prevSize = BloodParticle.currentSizeMultiplier();
+        BloodParticle.setEntitySizeMultiplier(prevSize * 1.4f);
+        try {
+            for (int i = 0; i < gush; i++) {
+                double s = 0.03 + rng.nextDouble() * 0.07;
+                Vec3 v = back.scale(s).add(side.scale((rng.nextDouble() - 0.5) * 0.04)).add(0, -0.02 - rng.nextDouble() * 0.04, 0);
+                Vec3 p = entry.add(side.scale((rng.nextDouble() - 0.5) * 0.08)).add(0, (rng.nextDouble() - 0.5) * 0.08, 0);
+                ClientBloodParticleSpawner.emit(world, ctx.entity, i % 2 == 0, p.x, p.y, p.z,
+                        v.x * velocityAdjust, v.y * velocityAdjust, v.z * velocityAdjust);
+            }
+        } finally {
+            BloodParticle.setEntitySizeMultiplier(prevSize);
+        }
+        com.simpleblood.Tally.count(through ? "wound.skewer.through" : "wound.skewer");
+    }
+
     private static void shockwave(ClientLevel world, HitContext ctx, float velocityAdjust) {
         RandomSource rng = world.getRandom();
         Vec3 c = ctx.entity.position().add(0, 0.25, 0);
         float charge = 0.25f + 0.75f * ctx.charge;
-        int count = Math.round((8 + ctx.severity * 10) * charge * SimpleBloodClient.getConfig().masterAmount());
+        int count = Math.round((8 + ctx.severity * 10) * charge * amount());
         float speed = (0.5f + 0.6f * ctx.severity) * (0.6f + 0.4f * ctx.charge);
         for (int i = 0; i < count; i++) {
             double a = rng.nextDouble() * Math.PI * 2;
@@ -196,7 +253,7 @@ public final class BloodSpray {
         BloodColor.Color c = BloodParticle.currentBloodColor();
         int colour = ((int) (c.red * 255) << 16) | ((int) (c.green * 255) << 8) | (int) (c.blue * 255);
         float charge = 0.2f + 0.8f * ctx.charge * ctx.charge;
-        float scale = (cfg.surfaces.resolution * cfg.surfaces.resolution / 256.0f) * cfg.surfaceAmount() * charge;
+        float scale = (cfg.surfaces.resolution * cfg.surfaces.resolution / 256.0f) * cfg.surfaceAmount() * charge * share;
         double reach = (0.8 + ctx.entity.getBbWidth() * 0.8 + ctx.severity * 1.4) * (0.4 + 0.6 * ctx.charge);
 
         for (int i = 0; i < 3; i++) {
@@ -226,6 +283,7 @@ public final class BloodSpray {
 
     public static void entrySpatter(ClientLevel world, HitContext ctx, int count, float velocityAdjust) {
         if (count <= 0 || ctx.direction == null) return;
+        Capture.part = Capture.Part.EXIT;
         RandomSource rng = world.getRandom();
         Vec3 d = ctx.direction;
         Vec3 side = new Vec3(-d.z, 0, d.x).normalize();
@@ -233,7 +291,8 @@ public final class BloodSpray {
         if (ctx.wound != null) exit = new Vec3(exit.x, ctx.wound.y, exit.z);
         double hw = ctx.entity.getBbWidth() * 0.5;
         float speed = 0.10f + 0.16f * ctx.severity;
-        if (ctx.weapon == HitContext.Weapon.ARROW) { speed *= 1.5f; count += count / 2; }
+        if (ctx.style == HitContext.Weapon.ARROW) { speed *= 1.5f; count += count / 2; }
+        if (ctx.style == HitContext.Weapon.SPEAR) { speed *= 1.8f; count *= 2; }
         for (int i = 0; i < count; i++) {
             Vec3 p = exit.add(side.scale((rng.nextDouble() - 0.5) * hw * 0.4)).add(0, (rng.nextDouble() - 0.5) * 0.2, 0);
             Vec3 v = d.scale(speed * (0.5 + rng.nextDouble()))

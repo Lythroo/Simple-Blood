@@ -114,6 +114,8 @@ public final class SimpleBlood {
     }
 
     public static boolean shouldBleedFrom(LivingEntity entity, DamageSource source) {
+        boolean always = alwaysBleeds(damageTypeId(source));
+        if (!always && blacklisted(source)) return false;
         SimpleBloodAPI.BloodSettings api = apiSettings(idOf(entity));
         if (api != null && api.getBleedPredicate() != null) {
             try {
@@ -124,10 +126,77 @@ public final class SimpleBlood {
             }
         }
         boolean bleedWhenAsphyxiating = api != null && Boolean.TRUE.equals(api.getBleedWhenAsphyxiating());
-        if (!bleedWhenAsphyxiating && isBuiltInAsphyxiation(source)) {
+        if (!always && !bleedWhenAsphyxiating && isBuiltInAsphyxiation(source)) {
             return false;
         }
-        return !SimpleBloodAPI.isNonBleedingDamageType(source);
+        return always || !SimpleBloodAPI.isNonBleedingDamageType(source);
+    }
+
+    private static final java.util.Map<String, net.minecraft.tags.TagKey<net.minecraft.world.damagesource.DamageType>> DAMAGE_TAGS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static boolean blacklisted(DamageSource source) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || cfg.general == null || cfg.general.noBleedDamageTypes == null || cfg.general.noBleedDamageTypes.isEmpty() || source == null) return false;
+        String id = damageTypeId(source);
+        for (String entry : cfg.general.noBleedDamageTypes) {
+            if (entry == null || entry.isBlank()) continue;
+            String e = entry.trim();
+            if (e.startsWith("#")) {
+                try {
+                    var tag = DAMAGE_TAGS.computeIfAbsent(e, k -> net.minecraft.tags.TagKey.create(
+                            net.minecraft.core.registries.Registries.DAMAGE_TYPE, Ids.parse(withNamespace(k.substring(1)))));
+                    if (source.is(tag)) return true;
+                } catch (Throwable t) {
+                }
+            } else if (withNamespace(e).equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean alwaysBleeds(String id) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        return cfg != null && cfg.general != null && cfg.general.bleedDamageTypes != null && !id.isEmpty()
+                && cfg.general.bleedDamageTypes.contains(id);
+    }
+
+    public static boolean drawsBlood(net.minecraft.core.Holder<net.minecraft.world.damagesource.DamageType> type, String id) {
+        if (alwaysBleeds(id)) return true;
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg != null && cfg.general != null && cfg.general.noBleedDamageTypes != null) {
+            for (String entry : cfg.general.noBleedDamageTypes) {
+                if (entry == null || entry.isBlank()) continue;
+                String e = entry.trim();
+                if (e.startsWith("#")) {
+                    try {
+                        var tag = DAMAGE_TAGS.computeIfAbsent(e, k -> net.minecraft.tags.TagKey.create(
+                                net.minecraft.core.registries.Registries.DAMAGE_TYPE, Ids.parse(withNamespace(k.substring(1)))));
+                        if (type.is(tag)) return false;
+                    } catch (Throwable t) {
+                    }
+                } else if (withNamespace(e).equals(id)) {
+                    return false;
+                }
+            }
+        }
+        if (type.is(DamageTypes.DROWN) || type.is(DamageTypes.IN_WALL) || type.is(DamageTypes.DRY_OUT)) return false;
+        return !SimpleBloodAPI.isNonBleedingDamageType(type);
+    }
+
+    private static String withNamespace(String id) {
+        return id.indexOf(':') < 0 ? "minecraft:" + id : id;
+    }
+
+    public static String damageTypeId(DamageSource source) {
+        try {
+            String key = source.typeHolder().unwrapKey().map(Object::toString).orElse("");
+            int slash = key.lastIndexOf(" / ");
+            return slash < 0 ? "" : key.substring(slash + 3, key.length() - 1);
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     private static boolean isBuiltInAsphyxiation(DamageSource source) {
@@ -137,6 +206,16 @@ public final class SimpleBlood {
     }
 
     public static BloodKind bloodKindOf(LivingEntity entity) {
+        if (Capture.kind != null && Capture.active()) return Capture.kind;
+        if (entity instanceof net.minecraft.world.entity.player.Player) {
+            SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (cfg != null) {
+                if (mc.player != null && entity.getUUID().equals(mc.player.getUUID())) return BloodKind.parse(cfg.player.clientPlayerBloodKind);
+                String carried = cfg.player.colourFromSkins ? SkinColours.kindOf(entity) : null;
+                if (carried != null) return BloodKind.parse(carried);
+            }
+        }
         Identifier id = idOf(entity);
         SimpleBloodAPI.BloodSettings api = apiSettings(id);
         if (api != null && api.getBloodKind() != null) {
@@ -154,6 +233,18 @@ public final class SimpleBlood {
             }
         }
         return BloodKind.LIQUID;
+    }
+
+    public static String armorOf(LivingEntity entity) {
+        Identifier id = idOf(entity);
+        SimpleBloodConfig.ModdedEntities.ModdedEntitySettings modded = moddedSettings(id);
+        if (modded != null) return modded.armor == null ? "auto" : modded.armor;
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg != null) {
+            SimpleBloodConfig.VanillaEntities.EntitySettings vanilla = cfg.vanillaEntities.getSettings(id.getPath());
+            if (vanilla != null && vanilla.armor != null) return vanilla.armor;
+        }
+        return "auto";
     }
 
     public static boolean bloodGlows(LivingEntity entity) {

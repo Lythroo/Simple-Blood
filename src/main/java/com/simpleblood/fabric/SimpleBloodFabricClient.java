@@ -24,6 +24,7 @@ public class SimpleBloodFabricClient implements ClientModInitializer {
         providers.register(BloodParticles.BLOOD_SPLASH, sprites -> new BloodParticle.Factory(sprites, true));
         providers.register(BloodParticles.BLOOD_DROP, com.simpleblood.particle.BloodDropParticle.Factory::new);
         providers.register(BloodParticles.BLOOD_STREAK, com.simpleblood.particle.BloodStreakParticle.Factory::new);
+        providers.register(BloodParticles.BLOOD_SPRAY, com.simpleblood.particle.BloodSprayParticle.Factory::new);
         providers.register(BloodParticles.BLOOD_FOG, BloodFogParticle.Factory::new);
         providers.register(BloodParticles.BONE_CHIP, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.BONE));
         providers.register(BloodParticles.METAL_FLAKE, sprites -> new com.simpleblood.particle.DebrisPieceParticle.Factory(sprites, com.simpleblood.BloodKind.METAL));

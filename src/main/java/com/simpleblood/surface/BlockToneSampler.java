@@ -83,6 +83,7 @@ final class BlockToneSampler {
     }
 
     private static byte[] toneGrid(TextureAtlasSprite sprite, int res) {
+        if (reloading()) return null;
         SpriteContents contents = sprite.contents();
         NativeImage img = ((SpriteContentsAccessor) contents).simpleblood$originalImage();
         if (img == null) return null;
@@ -145,7 +146,98 @@ final class BlockToneSampler {
         return new int[]{Math.max(1, c.width()), Math.max(1, c.height())};
     }
 
+    static boolean reloading() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        return mc != null && com.simpleblood.gui.Screens.overlayShown(mc);
+    }
+
+    static boolean[] opaqueTexels(TextureAtlasSprite sprite, int[] size) {
+        if (sprite == null || reloading()) return null;
+        try {
+            SpriteContents contents = sprite.contents();
+            NativeImage img = ((SpriteContentsAccessor) contents).simpleblood$originalImage();
+            int fw = contents.width(), fh = contents.height();
+            if (img == null || fw <= 0 || fh <= 0 || img.getWidth() < fw || img.getHeight() < fh) return null;
+            boolean[] out = new boolean[fw * fh];
+            for (int y = 0; y < fh; y++) {
+                for (int x = 0; x < fw; x++) out[y * fw + x] = Pixels.alpha(img, x, y) >= 16;
+            }
+            size[0] = fw;
+            size[1] = fh;
+            return out;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    static List<QuadInfo> bakedQuads(Object model, BlockState state) {
+        List<QuadInfo> out = new java.util.ArrayList<>();
+        //? if <=1.21.1 {
+        /*if (!(model instanceof net.minecraft.client.resources.model.BakedModel baked)) return out;
+        RandomSource rng = RandomSource.create(42);
+        try {
+            for (Direction face : new Direction[]{null, Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}) {
+                for (net.minecraft.client.renderer.block.model.BakedQuad q : baked.getQuads(state, face, rng)) {
+                    int[] vtx = q.getVertices();
+                    int stride = vtx.length / 4;
+                    Vec3[] corners = new Vec3[4];
+                    float[] u = new float[4], v = new float[4];
+                    for (int i = 0; i < 4; i++) {
+                        int b = i * stride;
+                        corners[i] = new Vec3(Float.intBitsToFloat(vtx[b]), Float.intBitsToFloat(vtx[b + 1]), Float.intBitsToFloat(vtx[b + 2]));
+                        u[i] = Float.intBitsToFloat(vtx[b + 4]);
+                        v[i] = Float.intBitsToFloat(vtx[b + 5]);
+                    }
+                    out.add(normalised(corners, u, v, q.getSprite()));
+                }
+            }
+        } catch (Throwable t) {
+            out.clear();
+        }
+        *///?}
+        return out;
+    }
+
+    static int seenAt(BlockState state, Vec3 lp, Vec3 n) {
+        int result = -1;
+        for (QuadInfo q : allQuads(state)) {
+            Vec3[] c = q.corners();
+            Vec3 e1 = c[1].subtract(c[0]), e3 = c[3].subtract(c[0]);
+            Vec3 qn = e1.cross(e3);
+            if (qn.lengthSqr() < 1.0e-12 || e1.lengthSqr() < 1.0e-8 || e3.lengthSqr() < 1.0e-8) continue;
+            qn = qn.normalize();
+            if (Math.abs(qn.dot(n)) < 0.9) continue;
+            Vec3 d = lp.subtract(c[0]);
+            if (Math.abs(d.dot(qn)) > 0.01) continue;
+            double a = d.dot(e1) / e1.lengthSqr(), b = d.dot(e3) / e3.lengthSqr();
+            if (a < -1.0e-3 || a > 1 + 1.0e-3 || b < -1.0e-3 || b > 1 + 1.0e-3) continue;
+            double u = q.u()[0] + a * (q.u()[1] - q.u()[0]) + b * (q.u()[3] - q.u()[0]);
+            double v = q.v()[0] + a * (q.v()[1] - q.v()[0]) + b * (q.v()[3] - q.v()[0]);
+            int alpha = alphaAt(q.sprite(), u, v);
+            if (alpha < 0) continue;
+            if (alpha >= 16) return 1;
+            result = 0;
+        }
+        return result;
+    }
+
+    private static int alphaAt(TextureAtlasSprite sprite, double u, double v) {
+        if (sprite == null || reloading()) return -1;
+        try {
+            SpriteContents contents = sprite.contents();
+            NativeImage img = ((SpriteContentsAccessor) contents).simpleblood$originalImage();
+            int fw = contents.width(), fh = contents.height();
+            if (img == null || fw <= 0 || fh <= 0) return -1;
+            int x = Math.max(0, Math.min(fw - 1, (int) Math.floor(u * fw)));
+            int y = Math.max(0, Math.min(fh - 1, (int) Math.floor(v * fh)));
+            return Pixels.alpha(img, x, y);
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
     static boolean[] alphaMask(TextureAtlasSprite sprite, float u0, float u1, float v0, float v1, int pw, int ph) {
+        if (reloading()) return null;
         if (sprite == null) return null;
         try {
             return readAlphaMask(sprite, u0, u1, v0, v1, pw, ph);
@@ -153,6 +245,8 @@ final class BlockToneSampler {
             return null;
         }
     }
+
+    private static final double TEXEL_SLACK = 0.25;
 
     private static boolean[] readAlphaMask(TextureAtlasSprite sprite, float u0, float u1, float v0, float v1, int pw, int ph) {
         SpriteContents contents = sprite.contents();
@@ -163,10 +257,10 @@ final class BlockToneSampler {
         boolean[] mask = new boolean[pw * ph];
         for (int gy = 0; gy < ph; gy++) {
             for (int gx = 0; gx < pw; gx++) {
-                int x0 = (int) Math.floor((u0 + (u1 - u0) * gx / pw) * fw);
-                int x1 = (int) Math.ceil((u0 + (u1 - u0) * (gx + 1) / pw) * fw);
-                int y0 = (int) Math.floor((v0 + (v1 - v0) * gy / ph) * fh);
-                int y1 = (int) Math.ceil((v0 + (v1 - v0) * (gy + 1) / ph) * fh);
+                int x0 = (int) Math.floor((u0 + (u1 - u0) * gx / pw) * fw + TEXEL_SLACK);
+                int x1 = (int) Math.ceil((u0 + (u1 - u0) * (gx + 1) / pw) * fw - TEXEL_SLACK);
+                int y0 = (int) Math.floor((v0 + (v1 - v0) * gy / ph) * fh + TEXEL_SLACK);
+                int y1 = (int) Math.ceil((v0 + (v1 - v0) * (gy + 1) / ph) * fh - TEXEL_SLACK);
                 x0 = Math.max(0, Math.min(fw - 1, x0)); x1 = Math.max(x0 + 1, Math.min(fw, x1));
                 y0 = Math.max(0, Math.min(fh - 1, y0)); y1 = Math.max(y0 + 1, Math.min(fh, y1));
                 boolean opaque = false;
@@ -179,6 +273,11 @@ final class BlockToneSampler {
             }
         }
         return mask;
+    }
+
+    static Object probe() {
+        List<QuadInfo> q = quads(net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), true);
+        return q.isEmpty() ? null : q.get(0).sprite();
     }
 
     static List<QuadInfo> unculledQuads(BlockState state) {
@@ -348,13 +447,33 @@ final class BlockToneSampler {
         if (cached != null) return cached;
         boolean cross;
         try {
-            cross = detectCross(state);
+            cross = detectCross(state) && planeLike(quads(state, true));
         } catch (Throwable t) {
             cross = false;
         }
         if (CROSS_CACHE.size() > 2048) CROSS_CACHE.clear();
         CROSS_CACHE.put(state, cross);
         return cross;
+    }
+
+    private static boolean planeLike(List<QuadInfo> quads) {
+        if (quads.isEmpty()) return false;
+        int planes = 0;
+        for (int i = 0; i < quads.size(); i++) {
+            Direction d = quadFacing(quads.get(i));
+            if (d == null) { planes++; continue; }
+            net.minecraft.world.phys.AABB b = quadBox(quads.get(i));
+            for (int j = 0; j < quads.size(); j++) {
+                if (j == i || quadFacing(quads.get(j)) != d.getOpposite()) continue;
+                net.minecraft.world.phys.AABB c = quadBox(quads.get(j));
+                if (Math.abs(b.minX - c.minX) < 1e-3 && Math.abs(b.maxX - c.maxX) < 1e-3 && Math.abs(b.minY - c.minY) < 1e-3
+                        && Math.abs(b.maxY - c.maxY) < 1e-3 && Math.abs(b.minZ - c.minZ) < 1e-3 && Math.abs(b.maxZ - c.maxZ) < 1e-3) {
+                    planes++;
+                    break;
+                }
+            }
+        }
+        return planes * 2 >= quads.size();
     }
 
     private static boolean detectCross(BlockState state) {

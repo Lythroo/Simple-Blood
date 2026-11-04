@@ -1,5 +1,7 @@
 package com.simpleblood.gui;
 
+import com.simpleblood.Lang;
+
 import java.util.function.IntConsumer;
 
 public final class ColourPicker extends Widget.Container {
@@ -51,8 +53,8 @@ public final class ColourPicker extends Widget.Container {
             }
         };
         add(hex);
-        add(new Widgets.Button("Cancel", () -> { apply.accept(original); close.run(); }));
-        Widgets.Button ok = add(new Widgets.Button("Done", close));
+        add(new Widgets.Button(Lang.t("simpleblood.colour_picker.cancel"), () -> { apply.accept(original); close.run(); }));
+        Widgets.Button ok = add(new Widgets.Button(Lang.t("simpleblood.colour_picker.done"), close));
         ok.accent = true;
     }
 
@@ -89,7 +91,7 @@ public final class ColourPicker extends Widget.Container {
         g.fill(0, 0, g.width(), g.height(), Gfx.alpha(0xFF000000, 0.45f * a));
         g.fill(x, y, x + w, y + h, Gfx.alpha(0xFF101010, 0.96f * a));
         g.bevel(x, y, x + w, y + h, Gfx.alpha(0xFFFFFFFF, 0.25f * a), Gfx.alpha(0xFF000000, 0.8f * a));
-        g.text("Pick a colour", x + 10, y + 8, Gfx.alpha(Widgets.TEXT, a));
+        g.text(Lang.t("simpleblood.colour_picker.pick_a_colour"), x + 10, y + 8, Gfx.alpha(Widgets.TEXT, a));
         for (int j = 0; j < CELLS; j++) {
             for (int i = 0; i < CELLS; i++) {
                 float s = (i + 0.5f) / CELLS, v = 1f - (j + 0.5f) / CELLS;
@@ -111,7 +113,7 @@ public final class ColourPicker extends Widget.Container {
         g.fill(px, py, px + 80, py + 22, Gfx.alpha(0xFF000000, a));
         g.fill(px + 1, py + 1, px + 79, py + 21, Gfx.alpha(0xFF000000 | cur, a));
         g.fill(px + 1, py + 1, px + 79, py + 2, Gfx.alpha(0xFFFFFFFF, 0.2f * a));
-        g.text("Quick picks", px, py + 28, Gfx.alpha(Widgets.TEXT_DIM, a));
+        g.text(Lang.t("simpleblood.colour_picker.quick_picks"), px, py + 28, Gfx.alpha(Widgets.TEXT_DIM, a));
         for (int i = 0; i < PRESETS.length; i++) {
             int sx = px + (i % 8) * 10, sy = py + 38 + (i / 8) * 10;
             boolean over = mx >= sx && mx < sx + 9 && my >= sy && my < sy + 9;

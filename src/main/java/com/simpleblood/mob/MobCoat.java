@@ -12,6 +12,15 @@ import java.util.List;
 import java.util.Map;
 
 final class MobCoat {
+    final java.util.Map<Long, Object> shapes = new java.util.HashMap<>();
+    java.util.List<ModelFacesOfMob.Face> lastFaces;
+    int onRagdoll = -1000;
+    net.minecraft.world.phys.Vec3 lastPos;
+
+    void noteShapes(java.util.List<ModelFacesOfMob.Face> faces) {
+        for (ModelFacesOfMob.Face f : faces) if (f.shape != 0) shapes.putIfAbsent(f.shape, f.key);
+    }
+
     record Splat(Vec3 at, Vec3 dir, HitContext.Weapon weapon, float size, int units, int made, int colour, boolean drop) {
         Splat(Vec3 at, Vec3 dir, HitContext.Weapon weapon, float size, int units, int made) {
             this(at, dir, weapon, size, units, made, 0, false);
@@ -32,6 +41,7 @@ final class MobCoat {
     Object woundFace;
     int woundX, woundY, woundW, woundH;
     int seep;
+    int strokes;
 
     MobCoat(int entityId, int colour) {
         this.entityId = entityId;
@@ -43,7 +53,22 @@ final class MobCoat {
     }
 
     MobFace face(ModelFacesOfMob.Face f) {
-        return faces.computeIfAbsent(f.key, k -> new MobFace(f.pw, f.ph));
+        return faces.computeIfAbsent(f.key, k -> {
+            MobFace canvas = new MobFace(f.pw, f.ph);
+            if (f.alpha != null) {
+                boolean[] drawn = new boolean[f.pw * f.ph];
+                boolean any = false;
+                for (int y = 0; y < f.ph; y++) {
+                    for (int x = 0; x < f.pw; x++) {
+                        double[] ab = f.edgeWeights((x + 0.5) / f.pw, (y + 0.5) / f.ph);
+                        drawn[y * f.pw + x] = f.drawnAt(ab[0], ab[1]);
+                        any |= !drawn[y * f.pw + x];
+                    }
+                }
+                if (any) canvas.drawn = drawn;
+            }
+            return canvas;
+        });
     }
 
     void paint(Splat splat, List<ModelFacesOfMob.Face> faces, int now, int lifetime, RandomSource rng) {
@@ -99,6 +124,22 @@ final class MobCoat {
                     stain(splat, side.scale(Math.cos(ang) * r).add(up.scale(Math.sin(ang) * r)), faces, 1, false, now, lifetime, rng);
                 }
             }
+            case SPEAR -> {
+                double tilt = (rng.nextDouble() - 0.5) * Math.toRadians(30);
+                Vec3 along = up.scale(Math.cos(tilt)).add(side.scale(Math.sin(tilt)));
+                Vec3 across = along.cross(dir).normalize();
+                double half = 0.07 * size;
+                for (double k = -half; k <= half; k += 0.02) {
+                    double width = 0.03 * size * (1 - Math.abs(k) / (half + 1e-6));
+                    for (double w = -width; w <= width + 1e-6; w += 0.02) {
+                        boolean middle = Math.abs(k) < 0.03 && Math.abs(w) < 0.02;
+                        stain(splat, along.scale(k).add(across.scale(w)), faces, middle ? units + 3 : units, false, now, lifetime, rng);
+                    }
+                }
+                for (double k = 0.04; k <= 0.04 + 0.12 * size; k += 0.025) {
+                    stain(splat, up.scale(-k).add(side.scale((rng.nextDouble() - 0.5) * 0.015)), faces, 2, false, now, lifetime, rng);
+                }
+            }
             case ARROW -> {
                 stain(splat, Vec3.ZERO, faces, units + 3, true, now, lifetime, rng);
                 for (int i = 0; i < 3; i++) {
@@ -123,9 +164,10 @@ final class MobCoat {
                        int now, int lifetime, RandomSource rng) {
         int[] px = new int[2];
         ModelFacesOfMob.Face f = strike(splat.at().add(offset), splat.dir(), faces, px);
+        if (f == null && wound) f = nearest(splat.at().add(offset), splat.dir(), faces, px);
         if (f == null) return;
         MobFace canvas = face(f);
-        canvas.add(px[0], px[1], units, tint(splat), now, lifetime, rng);
+        if (canvas.add(px[0], px[1], units, tint(splat), now, lifetime, rng)) strokes++;
         if (wound) markWound(f, canvas, px);
     }
 
@@ -137,7 +179,7 @@ final class MobCoat {
         MobFace canvas = face(f);
         int cx = px[0], cy = px[1];
         int colour = tint(splat);
-        canvas.add(cx, cy, units, colour, now, lifetime, rng);
+        if (canvas.add(cx, cy, units, colour, now, lifetime, rng)) strokes++;
         for (int dy = -1; dy <= 1; dy++) {
             for (int dx = -1; dx <= 1; dx++) {
                 if ((dx | dy) == 0 || !canvas.inside(cx + dx, cy + dy)) continue;
@@ -168,13 +210,46 @@ final class MobCoat {
             double tt = d / facing;
             if (tt <= 0 || tt >= bestT || tt > 4.0) continue;
             double[] loc = f.locate(from.x + dir.x * tt, from.y + dir.y * tt, from.z + dir.z * tt);
-            if (loc == null || loc[0] < 0 || loc[0] > 1 || loc[1] < 0 || loc[1] > 1) continue;
+            if (loc == null || !f.holds(loc[0], loc[1])) continue;
+            if (!f.drawnAt(loc[0], loc[1])) {
+                com.simpleblood.Tally.count("coat.hole");
+                continue;
+            }
             best = f;
             bestT = tt;
             bestA = loc[0];
             bestB = loc[1];
         }
         if (best == null) return null;
+        px[0] = (int) Math.max(0, Math.min(best.pw - 1, best.sAt(bestA, bestB) * best.pw));
+        px[1] = (int) Math.max(0, Math.min(best.ph - 1, best.tAt(bestA, bestB) * best.ph));
+        return best;
+    }
+
+    private static ModelFacesOfMob.Face nearest(Vec3 point, Vec3 dir, List<ModelFacesOfMob.Face> faces, int[] px) {
+        ModelFacesOfMob.Face best = null;
+        double bestD = Double.MAX_VALUE, bestA = 0, bestB = 0;
+        for (int pass = 0; pass < 2 && best == null; pass++) {
+            for (ModelFacesOfMob.Face f : faces) {
+                if (pass == 0 && f.wnx * dir.x + f.wny * dir.y + f.wnz * dir.z > 0.2) continue;
+                double[] loc = f.locate(point.x, point.y, point.z);
+                if (loc == null) continue;
+                double a = Math.max(0, Math.min(1, loc[0])), b = Math.max(0, Math.min(1, loc[1]));
+                if (pass == 0 && !f.drawnAt(a, b)) continue;
+                double x = f.wx(0) + (f.wx(1) - f.wx(0)) * a + (f.wx(3) - f.wx(0)) * b;
+                double y = f.wy(0) + (f.wy(1) - f.wy(0)) * a + (f.wy(3) - f.wy(0)) * b;
+                double z = f.wz(0) + (f.wz(1) - f.wz(0)) * a + (f.wz(3) - f.wz(0)) * b;
+                double d = point.distanceToSqr(x, y, z);
+                if (d < bestD) {
+                    bestD = d;
+                    best = f;
+                    bestA = a;
+                    bestB = b;
+                }
+            }
+        }
+        if (best == null) return null;
+        com.simpleblood.Tally.count("coat.nearest");
         px[0] = (int) Math.max(0, Math.min(best.pw - 1, best.sAt(bestA, bestB) * best.pw));
         px[1] = (int) Math.max(0, Math.min(best.ph - 1, best.tAt(bestA, bestB) * best.ph));
         return best;

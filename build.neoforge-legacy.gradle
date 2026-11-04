@@ -63,11 +63,13 @@ processResources {
     def minecraftRange = "[${mcVersion}]" // Maven exact range → correct Modrinth detection
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
+    def extraMixins = ', "ModelPartCatchMixin"'
+    inputs.property 'extraMixins', extraMixins // a mixin added here must rebuild the list
     inputs.property 'minecraftRange', minecraftRange
     filesMatching(['META-INF/mods.toml', 'simpleblood.mixins.json']) {
         expand version: project.version,
                 mixinCompat: project.property('mixin_compat'),
-                extraMixins: ', "ModelPartCatchMixin"', // blood on mobs: the drawn cubes
+                extraMixins: extraMixins, // blood on mobs: the drawn cubes
                 minecraft_range: minecraftRange
     }
     // NeoForge 1.20.1 finds mixin names through the refmap, and goes without ScreenInvoker: the

@@ -50,6 +50,13 @@ public final class CanvasTile {
     private boolean[] mask;
     CanvasTile twin;
     Vec3 swayPivot, swayAxis;
+    Slope slope;
+    boolean turning;
+    int turnDrips, turnPours;
+    com.simpleblood.compat.CreateKinetics.Part spin;
+    boolean spinAsked;
+    Boolean onSubLevel;
+    boolean sizzled;
     private boolean propagating;
 
     final double ox, oy, oz;
@@ -74,6 +81,7 @@ public final class CanvasTile {
 
     private NativeImage image;
     private NativeImage spec;
+    private int[] edgeDistance;
     int slot = -1;
     boolean dirty;
     int lastTouched;
@@ -210,7 +218,7 @@ public final class CanvasTile {
         return (int) Math.floor(d / h * ph);
     }
 
-    Vec3 center() {
+    public Vec3 center() {
         return new Vec3(ox + (ux * w + vx * h) * 0.5, oy + (uy * w + vy * h) * 0.5, oz + (uz * w + vz * h) * 0.5);
     }
 
@@ -220,7 +228,27 @@ public final class CanvasTile {
 
     public int count() { return count; }
 
+    public int units() {
+        int n = 0;
+        for (byte d : depth) n += d;
+        return n;
+    }
+
     public BlockPos blockPos() { return pos; }
+
+    public Direction face() { return face; }
+
+    public String describe() {
+        StringBuilder sb = new StringBuilder(String.format(java.util.Locale.ROOT,
+                "box %d %s n(%.2f %.2f %.2f) from (%.3f %.3f %.3f) u(%.2f %.2f %.2f) v(%.2f %.2f %.2f) %.3f x %.3f, %dx%d px, %d blood%s%n",
+                key.box(), face, nx, ny, nz, ox - pos.getX(), oy - pos.getY(), oz - pos.getZ(), ux, uy, uz, vx, vy, vz,
+                w, h, pw, ph, count, swayPivot != null ? ", moves" : ""));
+        for (int y = 0; y < ph; y++) {
+            for (int x = 0; x < pw; x++) sb.append(filled(x, y) ? '#' : paintable(x, y) ? '.' : ' ');
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
     public boolean isEmpty() { return count == 0; }
 
     int depthAt(int px, int py) {
@@ -272,6 +300,41 @@ public final class CanvasTile {
         }
     }
 
+    int tread(int px, int py, int now, float trample, int[] src) {
+        if (!inside(px, py)) return -1;
+        int i = py * pw + px;
+        if (tone[i] == EMPTY || powder[i] || now - born[i] > life[i] * 0.55f) return -1;
+        src[0] = rgb[i];
+        src[1] = born[i];
+        src[2] = life[i];
+        int out = Math.max(0, depth[i] - 1);
+        depth[i] = 1;
+        born[i] -= Math.round(life[i] * trample);
+        dirty = true;
+        active = true;
+        lastTouched = now;
+        return out;
+    }
+
+    boolean carry(int px, int py, int colour, int srcBorn, int srcLife, int thinLevel, int now, int lifetime,
+                  RandomSource rng, boolean pattern) {
+        if (!paintable(px, py)) return false;
+        int i = py * pw + px;
+        boolean was = tone[i] != EMPTY;
+        int oldBorn = born[i];
+        byte oldThin = thin[i];
+        paintThin(px, py, colour, now, lifetime, rng, pattern, thinLevel);
+        if (tone[i] == EMPTY) return false;
+        if (was) {
+            born[i] = Math.max(oldBorn, srcBorn);
+            thin[i] = (byte) Math.min(oldThin, thinLevel);
+        } else {
+            born[i] = srcBorn;
+            life[i] = srcLife;
+        }
+        return true;
+    }
+
     void rebind(BlockState newState) {
         this.state = newState;
     }
@@ -319,11 +382,19 @@ public final class CanvasTile {
         dirty = true;
     }
 
+    void addWake(int cx, int cy, int now, float strength, float reach) {
+        if (!facesUp() || count == 0) return;
+        if (ripples.size() >= 3) ripples.remove(0);
+        ripples.add(new int[]{cx, cy, now, Math.round(Math.min(1f, strength) * 1000), Math.round(reach * 10)});
+        dirty = true;
+    }
+
     List<int[]> snapshot() {
-        List<int[]> out = new ArrayList<>(count);
+        List<int[]> out = new ArrayList<>(Math.max(0, count));
         for (int i = 0; i < tone.length; i++) {
             if (tone[i] != EMPTY) out.add(new int[]{i % pw, i / pw, rgb[i], depth[i], powder[i] ? 1 : 0});
         }
+        count = out.size();
         return out;
     }
 
@@ -351,8 +422,14 @@ public final class CanvasTile {
             thin[i] = l.thin();
             powder[i] = l.powder();
         } else {
+            rgb[i] = com.simpleblood.BloodMix.join(rgb[i], depth[i], l.rgb(), l.depth(),
+                    com.simpleblood.BloodMix.wetness(now, born[i], life[i]), spot(px, py), spot(py, px));
             depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + l.depth());
             born[i] = Math.max(born[i], l.born());
+            dirty = true;
+            active = !powder[i];
+            lastTouched = now;
+            return true;
         }
         rgb[i] = l.rgb();
         dirty = true;
@@ -512,12 +589,15 @@ public final class CanvasTile {
             }
         }
         if (mask != null && !mask[i]) return;
+        int mixed = colour;
         if (tone[i] == EMPTY) {
             count++;
             depth[i] = 1;
             born[i] = now;
             life[i] = (int) (lifetime * (0.8f + rng.nextFloat() * 0.4f));
         } else {
+            mixed = com.simpleblood.BloodMix.join(rgb[i], depth[i], colour, 1,
+                    com.simpleblood.BloodMix.wetness(now, born[i], life[i]), spot(px, py), rng.nextFloat());
             depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + 1);
             born[i] = Math.max(born[i], now - life[i] / 4);
         }
@@ -529,16 +609,21 @@ public final class CanvasTile {
             t = ((hsh >>> 4) % 8) == 0 ? DARK : BASE;
         }
         tone[i] = t;
-        rgb[i] = colour;
+        rgb[i] = mixed;
         dirty = true;
         active = true;
         lastTouched = now;
+    }
+
+    private float spot(int px, int py) {
+        return com.simpleblood.BloodMix.spot(px, py, pos.hashCode() * 31 + face.ordinal());
     }
 
     void paintPowder(int px, int py, int colour, int now, int lifetime, RandomSource rng) {
         if (!inside(px, py)) return;
         paintThin(px, py, colour, now, lifetime, rng, true, 0);
         int i = py * pw + px;
+        if (tone[i] == EMPTY) return;
         powder[i] = true;
         depth[i] = 1;
         tone[i] = BASE;
@@ -591,6 +676,57 @@ public final class CanvasTile {
         return null;
     }
 
+    private static final float WET_WHILE = 0.5f;
+
+    private boolean wetPool(int i, int now) {
+        return tone[i] != EMPTY && !powder[i] && thin[i] == 0 && now - born[i] <= life[i] * WET_WHILE;
+    }
+
+    private static double downhill(Slope slope, int x, int y, RandomSource rng) {
+        return x * slope.stepU() + y * slope.stepV() + rng.nextDouble() * 0.25;
+    }
+
+    boolean downhillRim(Slope slope, int now, RandomSource rng, int[] out) {
+        if (count == 0) return false;
+        int sx = (int) Math.signum(Math.round(slope.stepU())), sy = (int) Math.signum(Math.round(slope.stepV()));
+        double best = -Double.MAX_VALUE;
+        boolean found = false;
+        for (int i = 0; i < tone.length; i++) {
+            if (!wetPool(i, now)) continue;
+            int x = i % pw, y = i / pw;
+            int n = (y + sy) * pw + x + sx;
+            if (inside(x + sx, y + sy) && tone[n] != EMPTY && thin[n] == 0) continue;
+            double score = downhill(slope, x, y, rng);
+            if (score > best) {
+                best = score;
+                out[0] = x;
+                out[1] = y;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    boolean releaseLowest(Slope slope, int now, RandomSource rng, int[] out) {
+        if (count == 0) return false;
+        double best = -Double.MAX_VALUE;
+        int pick = -1;
+        for (int i = 0; i < tone.length; i++) {
+            if (depth[i] < 2 || !wetPool(i, now)) continue;
+            double score = downhill(slope, i % pw, i / pw, rng);
+            if (score > best) {
+                best = score;
+                pick = i;
+            }
+        }
+        if (pick < 0) return false;
+        out[0] = pick % pw;
+        out[1] = pick / pw;
+        out[2] = rgb[pick];
+        takeUnit(pick);
+        return true;
+    }
+
     private int[] pool(int px, int py) {
         int seed = -1;
         if (liquid(px, py)) {
@@ -621,6 +757,18 @@ public final class CanvasTile {
         return java.util.Arrays.copyOf(queue, tail);
     }
 
+    public int liquidCount() {
+        int n = 0;
+        for (int i = 0; i < tone.length; i++) if (tone[i] != EMPTY && !powder[i]) n++;
+        return n;
+    }
+
+    public int powderCount() {
+        int n = 0;
+        for (int i = 0; i < tone.length; i++) if (tone[i] != EMPTY && powder[i]) n++;
+        return n;
+    }
+
     private boolean liquid(int px, int py) {
         if (!inside(px, py)) return false;
         int i = py * pw + px;
@@ -642,6 +790,15 @@ public final class CanvasTile {
 
         boolean contains(CanvasTile t) {
             return tiles.contains(t);
+        }
+
+        int excess() {
+            int m = 0;
+            for (int k = 0; k < tiles.size(); k++) {
+                CanvasTile t = tiles.get(k);
+                for (int i : pools.get(k)) m += Math.max(0, t.depth[i] - 1);
+            }
+            return m;
         }
 
         boolean draw(Vec3 lip, RandomSource rng) {
@@ -708,7 +865,8 @@ public final class CanvasTile {
         double fx = c.x + nx * 0.05, fy = c.y + ny * 0.05, fz = c.z + nz * 0.05;
         BlockPos bp = BlockPos.containing(fx, fy, fz);
         net.minecraft.world.level.material.FluidState fluid = level.getFluidState(bp);
-        return !fluid.isEmpty() && fy < bp.getY() + fluid.getHeight(level, bp);
+        if (fluid.isEmpty()) return BloodSurfaces.inCauldronWater(level, fx, fy, fz);
+        return fy < bp.getY() + fluid.getHeight(level, bp);
     }
 
     List<int[]> washUnderWater(net.minecraft.client.multiplayer.ClientLevel level) {
@@ -730,6 +888,7 @@ public final class CanvasTile {
     }
 
     private void takeUnit(int i) {
+        if (tone[i] == EMPTY) return;
         if (depth[i] <= 1) {
             depth[i] = 0;
             tone[i] = EMPTY;
@@ -826,13 +985,15 @@ public final class CanvasTile {
 
     boolean age(int now, RandomSource rng) {
         boolean changed = dirty;
+        int alive = 0;
         for (int i = 0; i < tone.length; i++) {
             if (tone[i] == EMPTY) continue;
+            alive++;
             int agePct = (int) (100L * (now - born[i]) / Math.max(1, life[i]));
             if (agePct >= 100) {
                 depth[i] = 0;
                 tone[i] = EMPTY;
-                count--;
+                alive--;
                 changed = true;
             } else if (depth[i] > 1 && agePct > (depth[i] > 2 ? 50 : 70)) {
                 depth[i]--;
@@ -840,12 +1001,13 @@ public final class CanvasTile {
             } else if (agePct > 60 && depth[i] == 1 && isEdge(i) && rng.nextInt(100) < (agePct - 60) / 2) {
                 depth[i] = 0;
                 tone[i] = EMPTY;
-                count--;
+                alive--;
                 changed = true;
             } else if (agePct > 30 && ((now + slot) & 63) == 0) {
                 changed = true;
             }
         }
+        count = alive;
         return changed;
     }
 
@@ -925,6 +1087,15 @@ public final class CanvasTile {
         return weight == 0 ? Math.max(0f, ages[y * pw + x]) : sum / weight;
     }
 
+    private void measureEdgeDistances(byte[] cls) {
+        if (edgeDistance == null) edgeDistance = new int[tone.length];
+        for (int i = 0; i < tone.length; i++) {
+            byte k = cls[i];
+            edgeDistance[i] = k == 0 ? 0 : (k == 1 || k == 4 ? PoolShading.STEP : PoolShading.UNSET);
+        }
+        PoolShading.edgeDistances(edgeDistance, pw, ph);
+    }
+
     void refresh(BloodCanvasAtlas atlas, int now, float opacity, NeighbourLookup lookup) {
         if (slot < 0) {
             slot = atlas.acquireSlot();
@@ -938,6 +1109,7 @@ public final class CanvasTile {
         }
         boolean puddle = !custom && face == Direction.UP && count > 2;
         byte[] cls = puddle ? edgeClasses(lookup) : null;
+        if (puddle) measureEdgeDistances(cls);
         ripples.removeIf(r -> now - r[2] >= RIPPLE_TICKS);
 
         float[] ages = new float[tone.length];
@@ -946,6 +1118,7 @@ public final class CanvasTile {
         }
 
         float glowSum = 0f;
+        boolean snow = state != null && BloodSurfaces.isSnow(state);
         for (int i = 0; i < tone.length; i++) {
             int x = i % pw, y = i / pw;
             if (spec != null) Pixels.setAbgr(spec, x, y, 0);
@@ -969,6 +1142,7 @@ public final class CanvasTile {
             float sd = smoothDepth(x, y);
             float deep = Math.min(1.0f, (sd - 1) / 3.0f);
             float f;
+            float edge = puddle ? PoolShading.pixels(edgeDistance[i]) : 0f;
             if (puddle && cls[i] != 3) {
                 float k = deep * (1.0f - 0.5f * dry);
                 if (cls[i] == 1) f = 1.0f - 0.22f * k;
@@ -977,7 +1151,14 @@ public final class CanvasTile {
             } else {
                 f = TONE_FACTOR[t];
             }
-            f *= 1.0f - 0.16f * dry;
+            float rich = 1.0f;
+            if (puddle) {
+                f *= PoolShading.depthTone(edge, deep, dry);
+                rich = PoolShading.depthRichness(edge, deep, dry);
+            }
+            if (snow) f *= 1.04f;
+            else if (puddle) f *= PoolShading.ringTone(edge, dry);
+            else f *= 1.0f - 0.16f * dry;
             float rippleAlpha = 1.0f;
             for (int[] r : ripples) {
                 double radius = (now - r[2]) * 0.45 + 0.5;
@@ -994,19 +1175,49 @@ public final class CanvasTile {
             }
             int c = rgb[i];
             int r = clamp((int) (((c >> 16) & 0xFF) * f));
-            int g = clamp((int) (((c >> 8) & 0xFF) * f));
-            int b = clamp((int) ((c & 0xFF) * f));
+            int g = clamp((int) (((c >> 8) & 0xFF) * f * rich));
+            int b = clamp((int) ((c & 0xFF) * f * rich));
             float alpha = opacity;
             alpha *= 0.62f + 0.38f * Math.min(1.0f, (sd - 1) / 2.0f);
             alpha *= 1.0f - 0.18f * thin[i];
             alpha *= rippleAlpha;
+            if (puddle) {
+                alpha *= PoolShading.depthAlpha(edge, deep, dry);
+                if (!snow) alpha *= PoolShading.ringAlpha(edge, dry);
+            }
+            if (snow) alpha = Math.min(opacity, alpha * 1.35f);
             if (shade > 0.75f) alpha *= 1.0f - Math.min(1f, (shade - 0.75f) / 0.25f);
             Pixels.setAbgr(image, x, y, Pixels.packAbgr(r, g, b, clamp((int) (alpha * 255))));
-            if (spec != null && swayPivot == null) Pixels.setAbgr(spec, x, y, wetSpecular(deep, thin[i], dry));
+            if (spec != null && !snow && !(swayPivot != null && state.getBlock() instanceof net.minecraft.world.level.block.AbstractBannerBlock)) {
+                Pixels.setAbgr(spec, x, y, wetSpecular(deep, thin[i], dry));
+            }
         }
         glow = count == 0 ? 0 : Math.round(15f * Math.min(1f, glowSum / count));
         atlas.upload(slot, image, spec);
         dirty = false;
+    }
+
+    int settleExcess(int now, int[] low) {
+        int excess = 0;
+        double lowest = Double.MAX_VALUE;
+        for (int i = 0; i < tone.length; i++) {
+            if (tone[i] == EMPTY || powder[i] || depth[i] <= 1) continue;
+            if (com.simpleblood.BloodMix.wetness(now, born[i], life[i]) < 0.5f) continue;
+            excess += depth[i] - 1;
+            depth[i] = 1;
+            double y = pixelCenter(i % pw, i / pw).y;
+            if (y < lowest) {
+                lowest = y;
+                low[0] = i % pw;
+                low[1] = i / pw;
+                low[2] = rgb[i];
+            }
+        }
+        if (excess > 0) {
+            dirty = true;
+            active = true;
+        }
+        return excess;
     }
 
     private static final int F0_BLOOD = 6;

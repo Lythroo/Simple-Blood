@@ -60,8 +60,19 @@ public class ArmorSparkParticle extends SingleQuadParticle {
         this.setColor(1.0f, 0.97f - 0.42f * t, 0.75f - 0.62f * t);
     }
 
+    private volatile boolean ticked;
+
+    private void putBack() {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == this.level) mc.particleEngine.add(this);
+    }
+
     @Override
     public void remove() {
+        if (!ticked && !this.removed && com.simpleblood.compat.AsyncParticlesTicks.evictingSpawns()
+                && com.simpleblood.compat.AsyncParticlesTicks.hold(this::putBack)) {
+            return;
+        }
         if (counted) {
             counted = false;
             BloodParticle.countDeath();
@@ -71,6 +82,7 @@ public class ArmorSparkParticle extends SingleQuadParticle {
 
     @Override
     public void tick() {
+        ticked = true;
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;

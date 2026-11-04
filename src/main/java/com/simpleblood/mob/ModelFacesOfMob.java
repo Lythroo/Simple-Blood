@@ -20,18 +20,46 @@ public final class ModelFacesOfMob {
     private static final Set<String> SKIP = Set.of("hat_rim");
 
     static final class Face {
-        final Object key;
+        Object key;
+        long shape;
         final int cube;
         final float[] p = new float[12];
         final double[] w = new double[12];
         final float[] s = new float[4], t = new float[4];
+        final float[] u = new float[4], v = new float[4];
+        MobTextures.Alpha alpha;
         float nx, ny, nz;
         float wnx, wny, wnz;
         int pw, ph;
+        boolean holds(double a, double b) {
+            return a >= 0 && a <= 1 && b >= 0 && b <= 1;
+        }
 
         Face(Object key, int cube) {
             this.key = key;
             this.cube = cube;
+        }
+
+        Face moved(double[] world, org.joml.Vector3f normal, Vec3 camera) {
+            Face f = new Face(key, cube);
+            f.shape = shape;
+            f.pw = pw;
+            f.ph = ph;
+            f.alpha = alpha;
+            System.arraycopy(world, 0, f.w, 0, 12);
+            for (int k = 0; k < 4; k++) {
+                f.p[k * 3] = (float) (world[k * 3] - camera.x);
+                f.p[k * 3 + 1] = (float) (world[k * 3 + 1] - camera.y);
+                f.p[k * 3 + 2] = (float) (world[k * 3 + 2] - camera.z);
+                f.s[k] = s[k];
+                f.t[k] = t[k];
+                f.u[k] = u[k];
+                f.v[k] = v[k];
+            }
+            f.nx = f.wnx = normal.x;
+            f.ny = f.wny = normal.y;
+            f.nz = f.wnz = normal.z;
+            return f;
         }
 
         double wx(int k) { return w[k * 3]; }
@@ -52,6 +80,11 @@ public final class ModelFacesOfMob {
             if (Math.abs(det) < 1e-9) return new double[]{0, 0};
             double dx = fx - s[0], dy = fy - t[0];
             return new double[]{(dx * t3 - s3 * dy) / det, (s1 * dy - dx * t1) / det};
+        }
+
+        boolean drawnAt(double a, double b) {
+            if (alpha == null) return true;
+            return alpha.at(u[0] + (u[1] - u[0]) * a + (u[3] - u[0]) * b, v[0] + (v[1] - v[0]) * a + (v[3] - v[0]) * b);
         }
 
         double sAt(double a, double b) { return s[0] + (s[1] - s[0]) * a + (s[3] - s[0]) * b; }
@@ -108,6 +141,8 @@ public final class ModelFacesOfMob {
             f.w[k * 3 + 2] = w.z + camera.z;
             f.s[k] = (v[k * 5 + 3] - umin) / (umax - umin);
             f.t[k] = (v[k * 5 + 4] - vmin) / (vmax - vmin);
+            f.u[k] = v[k * 5 + 3];
+            f.v[k] = v[k * 5 + 4];
         }
         f.nx = n.x;
         f.ny = n.y;
@@ -119,13 +154,26 @@ public final class ModelFacesOfMob {
         out.add(f);
     }
 
+    static boolean shaped;
+
     //? if >=1.21.11 {
     static void collect(ModelPart root, PoseStack pose, Vec3 camera, List<Face> out, int[] cubes) {
-        walk(root, pose, camera, out, cubes);
+        walk(root, pose, camera, out, cubes, null);
     }
 
-    private static void walk(ModelPart part, PoseStack pose, Vec3 camera, List<Face> out, int[] cubes) {
+    static void collectDrawn(ModelPart part, PoseStack pose, Vec3 camera, List<Face> out, int[] cubes, java.util.Set<ModelPart> walked) {
+        boolean was = shaped;
+        shaped = true;
+        try {
+            walk(part, pose, camera, out, cubes, walked);
+        } finally {
+            shaped = was;
+        }
+    }
+
+    private static void walk(ModelPart part, PoseStack pose, Vec3 camera, List<Face> out, int[] cubes, java.util.Set<ModelPart> walked) {
         if (!part.visible) return;
+        if (walked != null && !walked.add(part)) return;
         ModelPartAccessor acc = (ModelPartAccessor) (Object) part;
         List<ModelPart.Cube> own = acc.simpleblood$cubes();
         Map<String, ModelPart> children = acc.simpleblood$children();
@@ -147,15 +195,27 @@ public final class ModelFacesOfMob {
                         v[k * 5 + 3] = vs[k].u();
                         v[k * 5 + 4] = vs[k].v();
                     }
+                    int before = out.size();
                     addPolygon(polygon, id, v, polygon.normal().x(), polygon.normal().y(), polygon.normal().z(),
                             last.pose(), last.normal(), null, camera, out);
+                    if (shaped && out.size() > before) out.get(before).shape = shapeOf(part, v);
                 }
             }
         }
         for (Map.Entry<String, ModelPart> child : children.entrySet()) {
-            if (!SKIP.contains(child.getKey())) walk(child.getValue(), pose, camera, out, cubes);
+            if (!SKIP.contains(child.getKey())) walk(child.getValue(), pose, camera, out, cubes, walked);
         }
         pose.popPose();
+    }
+
+    private static long shapeOf(ModelPart part, float[] v) {
+        net.minecraft.client.model.geom.PartPose rest = part.getInitialPose();
+        long h = 1125899906842597L;
+        h = 31 * h + Float.floatToIntBits(rest.x());
+        h = 31 * h + Float.floatToIntBits(rest.y());
+        h = 31 * h + Float.floatToIntBits(rest.z());
+        for (float f : v) h = 31 * h + Float.floatToIntBits(f);
+        return h == 0 ? 1 : h;
     }
     //?}
 
@@ -181,14 +241,18 @@ public final class ModelFacesOfMob {
      ^/
     public static void rendering(ModelPart part, PoseStack stack) {
         if (!catching || WALKED.contains(part)) return;
-        PoseStack copy = new PoseStack();
-        copy.last().pose().set(stack.last().pose());
-        copy.last().normal().set(stack.last().normal());
-        walk(part, copy);
+        // Called from the head of the game's own ModelPart.render: a failure here must not
+        try {
+            PoseStack copy = new PoseStack();
+            copy.last().pose().set(stack.last().pose());
+            copy.last().normal().set(stack.last().normal());
+            walk(part, copy);
+        } catch (Throwable t) {
+            catching = false;
+            com.simpleblood.Guard.fail(com.simpleblood.Guard.Part.SURFACES, "reading the model of a mob", t);
+        }
     }
 
-    // As vanilla's ModelPart.render: hidden parts and all under them are skipped, a part's pose
-    // applies to its children, and skipDraw hides only the part's own cubes.
     private static void walk(ModelPart part, PoseStack stack) {
         if (!part.visible || !WALKED.add(part)) return;
         com.simpleblood.mixin.ModelPartAccessor parts = (com.simpleblood.mixin.ModelPartAccessor) (Object) part;
@@ -329,7 +393,7 @@ public final class ModelFacesOfMob {
         List<Face> out = new ArrayList<>();
         int[] cubes = {0};
         //? if >=1.21.11 {
-        walk(root, pose, Vec3.ZERO, out, cubes);
+        walk(root, pose, Vec3.ZERO, out, cubes, null);
         //?} else {
         /*walkModel(root, pose, out, cubes);
         *///?}

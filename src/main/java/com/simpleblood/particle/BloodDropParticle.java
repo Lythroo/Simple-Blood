@@ -19,9 +19,11 @@ public class BloodDropParticle extends BloodParticle {
                                 TextureAtlasSprite sprite,
                                 float red, float green, float blue) {
         super(world, x, y, z, velX, velY, velZ, sprite, 1.0f, red, green, blue);
-        this.xd = 0;
-        this.yd = velY;
-        this.zd = 0;
+        double[] carry = carriedMotion();
+        boolean exact = ballisticSpawn();
+        this.xd = (exact ? velX : 0) + carry[0];
+        this.yd = velY + carry[1];
+        this.zd = (exact ? velZ : 0) + carry[2];
         this.quadSize = DROP_QUAD_SIZE;
         this.alpha = 1.0f;
         this.lifetime = 200;

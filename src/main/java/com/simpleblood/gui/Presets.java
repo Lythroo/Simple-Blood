@@ -9,7 +9,7 @@ public final class Presets {
     public record Preset(String name, String description, java.util.function.Consumer<SimpleBloodConfig> apply) {}
 
     public static final Preset[] ALL = {
-            new Preset("Vanilla+", "The defaults. Restrained blood that fits the game.", c -> {
+            new Preset("simpleblood.preset.vanilla", "simpleblood.preset.the_defaults_restrained_blood_that", c -> {
                 defaults(c);
                 c.general.bloodAmount = 100;
                 c.general.particleBudget = 1500;
@@ -21,7 +21,7 @@ public final class Presets {
                 water(c, true, 100, 100, 100);
                 sound(c, 100, 100, true, true);
             }),
-            new Preset("Subtle", "A hint of blood. Small, quick, gone soon.", c -> {
+            new Preset("simpleblood.preset.subtle", "simpleblood.preset.a_hint_of_blood_small", c -> {
                 defaults(c);
                 c.general.bloodAmount = 55;
                 c.general.particleBudget = 800;
@@ -33,7 +33,7 @@ public final class Presets {
                 water(c, true, 80, 80, 70);
                 sound(c, 70, 100, true, false);
             }),
-            new Preset("Realistic", "Heavy drops, mostly out of the wound, stains that stick around for minutes.", c -> {
+            new Preset("simpleblood.preset.realistic", "simpleblood.preset.heavy_drops_mostly_out_of", c -> {
                 defaults(c);
                 c.general.bloodAmount = 90;
                 c.general.particleBudget = 1500;
@@ -45,7 +45,7 @@ public final class Presets {
                 water(c, true, 110, 140, 90);
                 sound(c, 90, 95, true, true);
             }),
-            new Preset("Cinematic", "Big floaty sprays, puddles that last, all the extras on.", c -> {
+            new Preset("simpleblood.preset.cinematic", "simpleblood.preset.big_floaty_sprays_puddles_that", c -> {
                 defaults(c);
                 c.general.bloodAmount = 130;
                 c.general.particleBudget = 2500;
@@ -57,7 +57,7 @@ public final class Presets {
                 water(c, true, 130, 130, 120);
                 sound(c, 110, 95, true, true);
             }),
-            new Preset("Retro", "Chunky double-size pixels with a flat pattern. Bright and bouncy.", c -> {
+            new Preset("simpleblood.preset.retro", "simpleblood.preset.chunky_double_size_pixels_with", c -> {
                 defaults(c);
                 c.general.bloodAmount = 120;
                 c.general.particleBudget = 1500;
@@ -69,7 +69,7 @@ public final class Presets {
                 water(c, true, 100, 100, 100);
                 sound(c, 100, 110, true, true);
             }),
-            new Preset("Gore", "Way too much blood. Puddles everywhere, for ages, giblets and blood on mobs.", c -> {
+            new Preset("simpleblood.preset.gore", "simpleblood.preset.way_too_much_blood_puddles", c -> {
                 defaults(c);
                 c.general.bloodAmount = 220;
                 c.general.particleBudget = 4000;
@@ -83,7 +83,7 @@ public final class Presets {
                 giblets(c, true, 150, true);
                 c.mobCoat.enabled = true;
             }),
-            new Preset("Performance", "Fewer drops, fewer painted faces, no clouds. For slower machines.", c -> {
+            new Preset("simpleblood.preset.performance", "simpleblood.preset.fewer_drops_fewer_painted_faces", c -> {
                 defaults(c);
                 c.general.bloodAmount = 80;
                 c.general.particleBudget = 500;

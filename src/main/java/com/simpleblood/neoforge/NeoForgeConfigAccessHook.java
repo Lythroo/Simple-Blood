@@ -19,12 +19,12 @@ final class NeoForgeConfigAccessHook {
                         .executes(ctx -> { ConfigAccess.requestOpen(); return 1; })
                         .then(Commands.literal("clear").executes(ctx -> {
                             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.OTHER, "clearing blood on blocks", BloodSurfaces::clear);
-                            ctx.getSource().sendSuccess(() -> Component.literal("All clean."), false);
+                            ctx.getSource().sendSuccess(() -> Component.translatable("simpleblood.command.cleared"), false);
                             return 1;
                         }))
                         .then(Commands.literal("reset").executes(ctx -> {
                             com.simpleblood.Guard.reset();
-                            ctx.getSource().sendSuccess(() -> Component.literal("Simple Blood: everything back on."), false);
+                            ctx.getSource().sendSuccess(() -> Component.translatable("simpleblood.command.reset"), false);
                             return 1;
                         }))));
     }
@@ -52,12 +52,12 @@ final class NeoForgeConfigAccessHook {
                         .executes(ctx -> { ConfigAccess.requestOpen(); return 1; })
                         .then(Commands.literal("clear").executes(ctx -> {
                             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.OTHER, "clearing blood on blocks", BloodSurfaces::clear);
-                            ctx.getSource().sendSuccess(() -> Component.literal("All clean."), false);
+                            ctx.getSource().sendSuccess(() -> Component.translatable("simpleblood.command.cleared"), false);
                             return 1;
                         }))
                         .then(Commands.literal("reset").executes(ctx -> {
                             com.simpleblood.Guard.reset();
-                            ctx.getSource().sendSuccess(() -> Component.literal("Simple Blood: everything back on."), false);
+                            ctx.getSource().sendSuccess(() -> Component.translatable("simpleblood.command.reset"), false);
                             return 1;
                         }))));
     }

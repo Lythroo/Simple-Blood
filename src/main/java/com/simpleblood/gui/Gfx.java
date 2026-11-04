@@ -157,6 +157,30 @@ public final class Gfx {
     }
     *///?}
 
+    public void item(net.minecraft.world.item.ItemStack stack, int x, int y) {
+        //? if <26.1 {
+        /*g.renderItem(stack, x, y);
+        *///?} else {
+        g.item(stack, x, y);
+        //?}
+    }
+
+    public void texture(Identifier id, int x, int y, int size) {
+        //? if <=1.21.1 {
+        /*g.blit(id, x, y, 0f, 0f, size, size, size, size);
+        *///?} else {
+        g.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, id, x, y, 0f, 0f, size, size, size, size);
+        //?}
+    }
+
+    public void slot(int x, int y) {
+        fill(x, y, x + 18, y + 18, 0xFF8B8B8B);
+        fill(x, y, x + 17, y + 1, 0xFF373737);
+        fill(x, y, x + 1, y + 17, 0xFF373737);
+        fill(x + 1, y + 17, x + 18, y + 18, 0xFFFFFFFF);
+        fill(x + 17, y + 1, x + 18, y + 18, 0xFFFFFFFF);
+    }
+
     public void button(int x, int y, int w, int h, boolean enabled, boolean hovered) {
         sprite(!enabled ? BUTTON_OFF : hovered ? BUTTON_HOVER : BUTTON, x, y, w, h);
     }
@@ -233,7 +257,10 @@ public final class Gfx {
     public void layer() {
         //? if >=1.21.11 {
         g.nextStratum();
-        //?}
+        //?} else {
+        /*        g.flush();
+        com.mojang.blaze3d.systems.RenderSystem.clear(org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT, net.minecraft.client.Minecraft.ON_OSX);
+        *///?}
     }
 
     public void tooltip(List<String> lines, int mx, int my) {

@@ -66,7 +66,13 @@ public class SimpleBloodConfig {
 
         try {
             String json = GSON.toJson(config);
-            Files.writeString(CONFIG_PATH, json);
+            java.nio.file.Path tmp = CONFIG_PATH.resolveSibling(CONFIG_PATH.getFileName() + ".tmp");
+            Files.writeString(tmp, json);
+            try {
+                Files.move(tmp, CONFIG_PATH, java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(tmp, CONFIG_PATH, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
             SimpleBlood.LOGGER.info("Config saved to {}", CONFIG_PATH);
         } catch (IOException e) {
             SimpleBlood.LOGGER.error("Failed to save config", e);
@@ -88,7 +94,13 @@ public class SimpleBloodConfig {
             SimpleBlood.LOGGER.info("Config loaded from {}", CONFIG_PATH);
             return config;
         } catch (Exception e) {
-            SimpleBlood.LOGGER.error("Failed to load config, using defaults", e);
+            java.nio.file.Path broken = CONFIG_PATH.resolveSibling(CONFIG_PATH.getFileName() + ".broken");
+            try {
+                Files.copy(CONFIG_PATH, broken, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                SimpleBlood.LOGGER.error("Failed to load config, using defaults; the unreadable file was kept as {}", broken, e);
+            } catch (IOException copyFailed) {
+                SimpleBlood.LOGGER.error("Failed to load config, using defaults", e);
+            }
             return defaults();
         }
     }
@@ -192,7 +204,12 @@ public class SimpleBloodConfig {
         public int bloodAmount = 100;
         public int particleBudget = 1500;
         public boolean menuButton = true;
+        public boolean menuAnimations = true;
+        public boolean sliderSounds = true;
+        public boolean livePreviews = true;
         public boolean physicsModRagdolls = true;
+        public java.util.List<String> noBleedDamageTypes = new java.util.ArrayList<>();
+        public java.util.List<String> bleedDamageTypes = new java.util.ArrayList<>();
     }
 
     public static class PlayerSettings {
@@ -201,6 +218,8 @@ public class SimpleBloodConfig {
         public int otherPlayersBloodColor = 0x660303;
         public boolean colourFromSkins = true;
         public int skinColourAdopted = -1;
+        public String clientPlayerBloodKind = "liquid";
+        public String skinKindAdopted = "";
 
         public BloodColor.Color getClientPlayerColor() {
             float r = ((clientPlayerBloodColor >> 16) & 0xFF) / 255.0f;
@@ -254,11 +273,19 @@ public class SimpleBloodConfig {
         public int maxTiles = 2048;
         public int renderDistance = 48;
         public boolean rainWashes = true;
+        public boolean heatDries = true;
         public boolean wallsAndCeilings = true;
         public boolean detailedShapes = true;
         public boolean skipSwayingBlocks = true;
         public boolean footprints = true;
         public int footprintSteps = 6;
+        public boolean mixing = true;
+        public int marbling = 60;
+        public boolean wading = true;
+        public int wadeSplash = 100;
+        public boolean wakes = true;
+        public int trample = 100;
+        public boolean viewBobSteps = true;
         public boolean corpsePools = true;
     }
 
@@ -333,9 +360,16 @@ public class SimpleBloodConfig {
         public int woundDripVolume = 100;
         public int slapVolume = 100;
         public int waterVolume = 100;
+        public int heatVolume = 100;
         public int pieceVolume = 100;
         public int footstepVolume = 100;
         public int armorVolume = 100;
+        public int tearVolume = 100;
+        public java.util.List<String> muted = new java.util.ArrayList<>();
+
+        public boolean muted(String sound) {
+            return muted != null && muted.contains(sound);
+        }
 
         public float getSoundVolumeMultiplier() {
             return soundVolume / 100.0f;
@@ -350,6 +384,9 @@ public class SimpleBloodConfig {
         public boolean enabled = true;
         public int share = 65;
         public boolean weaponFlavour = true;
+        public String swordWound = "blade", axeWound = "axe", maceWound = "mace", arrowWound = "arrow", fistWound = "other";
+        public String spearWound = "spear";
+        public java.util.Map<String, String> itemWounds = new java.util.HashMap<>();
         public boolean entrySpatter = true;
     }
 
@@ -432,6 +469,8 @@ public class SimpleBloodConfig {
         public int bleedSeconds = 8;
         public int drips = 100;
         public int splashes = 100;
+        public int spurts = 100;
+        public int bloodSupply = 100;
         public boolean stains = true;
         public int stainSize = 100;
         public int wholeRagdollStains = 35;
@@ -631,6 +670,7 @@ public class SimpleBloodConfig {
             public int bloodColor = 0x660303;
             public String kind = "liquid";
             public boolean glows = false;
+            public String armor = "auto";
 
             public EntitySettings() {
             }
@@ -692,6 +732,7 @@ public class SimpleBloodConfig {
             if (from != null) {
                 copy.kind = from.kind;
                 copy.glows = from.glows;
+                copy.armor = from.armor;
             }
             customEntities.put(entityId, copy);
             return copy;
@@ -712,6 +753,7 @@ public class SimpleBloodConfig {
             public int bloodColor = 0x660303;
             public String kind = "liquid";
             public boolean glows = false;
+            public String armor = "auto";
 
             public BloodKind getKind() {
                 return BloodKind.parse(kind);

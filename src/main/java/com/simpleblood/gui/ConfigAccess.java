@@ -1,5 +1,7 @@
 package com.simpleblood.gui;
 
+import com.simpleblood.Lang;
+
 import com.simpleblood.mixin.ScreenInvoker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -20,8 +22,8 @@ public final class ConfigAccess {
     private ConfigAccess() {}
 
     private static final int W = 44, H = 20, GAP = 6;
-    private static final Component LABEL = Component.literal("Blood");
-    private static final Component TIP = Component.literal("Simple Blood settings");
+    private static final Component LABEL = Component.literal(Lang.t("simpleblood.button.blood"));
+    private static final Component TIP = Component.literal(Lang.t("simpleblood.button.simple_blood_settings"));
 
     private static boolean openRequested;
     private static Screen pending;

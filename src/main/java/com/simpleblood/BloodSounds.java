@@ -13,6 +13,13 @@ public final class BloodSounds {
 
     private BloodSounds() {}
 
+    private static final SoundEvent SQUELCH = own("hit.squelch"), DEATH_SPLAT = own("death.splat"), SLAP = own("slap"),
+            GIBLET = own("giblet.land"), SIZZLE = own("sizzle"), STUMP = own("stump");
+
+    private static SoundEvent own(String name) {
+        return SoundEvent.createVariableRangeEvent(Ids.mod(name));
+    }
+
     private static final RandomSource RNG = RandomSource.create();
 
     private static final int MAX_PER_TICK = 2;
@@ -22,9 +29,16 @@ public final class BloodSounds {
     private static int playedThisTick;
     private static float channel = 1f;
 
-    private static boolean channel(int percent) {
+    private static boolean channel(Preview sound, int percent) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg != null && cfg.audio.muted(sound.name())) return false;
         channel = Math.max(0, percent) / 100f;
         return channel > 0f;
+    }
+
+    public static boolean on(Preview sound) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        return cfg == null || !cfg.audio.muted(sound.name());
     }
 
     public static void landed(ClientLevel level, Vec3 at, boolean intoPuddle, boolean heavy, BloodKind kind) {
@@ -35,7 +49,7 @@ public final class BloodSounds {
             RenderThread.run(() -> landed(level, at, intoPuddle, heavy, kind));
             return;
         }
-        if (!channel(cfg.audio.landingVolume)) return;
+        if (!channel(Preview.LANDING, cfg.audio.landingVolume)) return;
         com.simpleblood.Tally.count("sound.landingVolume");
         RandomSource rng = RNG;
         float chance = (heavy ? 0.30f : 0.16f) + (intoPuddle ? 0.12f : 0f);
@@ -43,10 +57,10 @@ public final class BloodSounds {
         if (!budget(level)) return;
         if (intoPuddle) {
             play(level, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, at,
-                    0.16f + (heavy ? 0.06f : 0f), 0.70f + rng.nextFloat() * 0.25f);
+                    0.45f + (heavy ? 0.15f : 0f), 0.70f + rng.nextFloat() * 0.25f);
         } else {
             play(level, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER, at,
-                    0.10f + (heavy ? 0.05f : 0f), 0.55f + rng.nextFloat() * 0.25f);
+                    0.35f + (heavy ? 0.15f : 0f), 0.55f + rng.nextFloat() * 0.25f);
         }
     }
 
@@ -58,7 +72,7 @@ public final class BloodSounds {
             RenderThread.run(() -> pieceLanded(level, at, kind));
             return;
         }
-        if (!channel(cfg.audio.pieceVolume)) return;
+        if (!channel(Preview.PIECES, cfg.audio.pieceVolume)) return;
         com.simpleblood.Tally.count("sound.pieceVolume");
         RandomSource rng = RNG;
         if (rng.nextFloat() > (kind == BloodKind.METAL ? 0.35f : 0.25f)) return;
@@ -66,20 +80,20 @@ public final class BloodSounds {
         switch (kind) {
             case METAL -> play(level, SoundEvents.CHAIN_HIT, at, 0.12f, 1.7f + rng.nextFloat() * 0.3f);
             case WOOD -> play(level, SoundEvents.BAMBOO_WOOD_HIT, at, 0.12f, 1.6f + rng.nextFloat() * 0.3f);
-            case LIQUID -> play(level, SoundEvents.SLIME_SQUISH_SMALL, at, 0.18f, 1.2f + rng.nextFloat() * 0.3f);
+            case LIQUID -> play(level, GIBLET, at, 0.25f, 0.9f + rng.nextFloat() * 0.25f);
             default -> play(level, SoundEvents.BONE_BLOCK_HIT, at, 0.14f, 1.6f + rng.nextFloat() * 0.35f);
         }
     }
 
     public static void hit(ClientLevel level, net.minecraft.world.entity.LivingEntity entity, float volume,
                            boolean death, boolean underwater) {
-        if (!SimpleBlood.isSoundEnabledFor(entity)) return;
+        if (Capture.active() || !SimpleBlood.isSoundEnabledFor(entity)) return;
         if (!RenderThread.on()) {
             RenderThread.run(() -> hit(level, entity, volume, death, underwater));
             return;
         }
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
-        if (cfg == null || !channel(cfg.audio.hitVolume)) return;
+        if (cfg == null || !channel(Preview.HITS, cfg.audio.hitVolume)) return;
         com.simpleblood.Tally.count("sound.hitVolume");
         RandomSource rng = RNG;
         Vec3 at = entity.position().add(0, entity.getBbHeight() * 0.5, 0);
@@ -100,8 +114,8 @@ public final class BloodSounds {
         switch (kind) {
             case LIQUID -> {
                 play(level, SoundEvents.POINTED_DRIPSTONE_DRIP_LAVA, at, volume, 0.9f + p * 0.2f);
-                if (death) play(level, SoundEvents.SLIME_BLOCK_BREAK, at, 0.22f + 0.2f * volume, 0.5f + p * 0.12f);
-                else if (hard) play(level, SoundEvents.SLIME_SQUISH_SMALL, at, 0.15f + 0.15f * volume, 0.6f + p * 0.15f);
+                if (death) play(level, DEATH_SPLAT, at, 0.3f + 0.25f * volume, 0.9f + p * 0.15f);
+                else if (hard) play(level, SQUELCH, at, 0.22f + 0.2f * volume, 0.9f + p * 0.2f);
             }
             case BONE -> {
                 play(level, SoundEvents.BONE_BLOCK_HIT, at, 0.3f + 0.3f * volume, 1.25f + p * 0.25f);
@@ -155,14 +169,14 @@ public final class BloodSounds {
             RenderThread.run(() -> drip(level, at, intoPuddle));
             return;
         }
-        if (!channel(cfg.audio.ledgeDripVolume)) return;
+        if (!channel(Preview.LEDGE_DRIPS, cfg.audio.ledgeDripVolume)) return;
         com.simpleblood.Tally.count("sound.ledgeDripVolume");
         RandomSource rng = RNG;
         long t = level.getGameTime();
         if (t - lastDrip < DRIP_GAP_TICKS || rng.nextFloat() > 0.3f || !budget(level)) return;
         lastDrip = t;
         play(level, intoPuddle ? SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON : SoundEvents.POINTED_DRIPSTONE_DRIP_WATER,
-                at, 0.12f, 0.45f + rng.nextFloat() * 0.2f);
+                at, 0.4f, 0.45f + rng.nextFloat() * 0.2f);
     }
 
     public static void intoWater(ClientLevel level, Vec3 at) {
@@ -173,11 +187,11 @@ public final class BloodSounds {
             RenderThread.run(() -> intoWater(level, at));
             return;
         }
-        if (!channel(cfg.audio.waterVolume)) return;
+        if (!channel(Preview.WATER, cfg.audio.waterVolume)) return;
         com.simpleblood.Tally.count("sound.waterVolume");
         RandomSource rng = RNG;
         if (rng.nextFloat() > 0.18f || !budget(level)) return;
-        play(level, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, at, 0.07f, 1.0f + rng.nextFloat() * 0.25f);
+        play(level, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, at, 0.25f, 1.0f + rng.nextFloat() * 0.25f);
     }
 
     public static void fizzle(ClientLevel level, Vec3 at) {
@@ -188,11 +202,44 @@ public final class BloodSounds {
             RenderThread.run(() -> fizzle(level, at));
             return;
         }
-        if (!channel(cfg.audio.waterVolume)) return;
+        if (!channel(Preview.WATER, cfg.audio.waterVolume)) return;
         com.simpleblood.Tally.count("sound.waterVolume");
         RandomSource rng = RNG;
         if (rng.nextFloat() > 0.3f || !budget(level)) return;
         play(level, SoundEvents.FIRE_EXTINGUISH, at, 0.05f, 1.8f + rng.nextFloat() * 0.2f);
+    }
+
+    public static void sizzle(ClientLevel level, Vec3 at) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || !cfg.soundEnabled()) return;
+        if (!nearEnough(level, at)) return;
+        if (!RenderThread.on()) {
+            RenderThread.run(() -> sizzle(level, at));
+            return;
+        }
+        if (!channel(Preview.HEAT, cfg.audio.heatVolume)) return;
+        com.simpleblood.Tally.count("sound.heatVolume");
+        RandomSource rng = RNG;
+        if (!budget(level)) return;
+        play(level, SIZZLE, at, 0.25f, 0.9f + rng.nextFloat() * 0.2f);
+    }
+
+    public static void stump(ClientLevel level, Vec3 at) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || !cfg.soundEnabled()) return;
+        if (!nearEnough(level, at)) return;
+        if (!RenderThread.on()) {
+            RenderThread.run(() -> stump(level, at));
+            return;
+        }
+        if (!channel(Preview.TEARS, cfg.audio.tearVolume)) return;
+        com.simpleblood.Tally.count("sound.stump");
+        tear(level, at);
+    }
+
+    private static void tear(ClientLevel level, Vec3 at) {
+        play(level, SQUELCH, at, 0.45f, 0.5f + RNG.nextFloat() * 0.06f);
+        play(level, SLAP, at, 0.16f, 0.5f + RNG.nextFloat() * 0.05f);
     }
 
     public static void splat(ClientLevel level, Vec3 at, float size) {
@@ -203,11 +250,10 @@ public final class BloodSounds {
             RenderThread.run(() -> splat(level, at, size));
             return;
         }
-        if (!channel(cfg.audio.slapVolume)) return;
+        if (!channel(Preview.SLAPS, cfg.audio.slapVolume)) return;
         com.simpleblood.Tally.count("sound.slapVolume");
         RandomSource rng = RNG;
-        play(level, SoundEvents.SLIME_BLOCK_FALL, at, 0.25f + 0.3f * size, 0.5f + rng.nextFloat() * 0.1f);
-        play(level, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, at, 0.2f + 0.15f * size, 0.5f + rng.nextFloat() * 0.1f);
+        play(level, SLAP, at, 0.3f + 0.35f * size, 0.85f + rng.nextFloat() * 0.1f);
     }
 
     public static void plop(ClientLevel level, Vec3 at, int pixels) {
@@ -218,7 +264,7 @@ public final class BloodSounds {
             return;
         }
         if (!nearEnough(level, at) || !budget(level)) return;
-        if (!channel(cfg.audio.landingVolume)) return;
+        if (!channel(Preview.LANDING, cfg.audio.landingVolume)) return;
         com.simpleblood.Tally.count("sound.landingVolume");
         RandomSource rng = RNG;
         float size = Math.min(1f, pixels / 60f);
@@ -234,7 +280,7 @@ public final class BloodSounds {
             RenderThread.run(() -> squelch(level, at, wetness, tacky, snow));
             return;
         }
-        if (!channel(cfg.audio.footstepVolume)) return;
+        if (!channel(Preview.FOOTSTEPS, cfg.audio.footstepVolume)) return;
         com.simpleblood.Tally.count("sound.footstepVolume");
         RandomSource rng = RNG;
         if (snow) {
@@ -253,7 +299,7 @@ public final class BloodSounds {
             RenderThread.run(() -> armorClank(level, at, projectile, dull));
             return;
         }
-        if (!channel(cfg.audio.armorVolume)) return;
+        if (!channel(Preview.ARMOR, cfg.audio.armorVolume)) return;
         com.simpleblood.Tally.count("sound.armorVolume");
         float low = dull ? 0.8f : 1f;
         float base = projectile ? 1.3f + RNG.nextFloat() * 0.45f : 0.85f + RNG.nextFloat() * 0.3f;
@@ -277,8 +323,161 @@ public final class BloodSounds {
         return playedThisTick++ < MAX_PER_TICK;
     }
 
-    private static void play(ClientLevel level, SoundEvent event, Vec3 at, float volume, float pitch) {
+    public enum Preview { HITS, LANDING, LEDGE_DRIPS, WOUND_DRIPS, SLAPS, WATER, HEAT, PIECES, FOOTSTEPS, ARMOR, TEARS }
+
+    private static boolean previewing;
+    private static Preview looping;
+    private static long nextPreviewAt, lastPreviewTick;
+    private static final java.util.List<net.minecraft.client.resources.sounds.SoundInstance> PREVIEW_SOUNDS = new java.util.ArrayList<>();
+    private static String previewFiles = "";
+    private static final java.util.List<String> NAMES_NOW = new java.util.ArrayList<>();
+
+    public static void togglePreview(Preview which) {
+        boolean again = looping == which;
+        stopPreview();
+        if (again) return;
+        looping = which;
+        nextPreviewAt = 0;
+        lastPreviewTick = 0;
+    }
+
+    public static void stopPreview() {
+        looping = null;
+        PREVIEW_TURNS.clear();
+        previewFiles = "";
+        for (net.minecraft.client.resources.sounds.SoundInstance s : PREVIEW_SOUNDS) Minecraft.getInstance().getSoundManager().stop(s);
+        PREVIEW_SOUNDS.clear();
+    }
+
+    public static Preview previewPlaying() {
+        return looping;
+    }
+
+    public static String previewFiles() {
+        return previewFiles;
+    }
+
+    public static boolean previewSounding() {
+        PREVIEW_SOUNDS.removeIf(s -> !Minecraft.getInstance().getSoundManager().isActive(s));
+        return !PREVIEW_SOUNDS.isEmpty();
+    }
+
+    public static void previewTick() {
+        if (looping == null) return;
+        long now = System.currentTimeMillis();
+        if (lastPreviewTick != 0 && now - lastPreviewTick > 500) {
+            stopPreview();
+            return;
+        }
+        lastPreviewTick = now;
+        if (now < nextPreviewAt) return;
+        nextPreviewAt = now + (looping == Preview.ARMOR || looping == Preview.HITS ? 1400 : 1000);
+        preview(looping);
+    }
+
+    public static void preview(Preview which) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null) return;
+        SimpleBloodConfig.AudioSettings a = cfg.audio;
+        int percent = switch (which) {
+            case HITS -> a.hitVolume;
+            case LANDING -> a.landingVolume;
+            case LEDGE_DRIPS -> a.ledgeDripVolume;
+            case WOUND_DRIPS -> a.woundDripVolume;
+            case SLAPS -> a.slapVolume;
+            case WATER -> a.waterVolume;
+            case HEAT -> a.heatVolume;
+            case PIECES -> a.pieceVolume;
+            case FOOTSTEPS -> a.footstepVolume;
+            case ARMOR -> a.armorVolume;
+            case TEARS -> a.tearVolume;
+        };
+        if (!channel(which, percent)) {
+            previewFiles = "muted";
+            return;
+        }
+        com.simpleblood.Tally.count("sound.preview");
+        previewing = true;
+        NAMES_NOW.clear();
+        try {
+            RandomSource rng = RNG;
+            switch (which) {
+                case HITS -> {
+                    play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_LAVA, null, 0.7f, 0.9f + rng.nextFloat() * 0.2f);
+                    play(null, SQUELCH, null, 0.35f, 0.9f + rng.nextFloat() * 0.2f);
+                }
+                case LANDING -> play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER, null, 0.45f, 0.55f + rng.nextFloat() * 0.25f);
+                case LEDGE_DRIPS -> play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, null, 0.4f, 0.45f + rng.nextFloat() * 0.2f);
+                case WOUND_DRIPS -> play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_LAVA, null, 0.4f, 0.8f + rng.nextFloat() * 0.3f);
+                case SLAPS -> play(null, SLAP, null, 0.6f, 0.85f + rng.nextFloat() * 0.1f);
+                case WATER -> play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, null, 0.3f, 1.0f + rng.nextFloat() * 0.25f);
+                case HEAT -> play(null, SIZZLE, null, 0.25f, 0.9f + rng.nextFloat() * 0.2f);
+                case PIECES -> play(null, GIBLET, null, 0.25f, 0.9f + rng.nextFloat() * 0.25f);
+                case FOOTSTEPS -> play(null, SoundEvents.MUD_STEP, null, 0.15f, 1.25f + rng.nextFloat() * 0.25f);
+                case TEARS -> tear(null, null);
+                case ARMOR -> {
+                    float base = 0.85f + rng.nextFloat() * 0.3f;
+                    play(null, SoundEvents.CHAIN_HIT, null, 0.8f, base);
+                    play(null, SoundEvents.CHAIN_HIT, null, 0.8f, base + 0.08f + rng.nextFloat() * 0.1f);
+                    play(null, SoundEvents.ANVIL_LAND, null, 0.4f, 1.5f + rng.nextFloat() * 0.35f);
+                }
+            }
+        } finally {
+            previewing = false;
+            if (!NAMES_NOW.isEmpty()) previewFiles = String.join(" + ", NAMES_NOW);
+        }
+    }
+
+    private static final java.util.Map<SoundEvent, Integer> PREVIEW_TURNS = new java.util.HashMap<>();
+
+    private static final class InOrder extends net.minecraft.client.resources.sounds.AbstractSoundInstance {
+        InOrder(SoundEvent event, float volume, float pitch, int turn) {
+            super(event, SoundSource.MASTER, new Turn(turn));
+            this.volume = volume;
+            this.pitch = pitch;
+            this.relative = true;
+            this.attenuation = net.minecraft.client.resources.sounds.SoundInstance.Attenuation.NONE;
+            this.x = 0;
+            this.y = 0;
+            this.z = 0;
+        }
+    }
+
+    private static final class Turn extends net.minecraft.world.level.levelgen.LegacyRandomSource {
+        private final int turn;
+
+        Turn(int turn) {
+            super(0L);
+            this.turn = turn;
+        }
+
+        @Override
+        public int nextInt(int bound) {
+            return bound <= 0 ? 0 : Math.floorMod(turn, bound);
+        }
+    }
+
+    private static String fileOf(net.minecraft.client.resources.sounds.SoundInstance s, SoundEvent event) {
+        try {
+            String path = s.getSound().getLocation().getPath();
+            return path.substring(path.lastIndexOf('/') + 1);
+        } catch (Throwable t) {
+            return String.valueOf(event);
+        }
+    }
+
+    private static void play(ClientLevel level, SoundEvent event, Vec3 at, float volume, float pitch) {
+        if (Capture.active()) return;
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (previewing) {
+            int turn = PREVIEW_TURNS.merge(event, 1, Integer::sum) - 1;
+            InOrder s = new InOrder(event, volume * channel * cfg.soundVolumeMultiplier(), pitch * cfg.soundPitchMultiplier(), turn);
+            Minecraft.getInstance().getSoundManager().play(s);
+            PREVIEW_SOUNDS.add(s);
+            if (PREVIEW_SOUNDS.size() > 8) PREVIEW_SOUNDS.remove(0);
+            NAMES_NOW.add(fileOf(s, event));
+            return;
+        }
         Minecraft.getInstance().getSoundManager().play(new SimpleSoundInstance(
                 event, SoundSource.PLAYERS,
                 volume * channel * cfg.soundVolumeMultiplier(), pitch * cfg.soundPitchMultiplier(),

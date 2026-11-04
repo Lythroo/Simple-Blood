@@ -61,6 +61,7 @@ public final class ArmorSparks {
         double height = (at.y - entity.getY()) / Math.max(0.1, entity.getBbHeight());
 
         Metal metal = metalOf(entity.getItemBySlot(slotAt(height)));
+        if (metal == null && SimpleBlood.armorOf(entity).equals("armor")) metal = Metal.OTHER;
         if (metal == null) return 1f;
 
         if (clash(source, ctx)) {

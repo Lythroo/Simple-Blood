@@ -30,10 +30,13 @@ public final class SkinColours {
     public static final int MARKER = 0xFFFF00FF;
     public static final int NONE = -1;
 
+    public static final String[] KINDS = {"liquid", "debris", "ember", "powder", "bone", "metal", "wood", "spirit", "wind"};
+    private static final int KIND_CHECK = 0xB10D;
+
     private static final int MAX_BYTES = 1 << 20;
     private static final long RETRY_MS = TimeUnit.MINUTES.toMillis(5);
 
-    private record Read(int colour, long retryAt) {}
+    private record Read(int colour, int kind, long retryAt) {}
 
     private static final Map<String, Read> READS = new ConcurrentHashMap<>();
     private static final Set<String> PENDING = ConcurrentHashMap.newKeySet();
@@ -57,6 +60,34 @@ public final class SkinColours {
         if (url == null) return NONE;
         int colour = colourAt(url);
         return colour == READING ? NONE : colour;
+    }
+
+    public static String kindOf(Entity player) {
+        if (!(player instanceof AbstractClientPlayer p)) return null;
+        String url;
+        try {
+            url = urlOf(p);
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (url == null || colourAt(url) == READING) return null;
+        Read read = READS.get(url);
+        return read == null || read.kind < 0 || read.kind >= KINDS.length ? null : KINDS[read.kind];
+    }
+
+    public static String ownKind() {
+        String uploaded = uploadedKind;
+        if (uploadedColour != null) return uploaded;
+        Minecraft mc = Minecraft.getInstance();
+        String url;
+        try {
+            url = mc.player != null ? urlOf(mc.player) : profileUrl != null && profileUrl.isDone() ? profileUrl.getNow(null) : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (url == null || colourAt(url) == READING) return null;
+        Read read = READS.get(url);
+        return read == null || read.kind < 0 || read.kind >= KINDS.length ? null : KINDS[read.kind];
     }
 
     public static final int READING = -2;
@@ -94,6 +125,13 @@ public final class SkinColours {
         if (carried == READING) return;
         ownChecked = true;
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        String kind = ownKind();
+        if (kind != null && !kind.equals(cfg.player.skinKindAdopted)) {
+            cfg.player.skinKindAdopted = kind;
+            cfg.player.clientPlayerBloodKind = kind;
+            SimpleBloodConfig.save(cfg);
+            SimpleBlood.LOGGER.info("Simple Blood: took the blood type from your skin, {}", kind);
+        }
         if (carried < 0 || carried == cfg.player.skinColourAdopted) return;
         cfg.player.skinColourAdopted = carried;
         cfg.player.clientPlayerBloodColor = carried;
@@ -101,9 +139,10 @@ public final class SkinColours {
         SimpleBlood.LOGGER.info("Simple Blood: took the blood colour from your skin, #{}", String.format("%06X", carried));
     }
 
-    private static void adopted(int colour) {
+    private static void adopted(int colour, String kind) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         cfg.player.skinColourAdopted = colour;
+        cfg.player.skinKindAdopted = kind == null ? "" : kind;
         SimpleBloodConfig.save(cfg);
     }
 
@@ -132,9 +171,10 @@ public final class SkinColours {
         if (PENDING.add(url)) {
             READER.execute(() -> {
                 try {
-                    READS.put(url, new Read(carried(download(url)), 0));
+                    int[] carried = carried(download(url));
+                    READS.put(url, new Read(carried[0], carried[1], 0));
                 } catch (Exception e) {
-                    READS.put(url, new Read(NONE, System.currentTimeMillis() + RETRY_MS));
+                    READS.put(url, new Read(NONE, NONE, System.currentTimeMillis() + RETRY_MS));
                     SimpleBlood.LOGGER.debug("Simple Blood could not read a skin ({}): {}", url, e.toString());
                 } finally {
                     PENDING.remove(url);
@@ -158,6 +198,7 @@ public final class SkinColours {
     private static final long UPLOAD_GAP_MS = TimeUnit.SECONDS.toMillis(60);
     private static volatile long lastUpload;
     private static volatile Integer uploadedColour;
+    private static volatile String uploadedKind;
 
     public static Path savedSkin() {
         return savedSkin(false);
@@ -169,21 +210,27 @@ public final class SkinColours {
     }
 
     public static void showSavedSkin() {
+        openFolder(savedSkin().getParent());
+    }
+
+    public static void openFolder(Path folder) {
         //? if 1.20.1 {
-        /*net.minecraft.Util.getPlatform().openFile(savedSkin().getParent().toFile());
+        /*net.minecraft.Util.getPlatform().openFile(folder.toFile());
         *///?} elif 1.21.1 {
-        /*net.minecraft.Util.getPlatform().openPath(savedSkin().getParent());
+        /*net.minecraft.Util.getPlatform().openPath(folder);
         *///?} elif <26.3 {
-        net.minecraft.util.Util.getPlatform().openPath(savedSkin().getParent());
+        net.minecraft.util.Util.getPlatform().openPath(folder);
         //?} else {
-        /*com.mojang.blaze3d.Blaze3D.openPath(savedSkin().getParent());
+        /*com.mojang.blaze3d.Blaze3D.openPath(folder);
         *///?}
     }
 
     public static void putInOwnSkin(int colour, boolean upload, Consumer<Result> done) {
         int rgb = colour == NONE ? NONE : colour & 0xFFFFFF;
+        String kind = rgb == NONE ? null : SimpleBloodClient.getConfig().player.clientPlayerBloodKind;
+        int kindIndex = indexOf(kind);
         Integer uploaded = uploadedColour;
-        if (upload && uploaded != null && uploaded == rgb) {
+        if (upload && uploaded != null && uploaded == rgb && java.util.Objects.equals(uploadedKind, kind)) {
             done.accept(Result.ALREADY_THERE);
             return;
         }
@@ -206,12 +253,13 @@ public final class SkinColours {
             Result result;
             try {
                 OwnSkin own = skin.call();
-                result = putInSkin(own.png, rgb);
+                result = putInSkin(own.png, rgb, kindIndex);
                 if (result == Result.SAVED && upload) {
                     result = upload(Files.readAllBytes(savedSkin(rgb == NONE)), own.slim, token);
                     if (result == Result.UPLOADED) {
+                        uploadedKind = kind;
                         uploadedColour = rgb;
-                        Minecraft.getInstance().execute(() -> adopted(rgb));
+                        Minecraft.getInstance().execute(() -> adopted(rgb, kind));
                     }
                 }
             } catch (Exception e) {
@@ -223,7 +271,13 @@ public final class SkinColours {
         });
     }
 
-    private static Result putInSkin(byte[] png, int colour) throws Exception {
+    private static int indexOf(String kind) {
+        if (kind == null) return NONE;
+        for (int i = 0; i < KINDS.length; i++) if (KINDS[i].equals(kind)) return i;
+        return NONE;
+    }
+
+    private static Result putInSkin(byte[] png, int colour, int kind) throws Exception {
         try (NativeImage image = NativeImage.read(png)) {
             if (image.getWidth() != 64 || (image.getHeight() != 64 && image.getHeight() != 32)) {
                 throw new IOException("unexpected skin size " + image.getWidth() + "x" + image.getHeight());
@@ -235,15 +289,17 @@ public final class SkinColours {
             if (image.getHeight() == 32) {
                 if (colour == NONE) return Result.NO_COLOUR;
                 widen(argb);
-            } else if (carried(argb) == colour) {
+            } else if (carried(argb)[0] == colour && (colour == NONE || carried(argb)[1] == kind)) {
                 return colour == NONE ? Result.NO_COLOUR : Result.ALREADY_THERE;
             }
             if (colour == NONE) {
                 argb[MARKER_Y * 64 + MARKER_X] = 0;
                 argb[MARKER_Y * 64 + MARKER_X + 1] = 0;
+                argb[MARKER_Y * 64 + MARKER_X + 2] = 0;
             } else {
                 argb[MARKER_Y * 64 + MARKER_X] = MARKER;
                 argb[MARKER_Y * 64 + MARKER_X + 1] = 0xFF000000 | colour;
+                argb[MARKER_Y * 64 + MARKER_X + 2] = kind < 0 ? 0 : 0xFF000000 | (kind << 16) | KIND_CHECK;
             }
 
             Path out = savedSkin(colour == NONE);
@@ -288,6 +344,29 @@ public final class SkinColours {
     }
 
     private record OwnSkin(byte[] png, boolean slim) {}
+
+    private static volatile OwnSkin previewSkin;
+    private static volatile boolean previewAsked;
+
+    public static Object[] previewSkin() {
+        if (!previewAsked) {
+            previewAsked = true;
+            try {
+                Callable<OwnSkin> job = ownSkin();
+                java.util.concurrent.ForkJoinPool.commonPool().execute(() -> {
+                    try {
+                        previewSkin = job.call();
+                    } catch (Throwable t) {
+                        SimpleBlood.LOGGER.debug("No skin for the preview: {}", t.toString());
+                    }
+                });
+            } catch (Throwable t) {
+                SimpleBlood.LOGGER.debug("No skin for the preview: {}", t.toString());
+            }
+        }
+        OwnSkin own = previewSkin;
+        return own == null ? null : new Object[] {own.png(), own.slim()};
+    }
 
     private static Callable<OwnSkin> ownSkin() {
         Minecraft mc = Minecraft.getInstance();
@@ -391,21 +470,22 @@ public final class SkinColours {
     }
     *///?}
 
-    private static int carried(byte[] png) throws IOException {
+    private static int[] carried(byte[] png) throws IOException {
         try (NativeImage image = NativeImage.read(png)) {
-            if (image.getWidth() != 64 || image.getHeight() != 64) return NONE;
+            if (image.getWidth() != 64 || image.getHeight() != 64) return new int[]{NONE, NONE};
             int[] argb = new int[64 * 64];
-            argb[MARKER_Y * 64 + MARKER_X] = get(image, MARKER_X, MARKER_Y);
-            argb[MARKER_Y * 64 + MARKER_X + 1] = get(image, MARKER_X + 1, MARKER_Y);
+            for (int k = 0; k < 3; k++) argb[MARKER_Y * 64 + MARKER_X + k] = get(image, MARKER_X + k, MARKER_Y);
             return carried(argb);
         }
     }
 
-    private static int carried(int[] argb) {
+    private static int[] carried(int[] argb) {
         int marker = argb[MARKER_Y * 64 + MARKER_X];
         int colour = argb[MARKER_Y * 64 + MARKER_X + 1];
-        if (marker != MARKER || (colour >>> 24) != 0xFF) return NONE;
-        return colour & 0xFFFFFF;
+        int kind = argb[MARKER_Y * 64 + MARKER_X + 2];
+        if (marker != MARKER || (colour >>> 24) != 0xFF) return new int[]{NONE, NONE};
+        boolean typed = (kind >>> 24) == 0xFF && (kind & 0xFFFF) == KIND_CHECK && ((kind >> 16) & 0xFF) < KINDS.length;
+        return new int[]{colour & 0xFFFFFF, typed ? (kind >> 16) & 0xFF : NONE};
     }
 
     private static byte[] download(String url) throws IOException, InterruptedException {
