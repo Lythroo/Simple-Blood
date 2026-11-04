@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check the changelog first: Create, Create Aeronautics, Sable, Physics Mod, Ragdollified, Saro's ragdolls, Epic Fight weapons, Iris shaders and AsyncParticles already have support.
+        Supported already: Create, Create Aeronautics, Sable, Physics Mod, Ragdollified, Saro's ragdolls, Epic Fight weapons, Iris shaders and AsyncParticles already have support.
         When you join a world, Simple Blood also says in chat if an installed mod has a known issue.
   - type: input
     id: mod

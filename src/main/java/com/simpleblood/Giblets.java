@@ -32,7 +32,7 @@ public final class Giblets {
     private static boolean wanted(LivingEntity entity) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         return cfg != null && cfg.gore.giblets && SimpleBlood.bloodKindOf(entity) == BloodKind.LIQUID
-                && SimpleBloodAPI.throwsGiblets(entity);
+                && SimpleBloodAPI.throwsGiblets(entity) && !GibletColours.OFF.equals(SimpleBlood.gibletsOf(entity));
     }
 
     private static float amount() {
@@ -47,7 +47,9 @@ public final class Giblets {
     private static void throwSome(ClientLevel level, LivingEntity entity, HitContext ctx, int count) {
         if (count <= 0) return;
         RandomSource rng = level.getRandom();
-        BloodParticle.setCurrentBloodColor(BloodColor.getBloodColor(entity));
+        BloodColor.Color blood = BloodColor.getBloodColor(entity);
+        BloodParticle.setCurrentBloodColor(blood);
+        BloodParticle.setPieceColour(GibletColours.of(entity, blood.toRgb()));
         BloodParticle.setCurrentKind(BloodKind.LIQUID);
         BloodParticle.setGlowing(SimpleBlood.bloodGlows(entity));
         BloodParticle.setPaintsSurfaces(SimpleBlood.shouldEntityTransformToStains(entity));

@@ -31,6 +31,15 @@ public final class Pixels {
         //?}
     }
 
+    public static int rgb(NativeImage image, int x, int y) {
+        //? if <=1.21.1 {
+        /*int abgr = image.getPixelRGBA(x, y);
+        return ((abgr & 0xFF) << 16) | (abgr & 0xFF00) | ((abgr >> 16) & 0xFF);
+        *///?} else {
+        return image.getPixel(x, y) & 0xFFFFFF;
+        //?}
+    }
+
     public static int packAbgr(int r, int g, int b, int a) {
         return (a << 24) | (b << 16) | (g << 8) | r;
     }

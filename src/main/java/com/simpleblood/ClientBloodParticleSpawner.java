@@ -11,7 +11,17 @@ public class ClientBloodParticleSpawner {
 
     public static void emit(ClientLevel world, LivingEntity entity, boolean splash,
                             double x, double y, double z, double vx, double vy, double vz) {
-        emit(world, splash ? BloodParticles.BLOOD_SPLASH : BloodParticles.BLOOD_DRIP, x, y, z, vx, vy, vz);
+        emitThrown(world, splash ? BloodParticles.BLOOD_SPLASH : BloodParticles.BLOOD_DRIP, x, y, z, vx, vy, vz);
+    }
+
+    public static void emitThrown(ClientLevel world, net.minecraft.core.particles.SimpleParticleType type,
+                                  double x, double y, double z, double vx, double vy, double vz) {
+        BloodParticle.setThrown(true);
+        try {
+            emit(world, type, x, y, z, vx, vy, vz);
+        } finally {
+            BloodParticle.setThrown(false);
+        }
     }
 
     public static void emit(ClientLevel world, net.minecraft.core.particles.SimpleParticleType type,
@@ -181,11 +191,11 @@ public class ClientBloodParticleSpawner {
             double spawnY = posY + offsetY;
             double spawnZ = posZ + offsetZ;
 
-            emit(world, BloodParticles.BLOOD_DRIP, spawnX, spawnY, spawnZ, velX, velY, velZ);
+            emitThrown(world, BloodParticles.BLOOD_DRIP, spawnX, spawnY, spawnZ, velX, velY, velZ);
         }
 
         if (ctx != null && ctx.weapon == HitContext.Weapon.EXPLOSION) {
-            BloodSpray.radialBurst(world, ctx, splashCount, velocityAdjust);
+            BloodSpray.radialBurst(world, ctx, Math.round(splashCount * HitContext.BLAST_BLOOD), velocityAdjust);
             splashCount = 0;
         } else if (BloodSpray.isDirectional(ctx)) {
             int directional = Math.round(splashCount * config.directionalShare());
@@ -211,7 +221,7 @@ public class ClientBloodParticleSpawner {
             double spawnY = posY + offsetY;
             double spawnZ = posZ + offsetZ;
 
-            emit(world, BloodParticles.BLOOD_SPLASH, spawnX, spawnY, spawnZ, velX, velY, velZ);
+            emitThrown(world, BloodParticles.BLOOD_SPLASH, spawnX, spawnY, spawnZ, velX, velY, velZ);
         }
 
         Giblets.death(world, entity, ctx);

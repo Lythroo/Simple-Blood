@@ -132,11 +132,9 @@ public final class SceneRenderer {
         Map<String, java.util.List<PreviewScene.Drop>> byTexture = new HashMap<>();
         for (PreviewScene.Drop d : scene.drops()) {
             String tex = switch (d.kind) {
-                case 1 -> "blood_splash_" + d.sprite;
                 case 2 -> "blood_streak_" + streakIndex(view, d);
                 case 3 -> "blood_drop";
-                case 4 -> "blood_spray_" + sprayIndex(view, d);
-                default -> "blood_" + d.sprite;
+                default -> "blood_spray_" + sprayIndex(view, d);
             };
             byTexture.computeIfAbsent(tex, k -> new java.util.ArrayList<>()).add(d);
         }

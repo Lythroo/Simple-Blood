@@ -50,7 +50,6 @@ public final class PreviewScene {
         public boolean single;
         public final int[] shown = {-1, -1};
         public boolean powder;
-        public int sprite;
         public int colour;
     }
 
@@ -491,6 +490,15 @@ public final class PreviewScene {
     }
 
     private void death(SimpleBloodConfig c) {
+        throwing = true;
+        try {
+            deathSpawns(c);
+        } finally {
+            throwing = false;
+        }
+    }
+
+    private void deathSpawns(SimpleBloodConfig c) {
         mob.hurtTicks = 12;
         if (!c.particles.deathBurst) return;
         float size = 0.6f;
@@ -845,13 +853,11 @@ public final class PreviewScene {
         };
     }
 
-    private static final int FLESH = 0xD8706A;
-
     private void giblets(SimpleBloodConfig c, int n) {
         if (!c.gore.giblets && kind != Kind.GIBLETS) return;
         n = Math.max(1, Math.round(n * Math.max(0, c.gore.gibletAmount) / 100f));
         int blood = colour.getAsInt() & 0xFFFFFF;
-        int flesh = mix(blood, FLESH);
+        int flesh = com.simpleblood.GibletColours.forBlood(blood);
         double towards = Math.atan2(camera.z, camera.x);
         Vec3 from = wound();
         for (int i = 0; i < n; i++) {
@@ -1235,8 +1241,14 @@ public final class PreviewScene {
                     default -> true;
                 };
                 if (!shown) return;
-                Drop d = spawn(x, y, z, vx, vy, vz, drop);
-                if (exact && drop < 2) { d.vx = vx; d.vy = vy; d.vz = vz; }
+                throwing = com.simpleblood.particle.BloodParticle.spawnsThrown();
+                Drop d;
+                try {
+                    d = spawn(x, y, z, vx, vy, vz, drop);
+                    if (exact && drop < 2) { d.vx = vx; d.vy = vy; d.vz = vz; if (throwing) thrown(d); }
+                } finally {
+                    throwing = false;
+                }
                 if (com.simpleblood.Capture.kind == com.simpleblood.BloodKind.WOOD) d.colour = 0xE07A2E;
                 com.simpleblood.Tally.count("preview.drop");
                 return;
@@ -1284,7 +1296,7 @@ public final class PreviewScene {
             Piece p = piece(Piece.GIBLET, at, v);
             p.shape = rng.nextInt(4); p.restFrame = rng.nextInt(4); p.life = 90 + rng.nextInt(30);
             p.size = 0.085f * (1f + rng.nextFloat() * 0.3f); p.gravity = 0.03f; p.drag = 0.98f;
-            p.colour = mix(blood, FLESH); p.blood = blood;
+            p.colour = com.simpleblood.GibletColours.forBlood(blood); p.blood = blood;
         } else if (type == com.simpleblood.BloodParticles.METAL_FLAKE) {
             Piece p = piece(Piece.FLAKE, at, sent);
             p.shape = rng.nextInt(3); p.restFrame = rng.nextBoolean() ? 0 : 5; p.life = Math.round((70 + rng.nextInt(30)) * life);
@@ -1404,6 +1416,15 @@ public final class PreviewScene {
     }
 
     private void burstTick(SimpleBloodConfig c) {
+        throwing = true;
+        try {
+            burstSpawns(c);
+        } finally {
+            throwing = false;
+        }
+    }
+
+    private void burstSpawns(SimpleBloodConfig c) {
         burstTicksLeft--;
         float intensity = c.burstIntensityMultiplier() * burstShare;
         float spreadFactor = Math.min(DAMAGE / 10f, 2f) * c.burstSpreadMultiplier();
@@ -1513,6 +1534,13 @@ public final class PreviewScene {
         d.vx = 0; d.vz = 0; d.vy = -0.15;
     }
 
+    private boolean throwing;
+
+    private static void thrown(Drop d) {
+        double[] v = com.simpleblood.particle.BloodParticle.throwVelocity(d.vx, d.vy, d.vz);
+        d.vx = v[0]; d.vy = v[1]; d.vz = v[2];
+    }
+
     private Drop spawn(double x, double y, double z, double vx, double vy, double vz, int kind) {
         SimpleBloodConfig c = cfg();
         Drop d = new Drop();
@@ -1526,14 +1554,15 @@ public final class PreviewScene {
         }
         if (this.kind == Kind.WATER) { vx *= 0.3; vy *= 0.3; vz *= 0.3; }
         d.vx = vx; d.vy = vy; d.vz = vz;
+        if (kind <= 2 && throwing) thrown(d);
         d.life = (int) ((40 + rng.nextInt(20) - 10) * c.particleLifetimeMultiplier());
         d.size = (0.08f + rng.nextFloat() * 0.08f) * c.particleSizeMultiplier();
         if (kind == 2) d.size = (0.34f + rng.nextFloat() * 0.16f) * c.chunkyStreakScale();
         if (kind == 3) { d.size = 0.02f; d.life = 200; }
+        if (kind <= 1) d.size *= 0.5f;
         if (kind == 4) { d.size = 0.25f * 0.85f; d.life = 80; }
         d.tone = 0.9f + rng.nextFloat() * 0.2f;
         d.kind = kind;
-        d.sprite = rng.nextInt(kind == 1 ? 3 : 4);
         d.colour = this.kind == Kind.GLOW ? 0x35D6C8 : colour.getAsInt() & 0xFFFFFF;
         com.simpleblood.BloodKind bleeds = com.simpleblood.Capture.kind != null ? com.simpleblood.Capture.kind : shownKind();
         if (bleeds == com.simpleblood.BloodKind.POWDER) {

@@ -374,6 +374,12 @@ public final class SimpleBloodAPI {
         return s == null || s.getGiblets() == null || s.getGiblets();
     }
 
+    /** The giblet colour another mod gave this mob ({@code 0xRRGGBB}), or null to work it out. */
+    public static Integer gibletColour(LivingEntity entity) {
+        BloodSettings s = getEntityBloodSettings(entity);
+        return s == null ? null : s.getGibletColor();
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // SETTINGS
     // ═══════════════════════════════════════════════════════════════════════
@@ -404,6 +410,7 @@ public final class SimpleBloodAPI {
         private Boolean bloodOnBody = null;
         private Boolean leavesPool = null;
         private Boolean giblets = null;
+        private Integer gibletColor = null;
 
         /**
          * 1.2.0: a body of metal. Metal weapons and arrows strike sparks off it, with a clank.
@@ -440,6 +447,18 @@ public final class SimpleBloodAPI {
         public Boolean getBloodOnBody() { return bloodOnBody; }
         public Boolean getLeavesPool() { return leavesPool; }
         public Boolean getGiblets() { return giblets; }
+
+        /**
+         * 1.3.0: the colour of the chunks that fly off it, as {@code 0xRRGGBB}. Default: worked
+         * out (raw meat for red blood, otherwise the colour of the mob's own texture). A
+         * player's own pick for the mob still wins.
+         */
+        public BloodSettings setGibletColor(int rgb) {
+            this.gibletColor = rgb & 0xFFFFFF;
+            return this;
+        }
+
+        public Integer getGibletColor() { return gibletColor; }
 
         // ── Colour ────────────────────────────────────────────────────────
         /** Static blood colour as {@code 0xRRGGBB}. */

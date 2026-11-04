@@ -119,7 +119,7 @@ public final class BloodSpray {
             Vec3 v = dir.scale(s).add(0, 0.01 + rng.nextDouble() * 0.03, 0);
             Vec3 p = exit.add(side.scale((rng.nextDouble() - 0.5) * ctx.entity.getBbWidth() * 0.6))
                     .add(0, (rng.nextDouble() - 0.5) * 0.25, 0);
-            ClientBloodParticleSpawner.emit(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
+            ClientBloodParticleSpawner.emitThrown(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
                     v.x * velocityAdjust, v.y * velocityAdjust, v.z * velocityAdjust);
         }
     }
@@ -144,7 +144,7 @@ public final class BloodSpray {
         }
     }
 
-    private static void explosion(ClientLevel world, HitContext ctx, float velocityAdjust) {
+    static void explosion(ClientLevel world, HitContext ctx, float velocityAdjust) {
         RandomSource rng = world.getRandom();
         int count = Math.round(750 * amount());
         Vec3 c = ctx.entity.position().add(0, ctx.entity.getBbHeight() * 0.5, 0);
@@ -179,7 +179,7 @@ public final class BloodSpray {
             double s = speed * (0.7 + rng.nextDouble() * 0.6);
             Vec3 v = dir.scale(s).add(0, 0.01 + rng.nextDouble() * 0.03, 0);
             Vec3 p = exit.add(side.scale((rng.nextDouble() - 0.5) * 0.15)).add(0, (rng.nextDouble() - 0.5) * 0.15, 0);
-            ClientBloodParticleSpawner.emit(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
+            ClientBloodParticleSpawner.emitThrown(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
                     v.x * velocityAdjust, v.y * velocityAdjust, v.z * velocityAdjust);
         }
     }
@@ -203,7 +203,7 @@ public final class BloodSpray {
                 Vec3 v = dir.scale(s).add(0, 0.02 + rng.nextDouble() * 0.05, 0);
                 Vec3 p = exit.add(side.scale((rng.nextDouble() - 0.5) * 0.12)).add(0, (rng.nextDouble() - 0.5) * 0.12, 0);
                 if (i % 2 == 0) {
-                    ClientBloodParticleSpawner.emit(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
+                    ClientBloodParticleSpawner.emitThrown(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
                             v.x * velocityAdjust, v.y * velocityAdjust, v.z * velocityAdjust);
                 } else {
                     ClientBloodParticleSpawner.emit(world, ctx.entity, true, p.x, p.y, p.z,
@@ -240,7 +240,7 @@ public final class BloodSpray {
             double s = speed * (0.6 + rng.nextDouble() * 0.7);
             Vec3 v = new Vec3(Math.cos(a) * s, 0.04 + rng.nextDouble() * 0.10, Math.sin(a) * s);
             Vec3 p = c.add(Math.cos(a) * 0.3, rng.nextDouble() * 0.3, Math.sin(a) * 0.3);
-            ClientBloodParticleSpawner.emit(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
+            ClientBloodParticleSpawner.emitThrown(world, BloodParticles.BLOOD_STREAK, p.x, p.y, p.z,
                     v.x * velocityAdjust, v.y * velocityAdjust, v.z * velocityAdjust);
         }
     }
@@ -303,19 +303,33 @@ public final class BloodSpray {
         }
     }
 
+    private static final double BLOWN_BASE = 0.5, BLOWN_BY_PUSH = 1.0;
+    private static final double SCATTER_TAKEN = 0.6;
+
     public static void radialBurst(ClientLevel world, HitContext ctx, int count, float velocityAdjust) {
         RandomSource rng = world.getRandom();
         boolean explosion = ctx.weapon == HitContext.Weapon.EXPLOSION;
         Vec3 c = ctx.entity.position().add(0, explosion ? ctx.entity.getBbHeight() * 0.5 : 0.1, 0);
         double hw = ctx.entity.getBbWidth() * 0.5;
         float speed = (explosion ? 0.35f : 0.18f) + 0.3f * ctx.severity;
+        Vec3 away = explosion ? ctx.direction : null;
+        double blown = speed * (BLOWN_BASE + BLOWN_BY_PUSH * ctx.blast);
+        double scatter = 1.0 - SCATTER_TAKEN * ctx.blast;
+        if (away != null) c = c.add(away.x * hw, 0, away.z * hw);
         for (int i = 0; i < count; i++) {
             double a = rng.nextDouble() * Math.PI * 2;
             double s = speed * (0.5 + rng.nextDouble());
+            double vx = Math.cos(a) * s, vz = Math.sin(a) * s;
             double vy = explosion ? rng.nextDouble() * s * 1.2 : rng.nextDouble() * 0.04;
+            if (away != null) {
+                double b = blown * (0.6 + rng.nextDouble() * 0.8);
+                vx = vx * scatter + away.x * b;
+                vy = vy * scatter + away.y * b;
+                vz = vz * scatter + away.z * b;
+            }
             Vec3 p = c.add((rng.nextDouble() - 0.5) * hw, (rng.nextDouble() - 0.5) * (explosion ? ctx.entity.getBbHeight() * 0.6 : 0.1), (rng.nextDouble() - 0.5) * hw);
             ClientBloodParticleSpawner.emit(world, ctx.entity, i % 2 == 0, p.x, p.y, p.z,
-                    Math.cos(a) * s * velocityAdjust, vy * velocityAdjust, Math.sin(a) * s * velocityAdjust);
+                    vx * velocityAdjust, vy * velocityAdjust, vz * velocityAdjust);
         }
     }
 }

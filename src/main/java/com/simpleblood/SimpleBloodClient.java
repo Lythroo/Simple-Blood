@@ -78,6 +78,7 @@ public final class SimpleBloodClient {
         }
         Guard.run(Guard.Part.SURFACES, "footprints", () -> com.simpleblood.surface.Footprints.tick(client));
         Guard.run(Guard.Part.HITS, "Physics Mod ragdolls bleeding", () -> com.simpleblood.compat.PhysicsModRagdolls.tick(client.level));
+        Guard.run(Guard.Part.SURFACES, "an exploded creeper's blood on the blocks", () -> CreeperBlast.tick(client.level));
 
         Iterator<ClientBloodBurstTask> it = activeBursts.iterator();
         while (it.hasNext()) {

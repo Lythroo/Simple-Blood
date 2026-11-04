@@ -618,6 +618,8 @@ public final class Pages {
         b.slider(Lang.t("simpleblood.gui.drops.lifetime"), Lang.t("simpleblood.gui.drops.how_long_drops_stay_in"), 10, 200, 10, "%", () -> c.particles.particleLifetime, v -> c.particles.particleLifetime = v, d.particles.particleLifetime);
         b.slider(Lang.t("simpleblood.gui.drops.gravity"), Lang.t("simpleblood.gui.drops.how_fast_drops_fall"), 50, 200, 10, "%", () -> c.particles.particleGravity, v -> c.particles.particleGravity = v, d.particles.particleGravity);
         b.slider(Lang.t("simpleblood.gui.drops.drag"), Lang.t("simpleblood.gui.drops.more_drag_shorter_flights"), 0, 200, 10, "%", () -> c.particles.particleDrag, v -> c.particles.particleDrag = v, d.particles.particleDrag);
+        b.slider(Lang.t("simpleblood.gui.drops.speed"), Lang.t("simpleblood.gui.drops.how_fast_hits_throw_drops"), 25, 300, 5, "%", () -> c.particles.throwSpeed, v -> c.particles.throwSpeed = v, d.particles.throwSpeed);
+        b.slider(Lang.t("simpleblood.gui.drops.upward"), Lang.t("simpleblood.gui.drops.how_high_hits_throw_drops"), 0, 300, 5, "%", () -> c.particles.throwUp, v -> c.particles.throwUp = v, d.particles.throwUp);
 
         b.heading(Lang.t("simpleblood.gui.drops.direction"));
         b.preview(PreviewScene.Kind.HIT, mobColour(c), PreviewScene.Aspect.DIRECTIONAL);
@@ -1011,7 +1013,8 @@ public final class Pages {
                     () -> s.enabled, v -> s.enabled = v, () -> s.canDripAtLowHealth, v -> s.canDripAtLowHealth = v,
                     () -> s.transformToStains, v -> s.transformToStains = v,
                     () -> s.glows, v -> s.glows = v,
-                    () -> s.armor, v -> s.armor = v, null, false);
+                    () -> s.armor, v -> s.armor = v,
+                    () -> s.giblets, v -> s.giblets = v, null, false);
             shown++;
         }
         flushMobs(b);
@@ -1110,16 +1113,20 @@ public final class Pages {
                 () -> now.get().transformToStains, v -> m.editable(eid).transformToStains = v,
                 () -> now.get().glows, v -> m.editable(eid).glows = v,
                 () -> now.get().armor, v -> m.editable(eid).armor = v,
+                () -> now.get().giblets, v -> m.editable(eid).giblets = v,
                 remove, m.isGuess(eid));
     }
 
     private static final String[] ARMOR_KEYS = {"auto", "armor", "metal"};
+    private static final String[] GIBLET_KEYS = {"auto", "off", "colour"};
+    private static final String[] GIBLET_LABELS = {"simpleblood.gui.labels.auto", "simpleblood.gui.labels.off", "simpleblood.gui.labels.own_colour"};
     private static final String[] ARMOR_LABELS = {"simpleblood.gui.labels.auto", "simpleblood.gui.labels.armor", "simpleblood.gui.labels.metal"};
 
     private record MobEntry(String id, IntSupplier colGet, IntConsumer colSet, Supplier<String> kindGet, Consumer<String> kindSet,
                             Supplier<Boolean> onGet, Consumer<Boolean> onSet, Supplier<Boolean> dripGet, Consumer<Boolean> dripSet,
                             Supplier<Boolean> stainGet, Consumer<Boolean> stainSet, Supplier<Boolean> glowGet, Consumer<Boolean> glowSet,
-                            Supplier<String> armorGet, Consumer<String> armorSet, Runnable remove, boolean guessed) {}
+                            Supplier<String> armorGet, Consumer<String> armorSet,
+                            Supplier<String> gibGet, Consumer<String> gibSet, Runnable remove, boolean guessed) {}
 
     private static final List<MobEntry> PENDING = new ArrayList<>();
     static String openMob;
@@ -1131,12 +1138,17 @@ public final class Pages {
                                Supplier<Boolean> stainGet, Consumer<Boolean> stainSet,
                                Supplier<Boolean> glowGet, Consumer<Boolean> glowSet,
                                Supplier<String> armorGet, Consumer<String> armorSet,
+                               Supplier<String> gibGet, Consumer<String> gibSet,
                                Runnable remove, boolean guessed) {
         PENDING.add(new MobEntry(id, colGet, colSet, kindGet, kindSet, onGet, onSet, dripGet, dripSet, stainGet, stainSet,
-                glowGet, glowSet, armorGet, armorSet, remove, guessed));
+                glowGet, glowSet, armorGet, armorSet, gibGet, gibSet, remove, guessed));
     }
 
-    private static final int CARD_H = 58, CARD_GAP = 4;
+    private static final int CARD_PAD = 5, CARD_ROW_GAP = 4, CARD_SLOT = 18, CARD_TEXT = 8, CARD_ITEM = 16;
+    private static final int CARD_NAME_Y = CARD_PAD + CARD_SLOT + CARD_ROW_GAP;
+    private static final int CARD_KIND_Y = CARD_NAME_Y + CARD_TEXT + CARD_ROW_GAP;
+    private static final int CARD_H = CARD_KIND_Y + CARD_ITEM + CARD_PAD, CARD_GAP = 4;
+    private static final int CARD_ITEM_GAP = 3, CARD_SWATCH_GAP = 4, CARD_SWATCH = 7;
 
     private static void flushMobs(Builder b) {
         if (PENDING.isEmpty()) return;
@@ -1232,25 +1244,29 @@ public final class Pages {
             g.fill(x + 1, y + 1, x + w - 1, y + 2, 0x18FFFFFF);
             if (open) g.outline(x + 1, y + 1, x + w - 1, y + h - 1, Widgets.ACCENT);
             int cx = x + w / 2;
-            g.slot(cx - 9, y + 4);
+            g.slot(cx - CARD_SLOT / 2, y + CARD_PAD);
             String full = e.id().indexOf(':') < 0 ? "minecraft:" + e.id() : e.id();
-            drawItem(g, egg, full + "_spawn_egg", cx - 8, y + 5);
+            drawItem(g, egg, full + "_spawn_egg", cx - CARD_ITEM / 2, y + CARD_PAD + 1);
             String name = mobName(e.id());
-            int nw = Math.min(g.textWidth(name), w - 8);
-            g.textClipped(name, cx - nw / 2, y + 25, w - 8, on ? Widgets.TEXT : Widgets.TEXT_DIM);
+            int inner = w - 2 * CARD_PAD;
+            int nw = Math.min(g.textWidth(name), inner);
+            g.textClipped(name, cx - nw / 2, y + CARD_NAME_Y, inner, on ? Widgets.TEXT : Widgets.TEXT_DIM);
             String kind = e.kindGet().get();
             boolean glowing = e.glowGet().get() && "liquid".equals(kind);
             String label = glowing ? Lang.t("simpleblood.gui.mob_name.glowing") : Lang.t(KIND_LABELS[Math.max(0, java.util.Arrays.asList(KIND_KEYS).indexOf(kind))]);
-            int kw = 16 + 2 + g.textWidth(label) + 4 + 5;
-            int kx = cx - Math.min(kw, w - 6) / 2;
+            int textRoom = inner - CARD_ITEM - CARD_ITEM_GAP - CARD_SWATCH_GAP - CARD_SWATCH;
+            int lw = Math.min(g.textWidth(label), textRoom);
+            int kw = CARD_ITEM + CARD_ITEM_GAP + lw + CARD_SWATCH_GAP + CARD_SWATCH;
+            int kx = cx - kw / 2, ky = y + CARD_KIND_Y;
+            int ty = ky + (CARD_ITEM - CARD_TEXT) / 2 + 1;
             String kindId = glowing ? "minecraft:glow_ink_sac" : KIND_ITEMS[Math.max(0, java.util.Arrays.asList(KIND_KEYS).indexOf(kind))];
-            drawItem(g, glowing ? itemOf(kindId) : kindItem(kind), kindId, kx, y + 37);
-            g.textClipped(label, kx + 18, y + 41, w - 30, on ? 0xFFC9C5BF : Widgets.TEXT_DARK);
-            int dx = Math.min(kx + kw - 5, x + w - 8);
-            g.fill(dx, y + 42, dx + 5, y + 47, Widgets.EDGE);
-            g.fill(dx + 1, y + 43, dx + 4, y + 46, 0xFF000000 | (e.colGet().getAsInt() & 0xFFFFFF));
-            if (e.guessed()) g.text(Lang.t("simpleblood.gui.mob_name.auto"), x + 4, y + 4, 0xFF8FD3AE);
-            else if (e.remove() != null) g.text(Lang.t("simpleblood.gui.mob_name.yours"), x + 4, y + 4, Widgets.CHANGED);
+            drawItem(g, glowing ? itemOf(kindId) : kindItem(kind), kindId, kx, ky);
+            g.textClipped(label, kx + CARD_ITEM + CARD_ITEM_GAP, ty, lw, on ? 0xFFC9C5BF : Widgets.TEXT_DARK);
+            int dx = kx + CARD_ITEM + CARD_ITEM_GAP + lw + CARD_SWATCH_GAP;
+            g.fill(dx, ty, dx + CARD_SWATCH, ty + CARD_SWATCH, Widgets.EDGE);
+            g.fill(dx + 1, ty + 1, dx + CARD_SWATCH - 1, ty + CARD_SWATCH - 1, 0xFF000000 | (e.colGet().getAsInt() & 0xFFFFFF));
+            if (e.guessed()) g.text(Lang.t("simpleblood.gui.mob_name.auto"), x + CARD_PAD, y + CARD_PAD, 0xFF8FD3AE);
+            else if (e.remove() != null) g.text(Lang.t("simpleblood.gui.mob_name.yours"), x + CARD_PAD, y + CARD_PAD, Widgets.CHANGED);
         }
 
         @Override
@@ -1268,7 +1284,7 @@ public final class Pages {
         int pad = 12, gap = 20, row = 14, gutter = 16;
         int headRule = pad + 18 + 8;
         int fieldsY = headRule + 9;
-        int midRule = fieldsY + 2 * gap + row + 9;
+        int midRule = fieldsY + 3 * gap + row + 9;
         int switchesY = midRule + 9;
         int footY = switchesY + gap + row + 10;
         int footH = 28;
@@ -1277,7 +1293,8 @@ public final class Pages {
         int ctrlW = Math.min(140, w - pad * 2 - 60);
         int colW = (w - pad * 2 - gutter) / 2;
         String[] names = {Lang.t("simpleblood.gui.mob_popup.bleeds"), Lang.t("simpleblood.gui.mob_popup.drips"), Lang.t("simpleblood.gui.mob_popup.pools"), Lang.t("simpleblood.gui.mob_popup.glows")};
-        String[] labels = {Lang.t("simpleblood.gui.mob_popup.type"), Lang.t("simpleblood.gui.mob_popup.colour"), Lang.t("simpleblood.gui.mob_popup.armor")};
+        String[] labels = {Lang.t("simpleblood.gui.mob_popup.type"), Lang.t("simpleblood.gui.mob_popup.colour"), Lang.t("simpleblood.gui.mob_popup.armor"),
+                Lang.t("simpleblood.gui.mob_popup.giblets")};
         net.minecraft.world.item.ItemStack egg = eggOf(e.id());
         String full = e.id().indexOf(':') < 0 ? "minecraft:" + e.id() : e.id();
         java.util.List<Supplier<Boolean>> gets = List.of(e.onGet(), e.dripGet(), e.stainGet(), e.glowGet());
@@ -1295,7 +1312,7 @@ public final class Pages {
                 g.textClipped(mobName(e.id()), x + pad + 26, y + pad + 1, w - pad * 2 - 26, Widgets.TEXT);
                 g.textClipped(e.id(), x + pad + 26, y + pad + 11, w - pad * 2 - 26, Widgets.DESC);
                 g.fill(x + pad, y + headRule, x + w - pad, y + headRule + 1, 0x20FFFFFF);
-                for (int i = 0; i < 3; i++) g.text(labels[i], x + pad, y + fieldsY + i * gap + 3, 0xFFC9C5BF);
+                for (int i = 0; i < labels.length; i++) g.text(labels[i], x + pad, y + fieldsY + i * gap + 3, 0xFFC9C5BF);
                 g.fill(x + pad, y + midRule, x + w - pad, y + midRule + 1, 0x20FFFFFF);
                 for (int i = 0; i < 4; i++) {
                     int lx = x + pad + (i % 2) * (colW + gutter);
@@ -1316,9 +1333,29 @@ public final class Pages {
         armor.x = ctrlX; armor.y = y0 + fieldsY + 2 * gap; armor.w = ctrlW;
         armor.tooltip = List.of(Lang.t("simpleblood.gui.mob_popup.auto_sparks_only_off_metal"), Lang.t("simpleblood.gui.mob_popup.armor_counts_as_wearing_metal"),
                 Lang.t("simpleblood.gui.mob_popup.metal_a_body_of_metal"));
+        IntSupplier gibColour = () -> {
+            Integer own = com.simpleblood.GibletColours.parse(e.gibGet().get());
+            return own != null ? own : com.simpleblood.GibletColours.forBlood(e.colGet().getAsInt());
+        };
+        IntConsumer pickGib = rgb -> e.gibSet().accept(com.simpleblood.GibletColours.format(rgb));
+        Widgets.Dropdown giblets = new Widgets.Dropdown(GIBLET_KEYS, Lang.all(GIBLET_LABELS), () -> {
+            String v = e.gibGet().get();
+            return com.simpleblood.GibletColours.parse(v) != null ? "colour" : com.simpleblood.GibletColours.OFF.equals(v) ? "off" : "auto";
+        }, v -> {
+            if (v.equals("colour")) pickGib.accept(gibColour.getAsInt());
+            else e.gibSet().accept(v);
+        });
+        giblets.x = ctrlX; giblets.y = y0 + fieldsY + 3 * gap; giblets.w = ctrlW - row - 4;
+        giblets.tooltip = List.of(Lang.t("simpleblood.gui.mob_popup.giblets_auto"), Lang.t("simpleblood.gui.mob_popup.giblets_off"),
+                Lang.t("simpleblood.gui.mob_popup.giblets_colour"));
+        Widgets.Swatch gibSwatch = new Widgets.Swatch(gibColour, null);
+        gibSwatch.onClick = () -> b.host.openPicker(gibColour.getAsInt(), pickGib);
+        gibSwatch.x = ctrlX + ctrlW - row; gibSwatch.y = y0 + fieldsY + 3 * gap; gibSwatch.w = row; gibSwatch.h = row;
         c.add(kind);
         c.add(colour);
         c.add(armor);
+        c.add(giblets);
+        c.add(gibSwatch);
         for (int i = 0; i < 4; i++) {
             Widgets.Toggle t = new Widgets.Toggle(gets.get(i), sets.get(i));
             t.x = x0 + pad + (i % 2) * (colW + gutter) + colW - t.w; t.y = y0 + switchesY + (i / 2) * gap;

@@ -61,6 +61,11 @@ Every drop gets a small random shade, so the blood never looks flat.
 | `setBloodOnBody(boolean)` | Blood stays on its body ("Blood on mobs"): its own wounds and blood thrown onto it. Turn it off where it would look wrong on your model. | `true` (if the player has Blood on mobs on) |
 | `setLeavesPool(boolean)` | A pool of its blood spreads under the body when it dies. | `true` for mobs that stain |
 | `setGiblets(boolean)` | Chunks of meat fly off it on hard hits and on death. | `true` for `LIQUID` blood (if the player has giblets on) |
+| `setGibletColor(int)` (1.3.0) | The colour of those chunks, `0xRRGGBB`. | Worked out: raw meat for red blood, otherwise the average colour of the mob's own texture (a slime drops green gel) |
+
+Without `setGibletColor` you rarely need to do anything: the giblet colour is read from your
+mob's texture. A player can still pick their own colour (or none) for your mob on the Mobs page,
+and their choice wins over yours.
 
 ## How much
 
@@ -87,6 +92,9 @@ These are on `SimpleBloodAPI` itself and apply to every mob.
 // This damage type never draws blood, for any mob:
 SimpleBloodAPI.addNonBleedingDamageType(DamageTypes.IN_FIRE);
 SimpleBloodAPI.removeNonBleedingDamageType(DamageTypes.IN_FIRE);   // undo
+
+// Has a mod registered this damage as bloodless? (1.3.0: also takes the DamageSource itself)
+boolean noBlood = SimpleBloodAPI.isNonBleedingDamageType(source);
 ```
 
 ### Hard and soft items (1.2.0)

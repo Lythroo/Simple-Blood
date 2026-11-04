@@ -29,6 +29,14 @@ public final class BloodColor {
             this.green = ((hex >> 8) & 0xFF) / 255.0f;
             this.blue = (hex & 0xFF) / 255.0f;
         }
+
+        public int toRgb() {
+            return channel(red) << 16 | channel(green) << 8 | channel(blue);
+        }
+
+        private static int channel(float c) {
+            return Math.max(0, Math.min(255, Math.round(c * 255)));
+        }
     }
 
     private static final Color DEFAULT_RED = new Color(0.40f, 0.012f, 0.012f);

@@ -23,6 +23,7 @@ public class BloodStreakParticle extends BloodParticle {
         this.xd = velX;
         this.yd = velY;
         this.zd = velZ;
+        throwHarder();
         this.quadSize = (0.34f + this.random.nextFloat() * 0.16f) * sizeMultiplier
                 * com.simpleblood.SimpleBloodClient.getConfig().chunkyStreakScale();
         this.lifetime = 36 + this.random.nextInt(12);

@@ -161,6 +161,9 @@ public class SimpleBloodConfig {
     public float particleLifetimeMultiplier() { return particles.getParticleLifetimeMultiplier(); }
     public float particleGravityMultiplier() { return particles.getParticleGravityMultiplier(); }
     public float particleDragMultiplier() { return particles.getParticleDragMultiplier(); }
+    public float throwSpeedMultiplier() { return particles.throwSpeed / 100.0f; }
+    public float throwUpMultiplier() { return particles.throwUp / 100.0f; }
+    public float referenceDropSize() { return 0.12f * ParticleSettings.DEFAULT_SIZE / 100.0f * chunkyDropScale(); }
 
     public float burstIntensityMultiplier() { return hitBurst.getBurstIntensityMultiplier() * masterAmount(); }
     public float burstDurationMultiplier() { return hitBurst.getBurstDurationMultiplier(); }
@@ -245,6 +248,8 @@ public class SimpleBloodConfig {
         public int particleLifetime = 100;
         public int particleGravity = 100;
         public int particleDrag = 100;
+        public int throwSpeed = 100;
+        public int throwUp = 100;
 
         public float getParticleSizeMultiplier() {
             return particleSize / 100.0f;
@@ -671,6 +676,7 @@ public class SimpleBloodConfig {
             public String kind = "liquid";
             public boolean glows = false;
             public String armor = "auto";
+            public String giblets = "auto";
 
             public EntitySettings() {
             }
@@ -754,6 +760,7 @@ public class SimpleBloodConfig {
             public String kind = "liquid";
             public boolean glows = false;
             public String armor = "auto";
+            public String giblets = "auto";
 
             public BloodKind getKind() {
                 return BloodKind.parse(kind);

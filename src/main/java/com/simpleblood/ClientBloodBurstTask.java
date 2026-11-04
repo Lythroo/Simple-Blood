@@ -108,6 +108,7 @@ public class ClientBloodBurstTask {
 
         intensityMult *= SimpleBlood.getBurstIntensityMultiplier(entity);
         intensityMult *= share;
+        if (ctx.weapon == HitContext.Weapon.EXPLOSION) intensityMult *= HitContext.BLAST_BLOOD;
 
         float spreadFactor = Math.min(damage / 10.0f, 2.0f) * spreadMult;
 
@@ -136,7 +137,7 @@ public class ClientBloodBurstTask {
             double velY = (-1.2 - world.getRandom().nextDouble() * 0.8 * spreadFactor) * velocityAdjust;
             double velZ = (world.getRandom().nextDouble() - 0.5) * 0.2 * spreadFactor;
 
-            ClientBloodParticleSpawner.emit(world, BloodParticles.BLOOD_DRIP, spawnX, spawnY, spawnZ, velX, velY, velZ);
+            ClientBloodParticleSpawner.emitThrown(world, BloodParticles.BLOOD_DRIP, spawnX, spawnY, spawnZ, velX, velY, velZ);
         }
 
         if (ctx.weapon == HitContext.Weapon.EXPLOSION || ctx.weapon == HitContext.Weapon.FALL) {
@@ -176,7 +177,7 @@ public class ClientBloodBurstTask {
             double velY = ((-0.8 - world.getRandom().nextDouble() * 0.6) * spreadFactor) * velocityAdjust;
             double velZ = Math.sin(angle) * speed * 0.5;
 
-            ClientBloodParticleSpawner.emit(world, BloodParticles.BLOOD_SPLASH, spawnX, spawnY, spawnZ, velX, velY, velZ);
+            ClientBloodParticleSpawner.emitThrown(world, BloodParticles.BLOOD_SPLASH, spawnX, spawnY, spawnZ, velX, velY, velZ);
         }
 
         ticksRemaining--;

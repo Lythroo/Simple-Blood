@@ -29,6 +29,16 @@ public class PuffParticle extends SingleQuadParticle {
     private final float startAlpha;
     private boolean counted;
 
+    private static final ThreadLocal<Float> cloudSize = ThreadLocal.withInitial(() -> 0f);
+
+    public static void setCloud(float size) {
+        cloudSize.set(size);
+    }
+
+    private static final int CLOUD_LIFE = 30, CLOUD_LIFE_SPREAD = 15;
+    private static final float CLOUD_ALPHA = 0.5f;
+    private final boolean cloud;
+
     protected PuffParticle(ClientLevel world, double x, double y, double z,
                            double velX, double velY, double velZ,
                            SpriteSet sprites, TextureAtlasSprite sprite, boolean wind,
@@ -43,6 +53,8 @@ public class PuffParticle extends SingleQuadParticle {
         this.counted = true;
         this.sprites = sprites;
         this.wind = wind;
+        float cloudAcross = wind ? 0f : cloudSize.get();
+        this.cloud = cloudAcross > 0f;
 
         if (BloodParticle.ballisticSpawn()) {
             this.xd = velX * 0.35;
@@ -63,8 +75,12 @@ public class PuffParticle extends SingleQuadParticle {
         float shade = 0.94f + random.nextFloat() * 0.1f;
         this.setColor(Math.min(1f, red * shade), Math.min(1f, green * shade), Math.min(1f, blue * shade));
         float thickness = (wind ? cfg.kinds.windOpacity : cfg.kinds.boneDustOpacity) / 100.0f;
-        this.startAlpha = Math.min(1f, (wind ? 0.75f : 0.6f) * thickness);
+        this.startAlpha = cloud ? CLOUD_ALPHA : Math.min(1f, (wind ? 0.75f : 0.6f) * thickness);
         this.alpha = startAlpha;
+        if (cloud) {
+            this.lifetime = Math.max(8, (int) ((CLOUD_LIFE + random.nextInt(CLOUD_LIFE_SPREAD)) * cfg.particleLifetimeMultiplier()));
+            this.quadSize = cloudAcross * 0.5f * (0.8f + random.nextFloat() * 0.4f);
+        }
         this.gravity = 0f;
         this.hasPhysics = true;
         this.setSprite(sprites.get(0, lifetime));
@@ -118,9 +134,9 @@ public class PuffParticle extends SingleQuadParticle {
             return;
         }
         float gravity = SimpleBloodClient.getConfig().particleGravityMultiplier();
-        yd += (wind ? 0.0015f : -0.0016f) * gravity;
+        yd += (wind ? 0.0015f : cloud ? -0.0003f : -0.0016f) * gravity;
         this.move(xd, yd, zd);
-        float drag = wind ? 0.9f : 0.86f;
+        float drag = wind ? 0.9f : cloud ? 0.8f : 0.86f;
         xd *= drag;
         yd *= drag;
         zd *= drag;

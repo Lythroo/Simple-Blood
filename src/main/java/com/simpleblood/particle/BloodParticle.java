@@ -12,6 +12,7 @@ import net.minecraft.client.particle.SingleQuadParticle.Layer;
 //?}
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.particle.Particle;
@@ -109,6 +110,8 @@ public class BloodParticle extends SingleQuadParticle {
         clearCarry();
         spawnCarried.remove();
         spawnVanishes.remove();
+        spawnPieceColour.remove();
+        spawnThrown.remove();
     }
 
     public static void setCarried(int pixels) {
@@ -116,6 +119,32 @@ public class BloodParticle extends SingleQuadParticle {
     }
 
     private static final ThreadLocal<Boolean> spawnVanishes = ThreadLocal.withInitial(() -> false);
+
+    private static final ThreadLocal<Boolean> spawnThrown = ThreadLocal.withInitial(() -> false);
+
+    public static void setThrown(boolean thrown) {
+        spawnThrown.set(thrown);
+    }
+
+    public static boolean spawnsThrown() {
+        return spawnThrown.get();
+    }
+
+    public static double[] throwVelocity(double vx, double vy, double vz) {
+        com.simpleblood.SimpleBloodConfig c = SimpleBloodClient.getConfig();
+        float speed = c.throwSpeedMultiplier(), up = c.throwUpMultiplier();
+        return new double[]{vx * speed, vy > 0 ? vy * speed * up : vy * speed, vz * speed};
+    }
+
+    private static final ThreadLocal<Integer> spawnPieceColour = ThreadLocal.withInitial(() -> -1);
+
+    public static void setPieceColour(int rgb) {
+        spawnPieceColour.set(rgb & 0xFFFFFF);
+    }
+
+    public static int currentPieceColour() {
+        return spawnPieceColour.get();
+    }
 
     public static void setVanishOnLanding(boolean vanish) {
         spawnVanishes.set(vanish);
@@ -293,6 +322,7 @@ public class BloodParticle extends SingleQuadParticle {
     private final boolean mayPaint;
     private final boolean vanishes;
     protected float landingScale = 1f;
+    private boolean stainBySize;
     protected final com.simpleblood.BloodKind kind;
     protected final boolean glows;
     private final int chainDepth;
@@ -306,6 +336,10 @@ public class BloodParticle extends SingleQuadParticle {
     static final int FRAMES = 4;
     private SpriteSet frames;
     private int frameCount, firstFrame, frameOffset, ticksPerFrame = 3;
+    private SpriteSet flight;
+    private final int[] shown = {-1, -1};
+    private float drawScale = 1f;
+    private static final float FLIGHT_DRAW_SCALE = 0.5f;
 
     protected BloodParticle(ClientLevel world,
                             double x, double y, double z,
@@ -328,6 +362,7 @@ public class BloodParticle extends SingleQuadParticle {
             this.yd = velY;
             this.zd = velZ;
         }
+        throwHarder();
         double[] carry = spawnCarry.get();
         if (carry[3] != 0) {
             this.xd += carry[0];
@@ -495,6 +530,66 @@ public class BloodParticle extends SingleQuadParticle {
         this.frameOffset = random.nextInt(FRAMES * ticksPerFrame);
         nextFrame();
     }
+
+    protected void throwHarder() {
+        if (!spawnThrown.get()) return;
+        double[] v = throwVelocity(xd, yd, zd);
+        this.xd = v[0];
+        this.yd = v[1];
+        this.zd = v[2];
+    }
+
+    void showFlight(SpriteSet sprites) {
+        this.frames = null;
+        this.flight = sprites;
+        setSprite(sprites.get(0, BloodSprayParticle.SPRITES - 1));
+    }
+
+    private float stainScale() {
+        float ratio = quadSize / SimpleBloodClient.getConfig().referenceDropSize();
+        return Math.max(0.3f, Math.min(4f, ratio * ratio));
+    }
+
+    @Override
+    public float getQuadSize(float partialTick) {
+        return super.getQuadSize(partialTick) * drawScale;
+    }
+
+    private void alignToFlight(Camera camera) {
+        double vx = xd, vy = yd, vz = zd;
+        double speed2 = vx * vx + vy * vy + vz * vz;
+        if (speed2 < 1.0e-7) return;
+        //? if <=1.21.1 {
+        /*org.joml.Vector3f up = camera.getUpVector();
+        org.joml.Vector3f left = camera.getLeftVector();
+        *///?} else {
+        org.joml.Vector3fc up = camera.upVector();
+        org.joml.Vector3fc left = camera.leftVector();
+        //?}
+        double sy = vx * up.x() + vy * up.y() + vz * up.z();
+        double sx = -(vx * left.x() + vy * left.y() + vz * left.z());
+        this.setSprite(flight.get(BloodSprayParticle.pick(sx, sy, Math.sqrt(speed2), shown), BloodSprayParticle.SPRITES - 1));
+    }
+
+    //? if <=1.21.1 {
+    /*@Override
+    public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, Camera camera, float partialTick) {
+        if (flight != null) alignToFlight(camera);
+        super.render(buffer, camera, partialTick);
+    }
+    *///?} elif <26.1 {
+    /*@Override
+    public void extract(net.minecraft.client.renderer.state.QuadParticleRenderState state, Camera camera, float partialTick) {
+        if (flight != null) alignToFlight(camera);
+        super.extract(state, camera, partialTick);
+    }
+    *///?} else {
+    @Override
+    public void extract(net.minecraft.client.renderer.state.level.QuadParticleRenderState state, Camera camera, float partialTick) {
+        if (flight != null) alignToFlight(camera);
+        super.extract(state, camera, partialTick);
+    }
+    //?}
 
     private void nextFrame() {
         if (frames == null) return;
@@ -848,8 +943,9 @@ public class BloodParticle extends SingleQuadParticle {
         if (carriedPixels > 0) {
             pixels = carriedPixels;
         } else {
-            int base = 1 + random.nextInt(2) + (quadSize > 0.22f ? 1 : 0);
+            float base = stainBySize ? 1.5f + random.nextFloat() * 1.4f : 1 + random.nextInt(2) + (quadSize > 0.22f ? 1 : 0);
             if (splash) base += 2 + random.nextInt(2);
+            if (stainBySize) base *= stainScale();
             if (kind == com.simpleblood.BloodKind.POWDER) base = 1 + random.nextInt(2);
             int res = SimpleBloodClient.getConfig().surfaces.resolution;
             float areaScale = res >= 16 ? 3.0f : 1.0f;
@@ -939,7 +1035,9 @@ public class BloodParticle extends SingleQuadParticle {
                 BloodParticle particle = new BloodParticle(world, x, y, z, velX, velY, velZ, sprite, sizeMultiplier,
                         color.red, color.green, color.blue);
                 particle.splash = splash;
-                particle.animate(spriteProvider, splash ? 3 : 4, 3, world.getRandom());
+                particle.showFlight(spriteProvider);
+                particle.drawScale = FLIGHT_DRAW_SCALE;
+                particle.stainBySize = true;
                 return particle;
             } catch (Throwable t) {
                 Guard.fail(Guard.Part.PARTICLES, "creating a blood drop", t);

@@ -137,7 +137,7 @@ SimpleBloodAPI.registerEntityBlood(YourEntities.CAVE_JELLY, settings);          
 SimpleBloodAPI.registerEntityBlood(Identifier.parse("yourmod:cave_jelly"), settings); // an Identifier
 ```
 
-On Minecraft 1.21.1, the last one takes a `ResourceLocation` instead of an `Identifier`. The
+On Minecraft 1.20.1 and 1.21.1, the last one takes a `ResourceLocation` instead of an `Identifier`. The
 string version works the same everywhere.
 
 ## Next

@@ -91,7 +91,15 @@ public final class MobBlood {
         HitContext.Weapon weapon = ctx != null && cfg.weaponFlavourEnabled() ? ctx.style : HitContext.Weapon.NONE;
         Vec3 base = e.position();
         Vec3 centre = base.add(0, e.getBbHeight() * 0.55, 0);
-        if (ctx != null && ctx.direction != null && weapon != HitContext.Weapon.EXPLOSION && weapon != HitContext.Weapon.FALL) {
+        if (ctx != null && ctx.direction != null && ctx.weapon == HitContext.Weapon.EXPLOSION) {
+            for (int i = 0; i < 3; i++) {
+                Vec3 dir = ctx.direction.add((RNG.nextDouble() - 0.5) * 0.7, (RNG.nextDouble() - 0.5) * 0.6,
+                        (RNG.nextDouble() - 0.5) * 0.7).normalize();
+                Vec3 at = centre.subtract(dir.scale(e.getBbWidth() * 0.5));
+                coat.pending.add(new MobCoat.Splat(at.subtract(base), dir, HitContext.Weapon.NONE, size * 0.8f, units, now));
+            }
+            com.simpleblood.Tally.count("coat.blast");
+        } else if (ctx != null && ctx.direction != null && weapon != HitContext.Weapon.EXPLOSION && weapon != HitContext.Weapon.FALL) {
             Vec3 at = ctx.wound != null ? ctx.wound : centre.subtract(ctx.direction.scale(e.getBbWidth() * 0.5));
             if (weapon == HitContext.Weapon.SPEAR && (damage >= 5 || ctx.crit || death)) {
                 Vec3 exit = ctx.exitPoint();

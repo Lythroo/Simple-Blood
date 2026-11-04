@@ -743,6 +743,7 @@ public final class PhysicsModRagdolls {
             batches.forEach((death, pieces) -> {
                 DEATHS.remove(death);
                 BLEEDING.add(new Bleeding(death, now, true, null, pieces));
+                com.simpleblood.Tally.count("ragdoll.pieces");
                 SimpleBlood.LOGGER.info("[decap] {} matched to {} loose pieces", death.type(), pieces.size());
                 List<com.simpleblood.mob.RigidCoats.Limb> limbs = new ArrayList<>(pieces.size());
                 for (Object rigid : pieces) limbs.add(new PhysicsLimb(rigid, world));

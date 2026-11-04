@@ -27,6 +27,9 @@ public final class HitContext {
     public final Vec3 wound;
     public final boolean smash;
     private static final float SMASH_DAMAGE = 11.0f;
+    public final float blast;
+    public static final float BLAST_BLOOD = 1.5f;
+    private static final double BLAST_CENTRE = 0.3;
 
     private static int lastChargeTarget = -1;
     private static float lastCharge = 1.0f;
@@ -47,7 +50,8 @@ public final class HitContext {
     }
 
     private HitContext(LivingEntity entity, float damage, float severity, Vec3 direction, Vec3 sourcePos,
-                       boolean crit, Weapon weapon, String item, boolean overkill, float charge, Vec3 wound, boolean smash) {
+                       boolean crit, Weapon weapon, String item, boolean overkill, float charge, Vec3 wound, boolean smash,
+                       float blast) {
         this.entity = entity;
         this.damage = damage;
         this.severity = severity;
@@ -60,6 +64,7 @@ public final class HitContext {
         this.charge = charge;
         this.wound = wound;
         this.smash = smash;
+        this.blast = blast;
     }
 
     public static HitContext of(LivingEntity entity, float damage, DamageSource source, boolean crit, float healthBefore) {
@@ -88,7 +93,19 @@ public final class HitContext {
             Vec3 towardAttacker = new Vec3(Math.cos(angle), 0, Math.sin(angle));
             if (towardAttacker.lengthSqr() > 0.5) direction = towardAttacker.scale(-1).normalize();
         }
-        if (weapon == Weapon.EXPLOSION || weapon == Weapon.FALL) {
+        float blast = 0f;
+        if (weapon == Weapon.EXPLOSION) {
+            Blasts.Blast seen = Blasts.nearest(entity.level(), center);
+            Vec3 from = seen != null ? seen.centre() : sourcePos;
+            direction = null;
+            if (from != null) {
+                Vec3 away = center.subtract(from);
+                double distance = away.length();
+                direction = distance > BLAST_CENTRE ? away.scale(1 / distance) : new Vec3(0, 1, 0);
+                sourcePos = from;
+                blast = Blasts.push(distance, seen != null ? seen.radius() : Blasts.TYPICAL_RADIUS);
+            }
+        } else if (weapon == Weapon.FALL) {
             direction = null;
         }
         boolean overkill = damage >= healthBefore * 2.0f && damage >= healthBefore + 4.0f && healthBefore > 0;
@@ -126,7 +143,7 @@ public final class HitContext {
             wound = clampToBody(entity, entity.position().add(0, fromAbove ? entity.getBbHeight() : 0, 0));
             smash = damage >= healthBefore;
         }
-        return new HitContext(entity, damage, severity, direction, sourcePos, crit, weapon, heldItem(source), overkill, charge, wound, smash);
+        return new HitContext(entity, damage, severity, direction, sourcePos, crit, weapon, heldItem(source), overkill, charge, wound, smash, blast);
     }
 
     private static String heldItem(DamageSource source) {
@@ -156,7 +173,13 @@ public final class HitContext {
         float severity = Math.min(1.0f, 0.6f * Math.min(1.0f, damage / 20.0f) + 0.4f * Math.min(1.0f, damage / max));
         if (crit) severity = Math.min(1.0f, severity * 1.3f);
         Vec3 from = entity.position().add(0, entity.getBbHeight() * 0.5, 0).subtract(direction.scale(2));
-        return new HitContext(entity, damage, severity, direction, from, crit, weapon, item, false, charge, wound, smash);
+        return new HitContext(entity, damage, severity, direction, from, crit, weapon, item, false, charge, wound, smash, 0f);
+    }
+
+    public static HitContext selfBlast(LivingEntity entity) {
+        float health = Math.max(1.0f, entity.getHealth());
+        Vec3 middle = entity.position().add(0, entity.getBbHeight() * 0.5, 0);
+        return new HitContext(entity, health, 1.0f, null, middle, false, Weapon.EXPLOSION, null, true, 1.0f, null, false, 1.0f);
     }
 
     static Weapon styleOf(Weapon weapon) {

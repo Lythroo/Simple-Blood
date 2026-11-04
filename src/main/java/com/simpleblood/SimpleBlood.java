@@ -247,6 +247,18 @@ public final class SimpleBlood {
         return "auto";
     }
 
+    public static String gibletsOf(LivingEntity entity) {
+        Identifier id = idOf(entity);
+        SimpleBloodConfig.ModdedEntities.ModdedEntitySettings modded = moddedSettings(id);
+        if (modded != null) return modded.giblets == null ? GibletColours.AUTO : modded.giblets;
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg != null) {
+            SimpleBloodConfig.VanillaEntities.EntitySettings vanilla = cfg.vanillaEntities.getSettings(id.getPath());
+            if (vanilla != null && vanilla.giblets != null) return vanilla.giblets;
+        }
+        return GibletColours.AUTO;
+    }
+
     public static boolean bloodGlows(LivingEntity entity) {
         SimpleBloodConfig glowCfg = SimpleBloodClient.getConfig();
         if (glowCfg != null && !glowCfg.kinds.glow) return false;

@@ -1,7 +1,6 @@
 package com.simpleblood.particle;
 
 import com.simpleblood.BloodColor;
-import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleProvider;
@@ -15,16 +14,16 @@ public class BloodSprayParticle extends BloodParticle {
     private static final float QUAD = 0.25f;
     private static final double HEADING_MARGIN = Math.toRadians(8);
     private static final double LENGTH_MARGIN = 0.07;
+    private static final double LONG_FROM = 0.2;
+    private static final double SHORT_FROM = 0.06;
 
-    private final SpriteSet sprites;
-    private final int[] shown = {-1, -1};
+    static final int SPRITES = 17;
 
     protected BloodSprayParticle(ClientLevel world, double x, double y, double z,
                                  double velX, double velY, double velZ,
                                  SpriteSet sprites, TextureAtlasSprite sprite, float sizeMultiplier,
                                  float red, float green, float blue) {
         super(world, x, y, z, velX, velY, velZ, sprite, sizeMultiplier, red, green, blue);
-        this.sprites = sprites;
         this.xd = velX;
         this.yd = velY;
         this.zd = velZ;
@@ -32,24 +31,8 @@ public class BloodSprayParticle extends BloodParticle {
         this.alpha = 1.0f;
         this.lifetime = 70 + this.random.nextInt(20);
         this.setSize(0.02f, 0.02f);
-        this.setSprite(sprites.get(0, 16));
+        showFlight(sprites);
         com.simpleblood.Tally.count("particle.spray");
-    }
-
-    private void alignToFlight(Camera camera) {
-        double vx = xd, vy = yd, vz = zd;
-        double speed2 = vx * vx + vy * vy + vz * vz;
-        if (speed2 < 1.0e-7) return;
-        //? if <=1.21.1 {
-        /*org.joml.Vector3f up = camera.getUpVector();
-        org.joml.Vector3f left = camera.getLeftVector();
-        *///?} else {
-        org.joml.Vector3fc up = camera.upVector();
-        org.joml.Vector3fc left = camera.leftVector();
-        //?}
-        double sy = vx * up.x() + vy * up.y() + vz * up.z();
-        double sx = -(vx * left.x() + vy * left.y() + vz * left.z());
-        this.setSprite(sprites.get(pick(sx, sy, Math.sqrt(speed2), shown), 16));
     }
 
     public static int pick(double sx, double sy, double speed, int[] shown) {
@@ -80,34 +63,14 @@ public class BloodSprayParticle extends BloodParticle {
     }
 
     private static int lengthFor(double sideOn, double screen, double bias) {
-        if (sideOn > 0.75 + bias && screen > 0.08 * (1 + 2 * bias)) return 2;
-        if (sideOn > 0.35 + bias && screen > 0.02 * (1 + 2 * bias)) return 1;
+        if (sideOn > 0.75 + bias && screen > LONG_FROM * (1 + 2 * bias)) return 2;
+        if (sideOn > 0.35 + bias && screen > SHORT_FROM * (1 + 2 * bias)) return 1;
         return 0;
     }
 
     private static int nearestHeading(double angle) {
         return (int) Math.round(angle / (Math.PI / 4)) & 7;
     }
-
-    //? if <=1.21.1 {
-    /*@Override
-    public void render(com.mojang.blaze3d.vertex.VertexConsumer buffer, Camera camera, float partialTick) {
-        alignToFlight(camera);
-        super.render(buffer, camera, partialTick);
-    }
-    *///?} elif <26.1 {
-    /*@Override
-    public void extract(net.minecraft.client.renderer.state.QuadParticleRenderState state, Camera camera, float partialTick) {
-        alignToFlight(camera);
-        super.extract(state, camera, partialTick);
-    }
-    *///?} else {
-    @Override
-    public void extract(net.minecraft.client.renderer.state.level.QuadParticleRenderState state, Camera camera, float partialTick) {
-        alignToFlight(camera);
-        super.extract(state, camera, partialTick);
-    }
-    //?}
 
     public static class Factory implements ParticleProvider<SimpleParticleType> {
 

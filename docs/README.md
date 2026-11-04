@@ -28,7 +28,7 @@ SimpleBloodAPI.registerEntityBlood("yourmod:cave_jelly", new SimpleBloodAPI.Bloo
 - **Optional.** Players without Simple Blood can still play your mod. You check whether it
   is installed before you call it ([how](1-getting-started.md#3-only-call-it-when-simple-blood-is-installed)).
 - **Same code everywhere.** The API is `com.simpleblood.SimpleBloodAPI` on Fabric and
-  NeoForge, Minecraft 1.21.1 to 26.3.
+  NeoForge, Minecraft 1.20.1 to 26.3.
 - **You don't have to.** Mobs you don't register still bleed: plain red blood, or the
   settings of the vanilla mob with the same name (`yourmod:zombie` bleeds like a zombie).
 - **No code?** Modpack makers can set the same basics in the config file instead

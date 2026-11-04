@@ -2569,6 +2569,7 @@ public final class BloodSurfaces {
         SignFaces.clear();
         com.simpleblood.compat.InteractiveFoliage.clear();
         com.simpleblood.mob.MobTextures.resourcesChanged();
+        com.simpleblood.GibletColours.clear();
         List<CanvasTile> gone = new ArrayList<>();
         for (CanvasTile t : TILES.values()) {
             try {

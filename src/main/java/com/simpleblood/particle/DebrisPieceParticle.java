@@ -43,7 +43,6 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
     private static final float WATER_DRAG = 0.75f;
 
     private static final float BARK_R = 0x4A / 255f, BARK_G = 0x3E / 255f, BARK_B = 0x34 / 255f;
-    private static final float FLESH_R = 0xD8 / 255f, FLESH_G = 0x70 / 255f, FLESH_B = 0x6A / 255f;
 
     private final SpriteSet sprites;
     private final com.simpleblood.BloodKind kind;
@@ -123,9 +122,12 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
             green = green * 0.45f + BARK_G * 0.55f;
             blue = blue * 0.45f + BARK_B * 0.55f;
         } else if (gib) {
-            red = red * 0.5f + FLESH_R * 0.5f;
-            green = green * 0.5f + FLESH_G * 0.5f;
-            blue = blue * 0.5f + FLESH_B * 0.5f;
+            int rgb = BloodParticle.currentPieceColour();
+            if (rgb < 0) rgb = com.simpleblood.GibletColours.forBlood(
+                    Math.round(red * 255) << 16 | Math.round(green * 255) << 8 | Math.round(blue * 255));
+            red = ((rgb >> 16) & 0xFF) / 255f;
+            green = ((rgb >> 8) & 0xFF) / 255f;
+            blue = (rgb & 0xFF) / 255f;
         }
         this.red = red;
         this.green = green;
