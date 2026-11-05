@@ -15,6 +15,7 @@ public final class BloodSounds {
 
     private static final SoundEvent SQUELCH = own("hit.squelch"), DEATH_SPLAT = own("death.splat"), SLAP = own("slap"),
             GIBLET = own("giblet.land"), SIZZLE = own("sizzle"), STUMP = own("stump");
+    private static final float GIBLET_VOLUME = 0.16f;
 
     private static SoundEvent own(String name) {
         return SoundEvent.createVariableRangeEvent(Ids.mod(name));
@@ -80,7 +81,7 @@ public final class BloodSounds {
         switch (kind) {
             case METAL -> play(level, SoundEvents.CHAIN_HIT, at, 0.12f, 1.7f + rng.nextFloat() * 0.3f);
             case WOOD -> play(level, SoundEvents.BAMBOO_WOOD_HIT, at, 0.12f, 1.6f + rng.nextFloat() * 0.3f);
-            case LIQUID -> play(level, GIBLET, at, 0.25f, 0.9f + rng.nextFloat() * 0.25f);
+            case LIQUID -> play(level, GIBLET, at, GIBLET_VOLUME, 0.9f + rng.nextFloat() * 0.25f);
             default -> play(level, SoundEvents.BONE_BLOCK_HIT, at, 0.14f, 1.6f + rng.nextFloat() * 0.35f);
         }
     }
@@ -413,7 +414,7 @@ public final class BloodSounds {
                 case SLAPS -> play(null, SLAP, null, 0.6f, 0.85f + rng.nextFloat() * 0.1f);
                 case WATER -> play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, null, 0.3f, 1.0f + rng.nextFloat() * 0.25f);
                 case HEAT -> play(null, SIZZLE, null, 0.25f, 0.9f + rng.nextFloat() * 0.2f);
-                case PIECES -> play(null, GIBLET, null, 0.25f, 0.9f + rng.nextFloat() * 0.25f);
+                case PIECES -> play(null, GIBLET, null, GIBLET_VOLUME, 0.9f + rng.nextFloat() * 0.25f);
                 case FOOTSTEPS -> play(null, SoundEvents.MUD_STEP, null, 0.15f, 1.25f + rng.nextFloat() * 0.25f);
                 case TEARS -> tear(null, null);
                 case ARMOR -> {

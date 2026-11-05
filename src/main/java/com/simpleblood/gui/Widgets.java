@@ -907,11 +907,13 @@ public final class Widgets {
             boolean over = enabled && hot(mx, my);
             flatButton(g, x, y, w, h, enabled, over, false);
             int rgb = get.getAsInt() & 0xFFFFFF;
-            g.fill(x + 4, y + 4, x + 20, y + h - 4, 0xFF000000);
-            g.fill(x + 5, y + 5, x + 19, y + h - 5, 0xFF000000 | rgb);
-            g.fill(x + 5, y + 5, x + 19, y + 6, Gfx.alpha(0xFFFFFFFF, 0.25f));
             String hex = String.format("#%06X", rgb);
-            if (g.textWidth(hex) <= w - 29) g.text(hex, x + 25, y + (h - 8) / 2, enabled ? TEXT : TEXT_DIM);
+            boolean withHex = g.textWidth(hex) <= w - 29;
+            int right = withHex ? x + 20 : x + w - 4;
+            g.fill(x + 4, y + 4, right, y + h - 4, 0xFF000000);
+            g.fill(x + 5, y + 5, right - 1, y + h - 5, 0xFF000000 | rgb);
+            g.fill(x + 5, y + 5, right - 1, y + 6, Gfx.alpha(0xFFFFFFFF, 0.25f));
+            if (withHex) g.text(hex, x + 25, y + (h - 8) / 2, enabled ? TEXT : TEXT_DIM);
         }
 
         @Override
