@@ -229,6 +229,16 @@ public final class CanvasTile {
 
     public int count() { return count; }
 
+    public int countWhere(java.util.function.Predicate<Vec3> where) {
+        int n = 0;
+        for (int py = 0; py < ph; py++) {
+            for (int px = 0; px < pw; px++) {
+                if (filled(px, py) && where.test(pixelCenter(px, py))) n++;
+            }
+        }
+        return n;
+    }
+
     public int units() {
         int n = 0;
         for (byte d : depth) n += d;

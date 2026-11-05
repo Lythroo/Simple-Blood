@@ -1087,6 +1087,19 @@ public final class BloodSurfaces {
             }
         }
 
+        boolean fed = run != null && run.source != null;
+        if (remaining > 0 && isQuadTile(wall) && !edgeAtBoundary(wall, Direction.DOWN)) {
+            Vec3 probe = bottom.add(0, -0.02, 0);
+            CanvasTile lower = tileAt(level, wall.pos, face, probe);
+            if (lower != null && lower != wall && Math.abs(planeCoord(lower, face) - planeCoord(wall, face)) < 1.0e-3) {
+                int col = lower.pixelX(probe), row = lower.pixelY(probe);
+                if (lower.inside(col, row) && startRun(lower, col, row, remaining, volume, colour, depth,
+                        fed ? run.source : null, fed ? run.sourceX : 0, fed ? run.sourceY : 0)) {
+                    return;
+                }
+            }
+        }
+
         if (remaining > 0 || waterBelow) {
             BlockPos below = wall.pos.below();
             Vec3 probe = bottom.add(0, -0.02, 0);
@@ -1106,7 +1119,6 @@ public final class BloodSurfaces {
                         }
                         budget = Math.max(remaining, waterRow + 2);
                     }
-                    boolean fed = run != null && run.source != null;
                     if (startRun(lower, col, 0, budget, volume, colour, depth,
                             fed ? run.source : null, fed ? run.sourceX : 0, fed ? run.sourceY : 0)) {
                         if (waterRow >= 0) for (Run r : RUNS) if (r.tile == lower && r.column == col) r.waterRow = waterRow;
