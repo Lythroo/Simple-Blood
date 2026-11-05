@@ -284,6 +284,7 @@ public final class SceneRenderer {
     private static ModelPart playerWide, playerSlim;
     private static Identifier ownSkin;
     private static boolean ownSkinSlim;
+    private static boolean ownSkinUnusable;
     //? if 1.20.1 {
     /*private static final Identifier ALEX = com.simpleblood.Ids.vanilla("textures/entity/alex.png");
     *///?} else {
@@ -291,12 +292,16 @@ public final class SceneRenderer {
     //?}
 
     private static Identifier ownSkin() {
-        if (ownSkin != null) return ownSkin;
+        if (ownSkin != null || ownSkinUnusable) return ownSkin;
         Object[] skin = com.simpleblood.SkinColours.previewSkin();
         if (skin == null) return null;
         try {
             com.mojang.blaze3d.platform.NativeImage image = com.mojang.blaze3d.platform.NativeImage.read((byte[]) skin[0]);
-            if (image.getHeight() < 64) return null;
+            if (image.getHeight() < 64) {
+                image.close();
+                ownSkinUnusable = true;
+                return null;
+            }
             //? if <=1.21.1 {
             /*net.minecraft.client.renderer.texture.DynamicTexture texture = new net.minecraft.client.renderer.texture.DynamicTexture(image);
             *///?} else {
@@ -307,6 +312,7 @@ public final class SceneRenderer {
             ownSkinSlim = (Boolean) skin[1];
             ownSkin = id;
         } catch (Throwable t) {
+            ownSkinUnusable = true;
             SimpleBlood.LOGGER.debug("Preview skin unreadable: {}", t.toString());
         }
         return ownSkin;

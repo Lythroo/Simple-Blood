@@ -54,11 +54,15 @@ public class ClientBloodBurstTask {
             calculatedTicks = MIN_TICKS + (int)((MAX_TICKS - MIN_TICKS) * t);
         }
 
-        int ticks = (int)(calculatedTicks * config.burstDurationMultiplier());
+        int ticks = Math.max(1, (int)(calculatedTicks * config.burstDurationMultiplier()));
         if (ctx.weapon == HitContext.Weapon.EXPLOSION) ticks = Math.min(ticks, BLAST_BURST_TICKS);
         this.durationTicks = ticks;
         this.ticksRemaining = durationTicks;
         this.soundPlayed = false;
+    }
+
+    private int shareOf(int total, int tick) {
+        return (int) ((long) total * (tick + 1) / durationTicks - (long) total * tick / durationTicks);
     }
 
     public boolean tick() {
@@ -120,8 +124,9 @@ public class ClientBloodBurstTask {
         int totalDrips  = (int)(Math.min(1 + (int)(damage * 1.2f), 15) * intensityMult);
         int totalSplash = (int)(Math.min(1 + (int)(damage * 1.8f), 23) * intensityMult);
 
-        int dripsThisTick  = Math.max(1, totalDrips / durationTicks);
-        int splashThisTick = Math.max(1, totalSplash / durationTicks);
+        int tick = durationTicks - ticksRemaining;
+        int dripsThisTick  = shareOf(totalDrips, tick);
+        int splashThisTick = shareOf(totalSplash, tick);
 
         float velocityAdjust = entityIsUnderwater ? 0.3f : 1.0f;
 

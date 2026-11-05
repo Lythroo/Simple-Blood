@@ -35,20 +35,28 @@ public final class WoundAnchors {
             ANCHORS.remove(entityId);
             return;
         }
-        if (!ANCHORS.containsKey(entityId) && ANCHORS.size() >= MAX) return;
+        if (!ANCHORS.containsKey(entityId) && ANCHORS.size() >= MAX) {
+            long now = System.currentTimeMillis();
+            ANCHORS.values().removeIf(an -> expired(an, now));
+            if (ANCHORS.size() >= MAX) return;
+        }
         ANCHORS.put(entityId, new Anchor(wound, System.currentTimeMillis()));
     }
 
     public static boolean wants(int entityId) {
         Anchor an = ANCHORS.get(entityId);
         if (an == null) return false;
-        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
-        long keep = cfg == null ? 15_000 : cfg.lowHealth.dripDurationSeconds * 1000L + 2_000;
-        if (System.currentTimeMillis() - an.marked > keep) {
+        if (expired(an, System.currentTimeMillis())) {
             ANCHORS.remove(entityId);
             return false;
         }
         return true;
+    }
+
+    private static boolean expired(Anchor an, long now) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        long keep = cfg == null ? 15_000 : cfg.lowHealth.dripDurationSeconds * 1000L + 2_000;
+        return now - an.marked > keep;
     }
 
     static void posed(int entityId, List<ModelFacesOfMob.Face> faces) {

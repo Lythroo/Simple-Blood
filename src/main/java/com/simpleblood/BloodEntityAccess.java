@@ -10,4 +10,6 @@ public interface BloodEntityAccess {
     void simpleblood$setWound(net.minecraft.world.phys.Vec3 world);
 
     net.minecraft.world.phys.Vec3 simpleblood$wound();
+
+    void simpleblood$flushPendingHit();
 }

@@ -173,7 +173,8 @@ public final class BloodSounds {
         com.simpleblood.Tally.count("sound.ledgeDripVolume");
         RandomSource rng = RNG;
         long t = level.getGameTime();
-        if (t - lastDrip < DRIP_GAP_TICKS || rng.nextFloat() > 0.3f || !budget(level)) return;
+        boolean tooSoon = t >= lastDrip && t - lastDrip < DRIP_GAP_TICKS;
+        if (tooSoon || rng.nextFloat() > 0.3f || !budget(level)) return;
         lastDrip = t;
         play(level, intoPuddle ? SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON : SoundEvents.POINTED_DRIPSTONE_DRIP_WATER,
                 at, 0.4f, 0.45f + rng.nextFloat() * 0.2f);

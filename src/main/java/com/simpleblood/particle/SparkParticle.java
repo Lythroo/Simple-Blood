@@ -26,6 +26,7 @@ public class SparkParticle extends SingleQuadParticle {
 
     private final SpriteSet sprites;
     private boolean counted;
+    private ParticleCensus.Stamp census;
 
     protected SparkParticle(ClientLevel world, double x, double y, double z,
                             double velX, double velY, double velZ,
@@ -37,7 +38,7 @@ public class SparkParticle extends SingleQuadParticle {
         *///?} else {
         super(world, x, y, z, velX, velY, velZ, sprite);
         //?}
-        BloodParticle.countBirth();
+        this.census = BloodParticle.countBirth(this);
         this.counted = true;
         this.sprites = sprites;
 
@@ -86,6 +87,7 @@ public class SparkParticle extends SingleQuadParticle {
     @Override
     public void tick() {
         ticked = true;
+        census.ticked();
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;

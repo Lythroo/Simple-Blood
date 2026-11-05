@@ -5,6 +5,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.AreaEffectCloud;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.HashMap;
@@ -19,7 +21,12 @@ public final class Washing {
 
     private static final double SPLASH_RADIUS = 4.0;
 
-    private static final Map<Integer, Vec3> POTIONS = new HashMap<>();
+    private static final double LOOK_AHEAD_TICKS = 3.0;
+    private static final double LOOK_AROUND = 0.5;
+
+    private record Flight(Vec3 at, Vec3 motion) {}
+
+    private static final Map<Integer, Flight> POTIONS = new HashMap<>();
     private static ClientLevel lastLevel;
 
     public static void tick(Minecraft mc) {
@@ -37,20 +44,26 @@ public final class Washing {
                 wash(level, cloud.position(), cloud.getRadius(), 6, 4);
             } else if (isThrownPotion(e)) {
                 seen.add(e.getId());
-                POTIONS.put(e.getId(), e.position());
+                POTIONS.put(e.getId(), new Flight(e.position(), e.getDeltaMovement()));
             }
         }
-        Iterator<Map.Entry<Integer, Vec3>> it = POTIONS.entrySet().iterator();
+        Iterator<Map.Entry<Integer, Flight>> it = POTIONS.entrySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<Integer, Vec3> entry = it.next();
+            Map.Entry<Integer, Flight> entry = it.next();
             if (seen.contains(entry.getKey())) continue;
             it.remove();
-            Vec3 at = entry.getValue();
-            if (mc.player.distanceToSqr(at) < 96 * 96) {
+            Vec3 at = entry.getValue().at();
+            if (mc.player.distanceToSqr(at) < 96 * 96 && brokeOnSomething(level, entry.getValue())) {
                 com.simpleblood.Tally.count("wash.splash");
                 wash(level, at, SPLASH_RADIUS, 20 * 60, 60);
             }
         }
+    }
+
+    private static boolean brokeOnSomething(ClientLevel level, Flight flight) {
+        AABB path = new AABB(flight.at(), flight.at()).expandTowards(flight.motion().scale(LOOK_AHEAD_TICKS)).inflate(LOOK_AROUND);
+        if (!level.noCollision(null, path)) return true;
+        return !level.getEntities((Entity) null, path, e -> e instanceof LivingEntity).isEmpty();
     }
 
     private static boolean isThrownPotion(Entity e) {

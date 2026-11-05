@@ -23,6 +23,7 @@ public final class HitContext {
     public final Weapon weapon;
     public final Weapon style;
     public final boolean overkill;
+    private static final float OVERKILL_SHARE = 0.5f;
     public final float charge;
     public final Vec3 wound;
     public final boolean smash;
@@ -88,7 +89,7 @@ public final class HitContext {
                 if (d.lengthSqr() > 0.01) direction = d.normalize();
             }
         }
-        if (direction == null && entity.hurtTime > 0) {
+        if (direction == null && entity.hurtTime > 0 && entity instanceof Player) {
             double angle = Math.toRadians(entity.getYRot() + entity.getHurtDir());
             Vec3 towardAttacker = new Vec3(Math.cos(angle), 0, Math.sin(angle));
             if (towardAttacker.lengthSqr() > 0.5) direction = towardAttacker.scale(-1).normalize();
@@ -108,7 +109,8 @@ public final class HitContext {
         } else if (weapon == Weapon.FALL) {
             direction = null;
         }
-        boolean overkill = damage >= healthBefore * 2.0f && damage >= healthBefore + 4.0f && healthBefore > 0;
+        boolean killed = healthBefore > 0 && damage >= healthBefore;
+        boolean overkill = killed && damage >= max * OVERKILL_SHARE;
 
         float charge = 1.0f;
         Vec3 wound = null;
@@ -121,7 +123,8 @@ public final class HitContext {
             if (lastHitPoint != null) wound = clampToBody(entity, lastHitPoint);
             smash = weapon == Weapon.MACE && lastSmash;
         } else if (weapon == Weapon.MACE && !ownSwing) {
-            smash = damage >= SMASH_DAMAGE;
+            smash = damage >= SMASH_DAMAGE
+                    || killed && attacker instanceof LivingEntity la && !la.onGround() && !la.isFallFlying();
         }
         if (wound == null && weapon != Weapon.EXPLOSION && weapon != Weapon.FALL) {
             if (direct != null && direct != attacker) {

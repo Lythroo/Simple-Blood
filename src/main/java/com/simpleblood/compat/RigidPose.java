@@ -14,7 +14,12 @@ public final class RigidPose implements BodyPose {
 
     public RigidPose(RigidPose p, RigidPose last) {
         set(p);
-        this.last = last;
+        if (last == null || last.last == null) {
+            this.last = last;
+        } else {
+            this.last = new RigidPose();
+            this.last.set(last);
+        }
     }
 
     public void set(double[] rows, double tx, double ty, double tz, double bx, double by, double bz) {

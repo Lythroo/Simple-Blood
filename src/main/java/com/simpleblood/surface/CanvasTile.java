@@ -24,6 +24,7 @@ public final class CanvasTile {
 
     static final int MAX_DEPTH = 6;
     private static final int SPREAD_DEPTH = 3;
+    private static final int OVERFLOW_REACH = 64;
 
     public record Key(long pos, Direction face, int box) {}
 
@@ -319,7 +320,10 @@ public final class CanvasTile {
     boolean carry(int px, int py, int colour, int srcBorn, int srcLife, int thinLevel, int now, int lifetime,
                   RandomSource rng, boolean pattern) {
         if (!paintable(px, py)) return false;
-        int i = py * pw + px;
+        int i = roomFor(py * pw + px);
+        if (i < 0) i = py * pw + px;
+        px = i % pw;
+        py = i / pw;
         boolean was = tone[i] != EMPTY;
         int oldBorn = born[i];
         byte oldThin = thin[i];
@@ -424,8 +428,14 @@ public final class CanvasTile {
         } else {
             rgb[i] = com.simpleblood.BloodMix.join(rgb[i], depth[i], l.rgb(), l.depth(),
                     com.simpleblood.BloodMix.wetness(now, born[i], life[i]), spot(px, py), spot(py, px));
-            depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + l.depth());
+            int total = depth[i] + l.depth();
+            depth[i] = (byte) Math.min(MAX_DEPTH, total);
             born[i] = Math.max(born[i], l.born());
+            for (int extra = total - MAX_DEPTH; extra > 0 && !powder[i]; extra--) {
+                int j = roomFor(i);
+                if (j < 0) break;
+                overflowInto(j, i, now);
+            }
             dirty = true;
             active = !powder[i];
             lastTouched = now;
@@ -436,6 +446,53 @@ public final class CanvasTile {
         active = !powder[i];
         lastTouched = now;
         return true;
+    }
+
+    private int roomFor(int i) {
+        if (tone[i] == EMPTY || powder[i] || depth[i] < MAX_DEPTH) return i;
+        int[] queue = new int[OVERFLOW_REACH];
+        int head = 0, tail = 0;
+        queue[tail++] = i;
+        while (head < tail) {
+            int at = queue[head++];
+            int x = at % pw, y = at / pw;
+            for (int d = 0; d < 4; d++) {
+                int nx = x + (d == 0 ? 1 : d == 1 ? -1 : 0);
+                int ny = y + (d == 2 ? 1 : d == 3 ? -1 : 0);
+                if (!paintable(nx, ny)) continue;
+                int j = ny * pw + nx;
+                if (queued(queue, tail, j)) continue;
+                if (tone[j] == EMPTY) return j;
+                if (powder[j]) continue;
+                if (depth[j] < MAX_DEPTH) return j;
+                if (tail < queue.length) queue[tail++] = j;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean queued(int[] queue, int size, int j) {
+        for (int k = 0; k < size; k++) if (queue[k] == j) return true;
+        return false;
+    }
+
+    private void overflowInto(int to, int from, int now) {
+        if (tone[to] == EMPTY) {
+            count++;
+            tone[to] = tone[from];
+            depth[to] = 1;
+            born[to] = born[from];
+            life[to] = life[from];
+            thin[to] = thin[from];
+            powder[to] = false;
+            rgb[to] = rgb[from];
+            return;
+        }
+        int x = to % pw, y = to / pw;
+        rgb[to] = com.simpleblood.BloodMix.join(rgb[to], depth[to], rgb[from], 1,
+                com.simpleblood.BloodMix.wetness(now, born[to], life[to]), spot(x, y), spot(y, x));
+        depth[to]++;
+        born[to] = Math.max(born[to], born[from]);
     }
 
     int filledNeighbours(int px, int py) {
@@ -589,6 +646,12 @@ public final class CanvasTile {
             }
         }
         if (mask != null && !mask[i]) return;
+        int room = roomFor(i);
+        if (room >= 0 && room != i) {
+            i = room;
+            px = i % pw;
+            py = i / pw;
+        }
         int mixed = colour;
         if (tone[i] == EMPTY) {
             count++;

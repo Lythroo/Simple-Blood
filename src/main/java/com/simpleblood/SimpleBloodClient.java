@@ -44,6 +44,7 @@ public final class SimpleBloodClient {
 
     public static void clientTick(Minecraft client) {
         Guard.tick(client);
+        Guard.run(Guard.Part.HITS, "hits waiting for their damage event", PendingHits::flush);
         Guard.run(Guard.Part.PARTICLES, "putting back blood AsyncParticles dropped", () -> com.simpleblood.compat.AsyncParticlesTicks.tick(client));
         Guard.run(Guard.Part.OTHER, "the Blood button or /simpleblood", () -> com.simpleblood.gui.ConfigAccess.tick(client));
         Guard.run(Guard.Part.OTHER, "reading your blood colour from your skin", SkinColours::tickOwn);
@@ -65,6 +66,7 @@ public final class SimpleBloodClient {
             com.simpleblood.particle.DebrisPieceParticle.forgetLying();
             WeaponKinds.forget();
             activeBursts.clear();
+            PendingHits.clear();
             if (client.level != null) Guard.reset();
             if (client.level != null && config != null) Guard.run(Guard.Part.OTHER, "matching the mob table to this game", () -> MobTable.sync(config));
         }
@@ -76,6 +78,7 @@ public final class SimpleBloodClient {
         //?}
             return;
         }
+        Guard.run(Guard.Part.PARTICLES, "counting blood particles", com.simpleblood.particle.ParticleCensus::tick);
         Guard.run(Guard.Part.SURFACES, "footprints", () -> com.simpleblood.surface.Footprints.tick(client));
         Guard.run(Guard.Part.HITS, "an exploded creeper's blood", () -> CreeperBlast.tick(client.level));
         Guard.run(Guard.Part.HITS, "Physics Mod ragdolls bleeding", () -> com.simpleblood.compat.PhysicsModRagdolls.tick(client.level));

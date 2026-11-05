@@ -94,21 +94,23 @@ public final class Guard {
             int i = part.ordinal();
             if (part.fuse) OFF[i].set(true);
             if (part == Part.SCREEN) closeScreen = true;
-            String report = report(part, doing, t);
+            String report = null;
             long now = System.currentTimeMillis();
             long last = LAST_LOG[i].get();
             if (now - last >= LOG_INTERVAL_MS && LAST_LOG[i].compareAndSet(last, now)) {
+                report = report(part, doing, t);
                 SimpleBlood.LOGGER.error("Simple Blood: error in {} ({}). The game keeps running; {} is now off. Full report:\n{}",
                         part.label, doing, part.fuse ? "that part" : "nothing", report);
+                synchronized (REPORTS) {
+                    REPORTS.add(report);
+                    if (REPORTS.size() > 20) REPORTS.remove(0);
+                }
+                writeFile();
             } else {
                 SimpleBlood.LOGGER.warn("Simple Blood: another error in {} ({}): {}", part.label, doing, t.toString());
             }
-            synchronized (REPORTS) {
-                REPORTS.add(report);
-                if (REPORTS.size() > 20) REPORTS.remove(0);
-            }
-            writeFile();
             if (!TOLD[i].getAndSet(true)) {
+                if (report == null) report = report(part, doing, t);
                 PENDING.addAll(message(part, report));
                 RenderThread.run(Guard::toast);
             }

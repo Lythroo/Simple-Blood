@@ -213,7 +213,7 @@ public final class PhysicsModRagdolls {
         if (!enabled() || !(entity.level() instanceof ClientLevel level)) return;
         for (Death d : DEATHS) if (d.entityId() == entity.getId()) return;
         DEATHS.add(deathOf(entity, level));
-        SimpleBlood.LOGGER.info("[decap] death told: {}", entity.getType());
+        SimpleBlood.LOGGER.debug("[decap] death told: {}", entity.getType());
         if (DEATHS.size() > 64) DEATHS.remove(0);
     }
 
@@ -372,7 +372,7 @@ public final class PhysicsModRagdolls {
             b.linkRest = rests.stream().mapToDouble(Double::doubleValue).toArray();
             b.linkStretch = new int[b.links.length];
             b.linkSource = sources.toArray(new String[0]);
-            SimpleBlood.LOGGER.info("[decap] {} ragdoll watched: {} parts, {} joints, anchors {}",
+            SimpleBlood.LOGGER.debug("[decap] {} ragdoll watched: {} parts, {} joints, anchors {}",
                     b.death.type(), b.firstRigids.size(), joints.size(), sources);
             return;
         }
@@ -399,7 +399,7 @@ public final class PhysicsModRagdolls {
                     bodyLocal = local(mid.subtract(bodyWas), turn.apply(body));
                     pieceLocal = local(mid.subtract(pieceWas), turn.apply(piece));
                 }
-                SimpleBlood.LOGGER.info("[decap] {} joint {}-{} tore ({}, {} still joined to the body), wound {} blocks off the body's middle, {} off the piece's",
+                SimpleBlood.LOGGER.debug("[decap] {} joint {}-{} tore ({}, {} still joined to the body), wound {} blocks off the body's middle, {} off the piece's",
                         b.death.type(), body, piece, gone ? "taken away" : "broken", joinedCount(b, body),
                         String.format(java.util.Locale.ROOT, "%.2f", bodyLocal.length()),
                         String.format(java.util.Locale.ROOT, "%.2f", pieceLocal.length()));
@@ -705,7 +705,7 @@ public final class PhysicsModRagdolls {
                     giveUpLater(ragdoll, now);
                     if (SEEN.contains(ragdoll)) {
                         com.simpleblood.Tally.count("ragdoll.unmatched");
-                        SimpleBlood.LOGGER.info("[decap] a ragdoll matched no death near it and is left alone ({} deaths waiting)", DEATHS.size());
+                        SimpleBlood.LOGGER.debug("[decap] a ragdoll matched no death near it and is left alone ({} deaths waiting)", DEATHS.size());
                     }
                     continue;
                 }
@@ -714,7 +714,7 @@ public final class PhysicsModRagdolls {
                 boolean breaks = breakableRagdoll != null && breakableRagdoll.isInstance(ragdoll);
                 BLEEDING.add(new Bleeding(death, now, breaks, ragdoll, null));
                 com.simpleblood.Tally.count("ragdoll.matched");
-                SimpleBlood.LOGGER.info("[decap] {} ragdoll matched to its death ({}, {} parts)", death.type(), breaks ? "breakable" : "whole", rigids.size());
+                SimpleBlood.LOGGER.debug("[decap] {} ragdoll matched to its death ({}, {} parts)", death.type(), breaks ? "breakable" : "whole", rigids.size());
                 List<com.simpleblood.mob.RigidCoats.Limb> limbs = new ArrayList<>(rigids.size());
                 for (Object rigid : rigids) limbs.add(new PhysicsLimb(rigid, world));
                 com.simpleblood.mob.RigidCoats.attach(death.entityId(), limbs);
@@ -744,7 +744,7 @@ public final class PhysicsModRagdolls {
                 DEATHS.remove(death);
                 BLEEDING.add(new Bleeding(death, now, true, null, pieces));
                 com.simpleblood.Tally.count("ragdoll.pieces");
-                SimpleBlood.LOGGER.info("[decap] {} matched to {} loose pieces", death.type(), pieces.size());
+                SimpleBlood.LOGGER.debug("[decap] {} matched to {} loose pieces", death.type(), pieces.size());
                 List<com.simpleblood.mob.RigidCoats.Limb> limbs = new ArrayList<>(pieces.size());
                 for (Object rigid : pieces) limbs.add(new PhysicsLimb(rigid, world));
                 com.simpleblood.mob.RigidCoats.attach(death.entityId(), limbs);
@@ -1129,7 +1129,7 @@ public final class PhysicsModRagdolls {
             for (Object piece : b.pieces) {
                 if (!rigids.contains(piece)) continue;
                 it.remove();
-                SimpleBlood.LOGGER.info("[decap] {} ragdoll took back its death from its own bodies, taken as loose pieces a frame early", b.death.type());
+                SimpleBlood.LOGGER.debug("[decap] {} ragdoll took back its death from its own bodies, taken as loose pieces a frame early", b.death.type());
                 return b.death;
             }
         }
@@ -1146,7 +1146,7 @@ public final class PhysicsModRagdolls {
             if (dd < bestD) { bestD = dd; best = e; }
         }
         if (best == null) return null;
-        SimpleBlood.LOGGER.info("[decap] a ragdoll had no death told for it: matched to the dying {} lying there", best.getType());
+        SimpleBlood.LOGGER.debug("[decap] a ragdoll had no death told for it: matched to the dying {} lying there", best.getType());
         return deathOf(best, level);
     }
 

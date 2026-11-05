@@ -163,11 +163,12 @@ public final class SurfaceRenderer {
 
         double cxv = u.y * v.z - u.z * v.y, cyv = u.z * v.x - u.x * v.z, czv = u.x * v.y - u.y * v.x;
         boolean flip = (cxv * nx + cyv * ny + czv * nz) < 0;
-        int inx = (int) Math.round(nx), iny = (int) Math.round(ny), inz = (int) Math.round(nz);
-        if (t.custom) { inx = 0; iny = 1; inz = 0; }
+        double nLen = Math.sqrt(nx * nx + ny * ny + nz * nz);
+        if (nLen < 1.0e-6) nLen = 1;
+        float inx = (float) (nx / nLen), iny = (float) (ny / nLen), inz = (float) (nz / nLen);
         if (behind) {
             flip = !flip;
-            if (!t.custom) { inx = -inx; iny = -iny; inz = -inz; }
+            inx = -inx; iny = -iny; inz = -inz;
         }
 
         if (!flip) {
@@ -204,7 +205,7 @@ public final class SurfaceRenderer {
     }
 
     private static void vertex(VertexConsumer vc, PoseStack.Pose pose, double x, double y, double z,
-                               float u, float v, int light, int nx, int ny, int nz, int grey) {
+                               float u, float v, int light, float nx, float ny, float nz, int grey) {
         //? if 1.20.1 {
         /*vc.vertex(pose.pose(), (float) x, (float) y, (float) z)
                 .color(grey, grey, grey, 255)

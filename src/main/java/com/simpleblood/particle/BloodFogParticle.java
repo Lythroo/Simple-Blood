@@ -73,6 +73,7 @@ public class BloodFogParticle extends SingleQuadParticle implements DrawnBeforeW
     private float initialSubmersionDepth;
 
     private boolean counted;
+    private ParticleCensus.Stamp census;
 
     private final boolean shaders = com.simpleblood.compat.ShaderPacks.inUse();
 
@@ -109,7 +110,7 @@ public class BloodFogParticle extends SingleQuadParticle implements DrawnBeforeW
         *///?} else {
         super(world, x, y, z, velX, velY, velZ, spriteProvider.get(0, 7));
         //?}
-        BloodParticle.countBirth();
+        this.census = BloodParticle.countBirth(this);
         this.counted = true;
 
         this.spriteProvider = spriteProvider;
@@ -166,6 +167,7 @@ public class BloodFogParticle extends SingleQuadParticle implements DrawnBeforeW
     @Override
     public void tick() {
         ticked = true;
+        census.ticked();
         if (!com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.PARTICLES)) {
             this.remove();
             return;

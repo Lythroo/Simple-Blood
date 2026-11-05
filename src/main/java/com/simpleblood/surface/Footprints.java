@@ -52,6 +52,8 @@ public final class Footprints {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (level == null || cfg == null) {
             FEET.clear();
+            LANDINGS.clear();
+            trackedLevel = null;
             return;
         }
         if (level != trackedLevel) {
@@ -395,14 +397,19 @@ public final class Footprints {
     static CanvasTile topTile(ClientLevel level, Vec3 p, Map<BlockPos, CanvasTile> cache, boolean create) {
         BlockPos key = BlockPos.containing(p.x, p.y - 0.02, p.z);
         CanvasTile cached = cache.get(key);
-        if (cached != null || (!create && cache.containsKey(key))) return cached;
+        if (cached != null) {
+            Vec3 on = hitPoint(cached, p);
+            if (cached.inside(cached.pixelX(on), cached.pixelY(on))) return cached;
+        } else if (!create && cache.containsKey(key)) {
+            return null;
+        }
         BloodSurfaces.Hit hit = BloodSurfaces.trace(level, p.add(0, 0.25, 0), p.add(0, -0.45, 0));
         CanvasTile t = null;
         if (hit != null && hit.face() == Direction.UP && Math.abs(hit.point().y - p.y) < 0.35) {
             t = BloodSurfaces.topTile(level, hit, create);
             if (t != null && (t.custom || t.face != Direction.UP)) t = null;
         }
-        cache.put(key, t);
+        if (t != null || cached == null) cache.put(key, t);
         return t;
     }
 

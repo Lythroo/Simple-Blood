@@ -158,10 +158,16 @@ public final class Presets {
     }
 
     private static void sound(SimpleBloodConfig c, int volume, int pitch, boolean landing, boolean footsteps) {
+        SimpleBloodConfig.AudioSettings d = new SimpleBloodConfig.AudioSettings();
         c.audio.soundVolume = volume;
         c.audio.soundPitch = pitch;
-        c.audio.landingSounds = landing;
-        c.audio.footstepSounds = footsteps;
+        c.audio.landingVolume = landing ? d.landingVolume : 0;
+        c.audio.pieceVolume = landing ? d.pieceVolume : 0;
+        c.audio.ledgeDripVolume = landing ? d.ledgeDripVolume : 0;
+        c.audio.waterVolume = landing ? d.waterVolume : 0;
+        c.audio.footstepVolume = footsteps ? d.footstepVolume : 0;
+        c.audio.landingSounds = true;
+        c.audio.footstepSounds = true;
     }
 
     public static void defaults(SimpleBloodConfig c) {

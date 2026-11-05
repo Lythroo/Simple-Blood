@@ -1156,6 +1156,11 @@ public final class PreviewScene {
     private static Object actorLevel;
     private static final int STAND_IN_ID = -424242;
 
+    static void forgetWorld() {
+        actor = null;
+        actorLevel = null;
+    }
+
     private net.minecraft.world.entity.LivingEntity actor() {
         net.minecraft.client.multiplayer.ClientLevel level = net.minecraft.client.Minecraft.getInstance().level;
         if (level == null) return null;

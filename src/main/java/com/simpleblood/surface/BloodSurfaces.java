@@ -611,8 +611,8 @@ public final class BloodSurfaces {
         if (tile.facesUp() && s.wallsAndCeilings && edgeDir.getAxis().isHorizontal()
                 && openBeyond(level, tile, edgeDir)) {
             CanvasTile side = tileAt(level, tile.pos, edgeDir, edge);
-            if (side != null) {
-                return pourOver(tile, ex, ey, side, clampPixel(side.pixelX(edge), side.pw), colour, depth);
+            if (side != null && pourOver(tile, ex, ey, side, clampPixel(side.pixelX(edge), side.pw), colour, depth)) {
+                return true;
             }
         }
 
@@ -1761,7 +1761,18 @@ public final class BloodSurfaces {
     }
 
     public static void coatDripstone(ClientLevel level, BlockPos pos, BlockState state, int colour, float amount) {
+        if (com.simpleblood.Capture.active()) return;
         SimpleBloodConfig.SurfaceSettings s = settings();
+        if (!s.enabled || !s.wallsAndCeilings || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
+        if (Minecraft.getInstance().player != null
+                && Minecraft.getInstance().player.distanceToSqr(Vec3.atCenterOf(pos)) > (double) s.renderDistance * s.renderDistance) {
+            return;
+        }
+        if (!RenderThread.on()) {
+            RenderThread.run(() -> coatDripstone(level, pos, state, colour, amount));
+            return;
+        }
+        syncLevel(level);
         int res = s.resolution == 16 ? 16 : 8;
         int lifetime = s.lifetimeSeconds * 20;
         boolean pattern = !"block".equals(s.highlightMode);
@@ -2351,10 +2362,15 @@ public final class BloodSurfaces {
                 if (snap.isEmpty()) return;
                 FALLING.add(new FallingShape(snap, tile, below.point(), landTick));
                 int drops = Math.min(6, Math.max(1, count / 8));
-                for (int i = 0; i < drops; i++) {
-                    int[] px = snap.get(RNG.nextInt(snap.size()));
-                    Vec3 p = tile.pixelCenter(px[0], px[1]);
-                    BloodParticle.spawnDroplet(level, p.x, p.y, p.z, px[2], 0, tile.oy - MAX_FALL);
+                BloodParticle.setVanishOnLanding(true);
+                try {
+                    for (int i = 0; i < drops; i++) {
+                        int[] px = snap.get(RNG.nextInt(snap.size()));
+                        Vec3 p = tile.pixelCenter(px[0], px[1]);
+                        BloodParticle.spawnDroplet(level, p.x, p.y, p.z, px[2], 0, tile.oy - MAX_FALL);
+                    }
+                } finally {
+                    BloodParticle.setVanishOnLanding(false);
                 }
                 return;
             }
@@ -2643,7 +2659,11 @@ public final class BloodSurfaces {
     public static void tick(Minecraft mc) {
         ClientLevel level = mc.level;
         if (level == null) {
-            if (!TILES.isEmpty()) clear();
+            if (!TILES.isEmpty() || trackedLevel != null) {
+                clear();
+                PreviewScene.forgetWorld();
+                trackedLevel = null;
+            }
             if (!PENDING.isEmpty()) {
                 PENDING.clear();
                 pendingCount.set(0);
@@ -2657,7 +2677,6 @@ public final class BloodSurfaces {
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "looking for large water wheels", () -> findWheels(level));
         drainPending(level);
         tickTints(level);
-        if (TILES.isEmpty()) return;
         //? if 1.20.1 {
         /*if (mc.isPaused()) {
         *///?} else {
@@ -2667,6 +2686,7 @@ public final class BloodSurfaces {
             return;
         }
         now++;
+        if (TILES.isEmpty() && FALLING.isEmpty() && RUNS.isEmpty()) return;
 
         SimpleBloodConfig.SurfaceSettings s = settings();
         if (!s.enabled) {
@@ -2726,7 +2746,8 @@ public final class BloodSurfaces {
             remove(tile);
             return false;
         }
-        if (inFluid(level, tile.custom ? tile.pos : tile.pos.relative(tile.face)) || cauldronWater(current) > 0) {
+        BlockPos wetAt = tile.custom || !planeAtBoundary(tile) ? tile.pos : tile.pos.relative(tile.face);
+        if (inFluid(level, wetAt) || cauldronWater(current) > 0) {
             List<int[]> washed = tile.washUnderWater(level);
             if (!washed.isEmpty()) {
                 List<Vec3> at = new ArrayList<>(washed.size());
@@ -2886,12 +2907,22 @@ public final class BloodSurfaces {
         SimpleBlood.LOGGER.debug("Surface blood cleared");
     }
 
+    private static final List<CanvasTile> UPLOADS = new ArrayList<>();
+
     private static void flushUploads() {
         if (TILES.isEmpty()) return;
+        for (CanvasTile t : TILES.values()) {
+            if (t.dirty || t.slot < 0) UPLOADS.add(t);
+        }
+        if (UPLOADS.isEmpty()) return;
         BloodCanvasAtlas atlas = BloodCanvasAtlas.get();
         float opacity = settings().opacity / 100.0f;
-        for (CanvasTile t : TILES.values()) {
-            if (t.dirty || t.slot < 0) t.refresh(atlas, now, opacity, FLOW);
+        try {
+            for (CanvasTile t : UPLOADS) {
+                if (TILES.get(t.key) == t) t.refresh(atlas, now, opacity, FLOW);
+            }
+        } finally {
+            UPLOADS.clear();
         }
     }
 }

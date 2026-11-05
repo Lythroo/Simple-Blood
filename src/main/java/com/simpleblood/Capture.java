@@ -29,38 +29,38 @@ public final class Capture {
 
     public static void run(Sink to, SimpleBloodConfig with, Runnable code) {
         SimpleBloodConfig was = config;
-        Thread wasOwner = owner;
         config = with;
-        owner = Thread.currentThread();
         try {
             run(to, code);
         } finally {
             config = was;
-            owner = wasOwner;
         }
     }
     public static Part part = Part.OTHER;
     public static BloodKind kind;
 
     public static boolean active() {
-        return sink != null;
+        return sink != null && Thread.currentThread() == owner;
     }
 
     public static void run(Sink to, Runnable code) {
         Sink was = sink;
+        Thread wasOwner = owner;
         Part wasPart = part;
         sink = to;
+        owner = Thread.currentThread();
         try {
             code.run();
         } finally {
             sink = was;
+            owner = wasOwner;
             part = wasPart;
             BloodParticle.resetSpawnState();
         }
     }
 
     public static boolean take(net.minecraft.core.particles.ParticleOptions type, double x, double y, double z, double vx, double vy, double vz) {
-        if (sink == null) return false;
+        if (!active()) return false;
         BloodColor.Color c = BloodParticle.currentBloodColor();
         int rgb = c == null ? 0x8A0707 : ((int) (c.red * 255) << 16) | ((int) (c.green * 255) << 8) | (int) (c.blue * 255);
         sink.particle(type, x, y, z, vx, vy, vz, rgb, BloodParticle.ballisticSpawn());

@@ -44,6 +44,7 @@ public class EmberParticle extends SingleQuadParticle {
     private boolean resting;
     private boolean glowing = true;
     private boolean counted;
+    private ParticleCensus.Stamp census;
 
     protected EmberParticle(ClientLevel world, double x, double y, double z,
                             double velX, double velY, double velZ,
@@ -55,7 +56,7 @@ public class EmberParticle extends SingleQuadParticle {
         *///?} else {
         super(world, x, y, z, velX, velY, velZ, sprite);
         //?}
-        BloodParticle.countBirth();
+        this.census = BloodParticle.countBirth(this);
         this.counted = true;
         this.sprites = sprites;
 
@@ -108,6 +109,7 @@ public class EmberParticle extends SingleQuadParticle {
     @Override
     public void tick() {
         ticked = true;
+        census.ticked();
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;
@@ -118,6 +120,25 @@ public class EmberParticle extends SingleQuadParticle {
             Guard.fail(Guard.Part.PARTICLES, "an ember", t);
             this.remove();
         }
+    }
+
+    @Override
+    public void move(double dx, double dy, double dz) {
+        double ox = dx, oy = dy, oz = dz;
+        if (this.hasPhysics && (dx != 0 || dy != 0 || dz != 0) && dx * dx + dy * dy + dz * dz < 10000.0) {
+            Vec3 free = net.minecraft.world.entity.Entity.collideBoundingBox((net.minecraft.world.entity.Entity) null, new Vec3(dx, dy, dz), getBoundingBox(), level, java.util.List.of());
+            dx = free.x;
+            dy = free.y;
+            dz = free.z;
+        }
+        if (dx != 0 || dy != 0 || dz != 0) {
+            setBoundingBox(getBoundingBox().move(dx, dy, dz));
+            setLocationFromBoundingbox();
+        }
+        this.onGround = oy != dy && oy < 0;
+        if (oy != dy && oy > 0) this.yd = 0;
+        if (ox != dx) this.xd = 0;
+        if (oz != dz) this.zd = 0;
     }
 
     private void tickEmber() {
@@ -151,7 +172,7 @@ public class EmberParticle extends SingleQuadParticle {
                     resting = true;
                     xd = yd = zd = 0;
                 }
-            } else if (x == xo && y == yo && z == zo) {
+            } else if (x == xo && y == yo && z == zo && wantY <= 0) {
                 resting = true;
             }
         }

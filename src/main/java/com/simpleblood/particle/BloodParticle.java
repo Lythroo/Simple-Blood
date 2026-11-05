@@ -143,6 +143,8 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
     }
 
     private final boolean blown = spawnBlown.get();
+    private long madeAt = Long.MIN_VALUE;
+    private int lateTicks = -1;
 
     public static void setThrowOfMob(float speed, float up) {
         spawnThrowSpeed.set(speed);
@@ -192,12 +194,19 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         return cfg == null || alive.get() < cfg.particleBudget();
     }
 
-    static void countBirth() { alive.incrementAndGet(); }
+    static ParticleCensus.Stamp countBirth(net.minecraft.client.particle.Particle particle) {
+        alive.incrementAndGet();
+        return ParticleCensus.join(particle);
+    }
     static void countDeath() { alive.updateAndGet(n -> Math.max(0, n - 1)); }
 
-    public static void resetBudget() { alive.set(0); }
+    public static void resetBudget() {
+        alive.set(0);
+        ParticleCensus.clear();
+    }
 
     private boolean counted;
+    private ParticleCensus.Stamp census;
 
     private static final ThreadLocal<Integer> runoffDepth = ThreadLocal.withInitial(() -> 0);
     private static final ThreadLocal<Integer> spawnCarried = ThreadLocal.withInitial(() -> 0);
@@ -377,8 +386,9 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         //?}
         com.simpleblood.Tally.count("particle.blood");
 
-        countBirth();
+        this.census = countBirth(this);
         this.counted = true;
+        this.madeAt = world.getGameTime();
         if (spawnExact.get()) {
             this.xd = velX;
             this.yd = velY;
@@ -499,6 +509,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
     @Override
     public void tick() {
         ticked = true;
+        census.ticked();
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;
@@ -623,7 +634,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
             }
         }
 
-        if (kind == com.simpleblood.BloodKind.LIQUID && mayPaint && SimpleBloodClient.getConfig().surfaces.enabled
+        if (kind == com.simpleblood.BloodKind.LIQUID && mayPaint && !vanishes && SimpleBloodClient.getConfig().surfaces.enabled
                 && com.simpleblood.surface.BloodSurfaces.inCauldronWater(level, x, y, z)) {
             Vec3 at = new Vec3(x, y, z);
             if (age > 0 && chainDepth == 0) com.simpleblood.BloodSounds.intoWater(level, at);
@@ -684,7 +695,10 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         float dragMult = SimpleBloodClient.getConfig().particleDragMultiplier();
 
         yd -= BASE_GRAVITY * gravityMult;
-        if (blown) com.simpleblood.Blasts.gust(level, x, y, z, this);
+        if (blown) {
+            if (lateTicks < 0) lateTicks = madeAt == Long.MIN_VALUE ? 0 : (int) Math.max(0, Math.min(40, level.getGameTime() - madeAt - 1));
+            com.simpleblood.Blasts.gust(level, x, y, z, this, lateTicks);
+        }
 
         float dragMultiplier = Math.max(0f, 1f - (1f - BASE_DRAG) * dragMult);
 
@@ -700,7 +714,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
                 || Math.abs((y - prevY) - wantY) > 1.0e-6
                 || Math.abs((z - prevZ) - wantZ) > 1.0e-6;
 
-        if (!blocked && !isOnGround && kind.paintsSurfaces() && mayPaint && SimpleBloodClient.getConfig().surfaces.enabled) {
+        if (!blocked && !isOnGround && kind.paintsSurfaces() && mayPaint && !vanishes && SimpleBloodClient.getConfig().surfaces.enabled) {
             BlockPos here = BlockPos.containing(x, y, z);
             boolean entered = !here.equals(BlockPos.containing(prevX, prevY, prevZ)) || age == 1;
             BlockState hereState = level.getBlockState(here);

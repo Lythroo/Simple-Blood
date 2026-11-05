@@ -65,11 +65,11 @@ public final class Blasts {
         void blow(double dx, double dy, double dz);
     }
 
-    public static void gust(Level level, double x, double y, double z, Gusted drop) {
+    public static void gust(Level level, double x, double y, double z, Gusted drop, int late) {
         long now = level.getGameTime();
-        if (now > blowsUntil || levelRef.get() != level) return;
+        if (now - late > blowsUntil || levelRef.get() != level) return;
         for (Blast b : recent) {
-            long age = now - b.tick();
+            long age = now - late - b.tick();
             if (age < 0 || age >= GUST_TICKS) continue;
             double dx = x - b.centre().x, dy = y - b.centre().y, dz = z - b.centre().z;
             double d2 = dx * dx + dy * dy + dz * dz, reach = b.radius() * REACH;

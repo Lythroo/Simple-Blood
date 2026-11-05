@@ -79,6 +79,12 @@ public class SimpleBloodConfig {
         }
     }
 
+    public static void saveOnDisk(java.util.function.Consumer<SimpleBloodConfig> change) {
+        SimpleBloodConfig onDisk = load();
+        change.accept(onDisk);
+        save(onDisk);
+    }
+
     public static SimpleBloodConfig load() {
         if (CONFIG_PATH == null || !Files.exists(CONFIG_PATH)) {
             SimpleBlood.LOGGER.info("Config file not found, using defaults");
@@ -140,6 +146,8 @@ public class SimpleBloodConfig {
         if (directional == null) directional = new DirectionalSettings();
         if (vanillaEntities == null) vanillaEntities = new VanillaEntities();
         if (moddedEntities == null) moddedEntities = new ModdedEntities();
+        if (vanillaEntities.entities == null) vanillaEntities.entities = new HashMap<>();
+        if (moddedEntities.customEntities == null) moddedEntities.customEntities = new HashMap<>();
     }
 
     public boolean globalEnabled() { return general.modEnabled; }

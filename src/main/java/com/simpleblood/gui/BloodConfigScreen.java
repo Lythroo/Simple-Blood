@@ -545,6 +545,11 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         try {
             SimpleBloodConfig old = GSON.fromJson(backup, SimpleBloodConfig.class);
             old.vanillaEntities.ensureDefaults();
+            SimpleBloodConfig now = SimpleBloodClient.getConfig();
+            if (now != null) {
+                old.player.skinColourAdopted = now.player.skinColourAdopted;
+                old.player.skinKindAdopted = now.player.skinKindAdopted;
+            }
             SimpleBloodClient.setConfig(old);
         } catch (Exception e) {
             SimpleBlood.LOGGER.error("Could not restore config", e);
@@ -581,10 +586,17 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         return changed = differences(mine, base);
     }
 
+    private static final java.util.Set<String> SKIN_RECORDS = java.util.Set.of("skinColourAdopted", "skinKindAdopted");
+
     private static int differences(JsonElement a, JsonElement b) {
         if (a instanceof JsonObject oa && b instanceof JsonObject ob) {
             int n = 0;
-            for (String k : oa.keySet()) n += ob.has(k) ? differences(oa.get(k), ob.get(k)) : 1;
+            java.util.Set<String> keys = new java.util.HashSet<>(oa.keySet());
+            keys.addAll(ob.keySet());
+            for (String k : keys) {
+                if (SKIN_RECORDS.contains(k)) continue;
+                n += oa.has(k) && ob.has(k) ? differences(oa.get(k), ob.get(k)) : 1;
+            }
             return n;
         }
         return java.util.Objects.equals(a, b) ? 0 : 1;

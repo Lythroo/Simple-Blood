@@ -141,9 +141,13 @@ public final class SkinColours {
 
     private static void adopted(int colour, String kind) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        String adoptedKind = kind == null ? "" : kind;
         cfg.player.skinColourAdopted = colour;
-        cfg.player.skinKindAdopted = kind == null ? "" : kind;
-        SimpleBloodConfig.save(cfg);
+        cfg.player.skinKindAdopted = adoptedKind;
+        SimpleBloodConfig.saveOnDisk(onDisk -> {
+            onDisk.player.skinColourAdopted = colour;
+            onDisk.player.skinKindAdopted = adoptedKind;
+        });
     }
 
     private static CompletableFuture<String> profileSkinUrl(Minecraft mc) {
@@ -253,7 +257,7 @@ public final class SkinColours {
             Result result;
             try {
                 OwnSkin own = skin.call();
-                result = putInSkin(own.png, rgb, kindIndex);
+                result = putInSkin(own.png, rgb, kindIndex, uploadedColour != null);
                 if (result == Result.SAVED && upload) {
                     result = upload(Files.readAllBytes(savedSkin(rgb == NONE)), own.slim, token);
                     if (result == Result.UPLOADED) {
@@ -277,7 +281,7 @@ public final class SkinColours {
         return NONE;
     }
 
-    private static Result putInSkin(byte[] png, int colour, int kind) throws Exception {
+    private static Result putInSkin(byte[] png, int colour, int kind, boolean stale) throws Exception {
         try (NativeImage image = NativeImage.read(png)) {
             if (image.getWidth() != 64 || (image.getHeight() != 64 && image.getHeight() != 32)) {
                 throw new IOException("unexpected skin size " + image.getWidth() + "x" + image.getHeight());
@@ -287,9 +291,9 @@ public final class SkinColours {
                 for (int x = 0; x < 64; x++) argb[y * 64 + x] = get(image, x, y);
             }
             if (image.getHeight() == 32) {
-                if (colour == NONE) return Result.NO_COLOUR;
+                if (colour == NONE && !stale) return Result.NO_COLOUR;
                 widen(argb);
-            } else if (carried(argb)[0] == colour && (colour == NONE || carried(argb)[1] == kind)) {
+            } else if (!stale && carried(argb)[0] == colour && (colour == NONE || carried(argb)[1] == kind)) {
                 return colour == NONE ? Result.NO_COLOUR : Result.ALREADY_THERE;
             }
             if (colour == NONE) {

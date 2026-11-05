@@ -38,6 +38,7 @@ public class BloodMistParticle extends SingleQuadParticle {
 
     private final float fullSize;
     private boolean counted;
+    private ParticleCensus.Stamp census;
 
     protected BloodMistParticle(ClientLevel world, double x, double y, double z, double velX, double velY, double velZ,
                                 TextureAtlasSprite sprite, float across, float red, float green, float blue) {
@@ -47,7 +48,7 @@ public class BloodMistParticle extends SingleQuadParticle {
         *///?} else {
         super(world, x, y, z, velX, velY, velZ, sprite);
         //?}
-        BloodParticle.countBirth();
+        this.census = BloodParticle.countBirth(this);
         this.counted = true;
         this.xd = velX;
         this.yd = velY;
@@ -86,6 +87,7 @@ public class BloodMistParticle extends SingleQuadParticle {
     @Override
     public void tick() {
         ticked = true;
+        census.ticked();
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;

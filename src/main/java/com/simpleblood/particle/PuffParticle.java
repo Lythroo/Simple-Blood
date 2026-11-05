@@ -28,6 +28,7 @@ public class PuffParticle extends SingleQuadParticle {
     private final boolean wind;
     private final float startAlpha;
     private boolean counted;
+    private ParticleCensus.Stamp census;
 
     protected PuffParticle(ClientLevel world, double x, double y, double z,
                            double velX, double velY, double velZ,
@@ -39,7 +40,7 @@ public class PuffParticle extends SingleQuadParticle {
         *///?} else {
         super(world, x, y, z, velX, velY, velZ, sprite);
         //?}
-        BloodParticle.countBirth();
+        this.census = BloodParticle.countBirth(this);
         this.counted = true;
         this.sprites = sprites;
         this.wind = wind;
@@ -93,6 +94,7 @@ public class PuffParticle extends SingleQuadParticle {
     @Override
     public void tick() {
         ticked = true;
+        census.ticked();
         if (!Guard.ok(Guard.Part.PARTICLES)) {
             this.remove();
             return;

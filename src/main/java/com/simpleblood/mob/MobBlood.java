@@ -182,7 +182,7 @@ public final class MobBlood {
     }
 
     private static final class Corpse {
-        final long since;
+        int age;
         final int colour;
         Vec3 pos;
         float width, height;
@@ -191,13 +191,14 @@ public final class MobBlood {
         int bled;
 
         Corpse(LivingEntity e, int colour) {
-            this.since = System.currentTimeMillis();
             this.colour = colour;
             this.pos = e.position();
             this.width = e.getBbWidth();
             this.height = e.getBbHeight();
         }
     }
+
+    private static final int SETTLE_TICKS = 60;
 
     private static final Map<Integer, Corpse> CORPSES = new HashMap<>();
 
@@ -240,7 +241,6 @@ public final class MobBlood {
 
     private static void tickCorpses(ClientLevel level) {
         if (CORPSES.isEmpty()) return;
-        long now = System.currentTimeMillis();
         Iterator<Map.Entry<Integer, Corpse>> it = CORPSES.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<Integer, Corpse> entry = it.next();
@@ -254,8 +254,9 @@ public final class MobBlood {
                 continue;
             }
             c.pos = body.position();
+            c.age++;
             if (c.seeds == null) {
-                if ((body.onGround() && body.deathTime >= 8) || now - c.since > 3000) settle(level, c);
+                if ((body.onGround() && body.deathTime >= 8) || c.age > SETTLE_TICKS) settle(level, c);
                 continue;
             }
             bleed(level, c);
@@ -590,16 +591,16 @@ public final class MobBlood {
             clear();
             lastLevel = level;
         }
-        if (level != null) tickCorpses(level);
+        //? if 1.20.1 {
+        /*boolean still = mc.isPaused();
+        *///?} else {
+        boolean still = mc.isPaused() || level != null && !level.tickRateManager().runsNormally();
+        //?}
+        if (level != null && !still) tickCorpses(level);
         if (level != null) noteBodies(level);
         RigidCoats.tick();
         ModelFacesOfMob.shaped = RAGDOLL_MODELS;
         if (level == null || COATS.isEmpty()) return;
-        //? if 1.20.1 {
-        /*boolean still = mc.isPaused();
-        *///?} else {
-        boolean still = mc.isPaused() || !level.tickRateManager().runsNormally();
-        //?}
         BloodCanvasAtlas atlas = BloodCanvasAtlas.get();
         float opacity = SimpleBloodClient.getConfig().surfaces.opacity / 100f;
         if (!still) {

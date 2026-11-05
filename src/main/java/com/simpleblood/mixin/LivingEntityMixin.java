@@ -25,6 +25,9 @@ public class LivingEntityMixin implements BloodEntityAccess {
     private float simpleblood$lastHealth = Float.NaN;
 
     @Unique
+    private float simpleblood$healthBeforeDrop = Float.NaN;
+
+    @Unique
     private long simpleblood$lastDamageTime = 0L;
 
     @Unique
@@ -41,6 +44,12 @@ public class LivingEntityMixin implements BloodEntityAccess {
 
     @Unique
     private int simpleblood$lastContextTick = -1000;
+
+    @Unique
+    private float simpleblood$pendingDamage = Float.NaN;
+
+    @Unique
+    private float simpleblood$pendingPrevious, simpleblood$pendingHealth;
 
     @Override
     public long simpleblood$getLastDamageTime() {
@@ -86,6 +95,21 @@ public class LivingEntityMixin implements BloodEntityAccess {
     private void simpleblood$captureDamageSource(DamageSource source, CallbackInfo ci) {
         simpleblood$recentSource = source;
         simpleblood$recentSourceTick = ((LivingEntity) (Object) this).tickCount;
+        if (Float.isNaN(simpleblood$pendingDamage) || !com.simpleblood.RenderThread.on()) return;
+        try {
+            simpleblood$flushPendingHit();
+        } catch (Throwable t) {
+            com.simpleblood.Guard.fail(com.simpleblood.Guard.Part.HITS, "noticing a hit", t);
+        }
+    }
+
+    @Override
+    public void simpleblood$flushPendingHit() {
+        if (Float.isNaN(simpleblood$pendingDamage)) return;
+        float damage = simpleblood$pendingDamage, previous = simpleblood$pendingPrevious, health = simpleblood$pendingHealth;
+        simpleblood$pendingDamage = Float.NaN;
+        LivingEntity entity = (LivingEntity) (Object) this;
+        if (entity.level() instanceof ClientLevel clientWorld) simpleblood$hit(clientWorld, entity, damage, previous, health);
     }
 
     @Inject(method = "onSyncedDataUpdated", at = @At("HEAD"))
@@ -123,11 +147,35 @@ public class LivingEntityMixin implements BloodEntityAccess {
 
         float damage = previous - currentHealth;
         simpleblood$lastHealth = currentHealth;
+        simpleblood$healthBeforeDrop = previous;
 
         if (entity.tickCount < 10 || currentHealth >= entity.getMaxHealth()) {
             return;
         }
 
+        if (currentHealth <= 0.0f && previous > 0.0f && SimpleBlood.shouldEntityBleed(entity)) {
+            com.simpleblood.compat.PhysicsModRagdolls.entityDied(entity);
+        }
+
+        int age = entity.tickCount - simpleblood$recentSourceTick;
+        if (simpleblood$recentSource == null || age < 0 || age > 2) {
+            if (!Float.isNaN(simpleblood$pendingDamage)) {
+                simpleblood$pendingDamage += damage;
+                simpleblood$pendingHealth = currentHealth;
+                return;
+            }
+            if (com.simpleblood.PendingHits.hold(entity)) {
+                simpleblood$pendingDamage = damage;
+                simpleblood$pendingPrevious = previous;
+                simpleblood$pendingHealth = currentHealth;
+                return;
+            }
+        }
+        simpleblood$hit(clientWorld, entity, damage, previous, currentHealth);
+    }
+
+    @Unique
+    private void simpleblood$hit(ClientLevel clientWorld, LivingEntity entity, float damage, float previous, float currentHealth) {
         int sourceAge = entity.tickCount - simpleblood$recentSourceTick;
         boolean freshSource = simpleblood$recentSource != null && sourceAge >= 0 && sourceAge <= 2;
         if (freshSource) {
@@ -143,13 +191,10 @@ public class LivingEntityMixin implements BloodEntityAccess {
         DamageSource source = freshSource || (simpleblood$recentSource != null && sourceAge >= 0 && sourceAge <= 10)
                 ? simpleblood$recentSource : null;
 
-        if (currentHealth <= 0.0f && previous > 0.0f && SimpleBlood.shouldEntityBleed(entity)) {
-            com.simpleblood.compat.PhysicsModRagdolls.entityDied(entity);
-        }
-
-        boolean playerDied = entity instanceof Player && currentHealth <= 0.0f && previous > 0.0f;
+        boolean died = currentHealth <= 0.0f && previous > 0.0f;
+        boolean playerDied = died && entity instanceof Player;
         long now = System.currentTimeMillis();
-        if (!playerDied && now - simpleblood$lastDamageTime < SimpleBloodClient.getConfig().damageCooldownMs()) {
+        if (!died && now - simpleblood$lastDamageTime < SimpleBloodClient.getConfig().damageCooldownMs()) {
             return;
         }
         simpleblood$lastDamageTime = now;
@@ -175,7 +220,7 @@ public class LivingEntityMixin implements BloodEntityAccess {
             float through = com.simpleblood.ArmorSparks.hit(clientWorld, entity, ctx, source);
             if (through < 1f) com.simpleblood.Tally.count("armor.absorbed");
             SimpleBloodClient.addBurstTask(new ClientBloodBurstTask(clientWorld, entity, ctx).scaled(through));
-            if (!playerDied && through >= 1f) com.simpleblood.Giblets.hit(clientWorld, entity, ctx);
+            if (!died && through >= 1f) com.simpleblood.Giblets.hit(clientWorld, entity, ctx);
             if (!playerDied) com.simpleblood.mob.MobBlood.hit(entity, ctx);
             if (playerDied && cfg.deathBurstEnabled()) {
                 ClientBloodParticleSpawner.spawnBloodOnDeath(clientWorld, entity, ctx);
@@ -208,7 +253,15 @@ public class LivingEntityMixin implements BloodEntityAccess {
             return;
         }
 
-        if (!SimpleBlood.shouldBleedFrom(entity, damageSource)) {
+        simpleblood$flushPendingHit();
+
+        int sourceAge = entity.tickCount - simpleblood$recentSourceTick;
+        boolean freshSource = simpleblood$recentSource != null && sourceAge >= 0 && sourceAge <= 2;
+        DamageSource cause = freshSource ? simpleblood$recentSource : damageSource;
+        if (!SimpleBlood.shouldBleedFrom(entity, cause)) {
+            return;
+        }
+        if (!freshSource && SimpleBlood.isEnvironmentalNoBleed(entity)) {
             return;
         }
 
@@ -227,10 +280,15 @@ public class LivingEntityMixin implements BloodEntityAccess {
         if (SimpleBlood.shouldEntityBleed(entity)) {
             HitContext ctx = simpleblood$lastContext != null && entity.tickCount - simpleblood$lastContextTick <= 2
                     ? simpleblood$lastContext
-                    : HitContext.of(entity, Math.max(1.0f, simpleblood$lastHealth), damageSource, simpleblood$critRecently(),
-                            Float.isNaN(simpleblood$lastHealth) ? entity.getMaxHealth() : simpleblood$lastHealth);
+                    : simpleblood$deathBlow(entity, cause);
             com.simpleblood.Tally.count("death");
             ClientBloodParticleSpawner.spawnBloodOnDeath(clientWorld, entity, ctx);
         }
+    }
+
+    @Unique
+    private HitContext simpleblood$deathBlow(LivingEntity entity, DamageSource cause) {
+        float before = Float.isNaN(simpleblood$healthBeforeDrop) ? entity.getMaxHealth() : simpleblood$healthBeforeDrop;
+        return HitContext.of(entity, Math.max(1.0f, before), cause, simpleblood$critRecently(), before);
     }
 }
