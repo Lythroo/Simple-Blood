@@ -108,6 +108,12 @@ public class ClientBloodParticleSpawner {
                 piece = rng.nextFloat() < (big ? 0.6f : 0.25f) ? BloodParticles.BONE_DUST : BloodParticles.BONE_CHIP;
             }
         }
+        if (BloodParticle.spawnsThrown()) {
+            float speed = BloodParticle.throwSpeedNow(true), up = BloodParticle.throwUpNow(true);
+            vx = BloodParticle.thrown(vx, false, speed, up);
+            vy = BloodParticle.thrown(vy, true, speed, up);
+            vz = BloodParticle.thrown(vz, false, speed, up);
+        }
         create(piece, x, y, z, vx, vy, vz);
     }
 
@@ -152,6 +158,7 @@ public class ClientBloodParticleSpawner {
         BloodParticle.setCurrentBloodColor(bloodColor);
 
         BloodParticle.setEntitySizeMultiplier(SimpleBlood.getParticleSizeMultiplier(entity));
+        BloodParticle.setThrowOfMob(SimpleBlood.getThrowSpeedMultiplier(entity), SimpleBlood.getThrowUpMultiplier(entity));
         BloodParticle.setCurrentKind(SimpleBlood.bloodKindOf(entity));
         BloodParticle.setGlowing(SimpleBlood.bloodGlows(entity));
         BloodParticle.setPaintsSurfaces(SimpleBlood.shouldEntityTransformToStains(entity));

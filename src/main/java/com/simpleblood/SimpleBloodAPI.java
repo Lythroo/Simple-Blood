@@ -79,6 +79,13 @@ import java.util.function.Function;
  * SimpleBloodAPI.spawnSparks(level, at, towardsPlayer);         // sparks and a clank
  * SimpleBloodAPI.stainBody(entity, at, direction, 0x8B0000);    // blood stays on its body
  * SimpleBloodAPI.spawnPool(entity);                             // a pool spreads under it
+ *
+ * // 1.3.0: per-mob throw, your own explosions, your own moving block structures:
+ * SimpleBloodAPI.registerEntityBlood("mymod:giant", new SimpleBloodAPI.BloodSettings()
+ *         .setThrowSpeedMultiplier(1.6f)                        // its drops fly harder...
+ *         .setThrowUpMultiplier(0.5f));                         // ...and lower
+ * SimpleBloodAPI.spawnExplosion(level, centre, 4.0f);           // a client-side blast of your own
+ * SimpleBloodAPI.registerMovingStructures("mymod", myShips);    // blood rides on your ships
  * }</pre>
  *
  * <p>Everything here is client side: call it from your client initializer or client code.
@@ -276,6 +283,31 @@ public final class SimpleBloodAPI {
         return BloodSurfaces.tileCount();
     }
 
+    /**
+     * 1.3.0: an explosion went off at {@code centre} with power {@code radius} (TNT is 4, a
+     * creeper 3), for a blast of your own that the client never hears about from the server.
+     * Mobs it hurts in the next few ticks throw their blood away from it (harder the nearer
+     * they stood) and get blood on the side that faced it, and a creeper lit or about to blow
+     * right at {@code centre} that is gone from the level within a few ticks (the server
+     * removed it: it blew up) bursts in its own blood.
+     *
+     * <p>Not needed for vanilla-style explosions ({@code Level.explode} on the server, which
+     * sends the explode packet): Simple Blood sees those itself. Call it on the client before
+     * the hurt mobs' health drops arrive, or in the same tick. Does nothing on a server level
+     * or when Simple Blood is switched off. Any thread (the work is done on the render thread).
+     */
+    public static void spawnExplosion(Level level, Vec3 centre, float radius) {
+        Guard.run(Guard.Part.API, "spawnExplosion", () -> {
+            if (!(level instanceof ClientLevel client) || centre == null || !(radius > 0)) return;
+            SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+            if (cfg == null || !cfg.globalEnabled()) return;
+            RenderThread.run(() -> Guard.run(Guard.Part.API, "spawnExplosion", () -> {
+                Blasts.heard(client, centre, radius);
+                CreeperBlast.heard(client, centre, radius);
+            }));
+        });
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // ARMOUR AND WEAPONS (1.2.0)
     // ═══════════════════════════════════════════════════════════════════════
@@ -343,6 +375,119 @@ public final class SimpleBloodAPI {
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // MOVING BLOCK STRUCTURES (1.3.0)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * 1.3.0: block structures from your mod that move as one body (ships, flying machines,
+     * moving platforms), so blood on them rides along exactly as it does on Create
+     * contraptions and Sable (Aeronautics) structures: it is drawn where the structure is, it
+     * runs and drips the way gravity falls across the structure as it tilts, drops that fly
+     * into it land on it, and blood that lets go of it keeps its motion.
+     *
+     * <p>It is for structures whose blocks really are in the client's level, somewhere out of
+     * the way (a "plot", like a Valkyrien Skies shipyard or a Sable sub-level), and are drawn
+     * where the structure is through a pose. Blood is painted on those plot blocks and drawn
+     * through the pose you give for them.
+     *
+     * <p>Simple Blood asks a source often (every flying drop, every blood-covered face every
+     * frame), sometimes off the render thread (with AsyncParticles), so answer quickly and
+     * thread-safely, and return null or an empty list as soon as you can tell a position or
+     * move has nothing to do with your structures. A source that throws, or hands out a pose
+     * that throws, is switched off with a line in the log; the game carries on.
+     *
+     * <pre>{@code
+     * SimpleBloodAPI.registerMovingStructures("mymod", new SimpleBloodAPI.MovingStructures() {
+     *     public List<? extends SimpleBloodAPI.MovingStructures.Pose> crossing(ClientLevel level, Vec3 from, Vec3 to) {
+     *         List<SimpleBloodAPI.MovingStructures.Pose> out = new ArrayList<>();
+     *         for (Ship ship : MyShips.near(level, from, to)) out.add(poseOf(ship, 1f));
+     *         return out;
+     *     }
+     *     public SimpleBloodAPI.MovingStructures.Pose drawn(ClientLevel level, BlockPos plot, float partialTick) {
+     *         Ship ship = MyShips.holding(level, plot);
+     *         return ship == null ? null : poseOf(ship, partialTick);
+     *     }
+     *     public SimpleBloodAPI.MovingStructures.Pose logical(ClientLevel level, BlockPos plot) {
+     *         Ship ship = MyShips.holding(level, plot);
+     *         return ship == null ? null : poseOf(ship, 1f);
+     *     }
+     * });
+     * }</pre>
+     */
+    public interface MovingStructures {
+
+        /**
+         * Where a structure stands: from its plot to the world and back. A point of the plot
+         * (a block of the structure where it is stored) is drawn in the world at
+         * {@link #toWorld}; a direction turns with {@link #turn}.
+         */
+        interface Pose {
+            /** A plot point where the structure holds it in the world now. */
+            Vec3 toWorld(Vec3 plot);
+
+            /** A world point into the plot. */
+            Vec3 toPlot(Vec3 world);
+
+            /** A direction (its length kept) turned the way the structure is turned. */
+            Vec3 turn(Vec3 direction);
+
+            /**
+             * A world point into the plot as the structure stood a tick ago. A drop that moved
+             * during the tick is traced against the structure moving too (a falling ship meets
+             * a falling drop). Default: as now (the structure counts as still).
+             */
+            default Vec3 lastToPlot(Vec3 world) {
+                return toPlot(world);
+            }
+
+            /**
+             * Where a plot point was in the world a tick ago: with {@link #toWorld}, its
+             * velocity, which blood letting go of the structure keeps. Default: as now.
+             */
+            default Vec3 lastToWorld(Vec3 plot) {
+                return toWorld(plot);
+            }
+        }
+
+        /**
+         * The structures whose blocks a drop moving from {@code from} to {@code to} (world
+         * points, usually under a block apart) may meet this tick, each with its pose this
+         * tick (and the tick before, see {@link Pose#lastToPlot}). Include any whose bounds
+         * come within a block or two of the move: they may have moved during the tick. Empty
+         * (never null) when none.
+         */
+        java.util.List<? extends Pose> crossing(ClientLevel level, Vec3 from, Vec3 to);
+
+        /**
+         * The pose to draw the blood on block {@code plot} with this frame, if that block lies
+         * in one of your structures' plots ({@code partialTick} between ticks, as the
+         * structure itself is drawn); null for any other block. Render thread.
+         */
+        Pose drawn(ClientLevel level, net.minecraft.core.BlockPos plot, float partialTick);
+
+        /**
+         * The pose this tick of the structure whose plot holds block {@code plot} (how gravity
+         * falls across its blood, where its drips let go), null for any other block.
+         */
+        Pose logical(ClientLevel level, net.minecraft.core.BlockPos plot);
+    }
+
+    /**
+     * 1.3.0: registers (or replaces) a source of moving block structures under a name of your
+     * choice, e.g. your mod id. See {@link MovingStructures}. Client side.
+     */
+    public static void registerMovingStructures(String name, MovingStructures source) {
+        if (name == null || source == null) return;
+        com.simpleblood.surface.MovingBodies.register(name, source);
+        SimpleBlood.LOGGER.info("Registered moving block structures: {}", name);
+    }
+
+    /** 1.3.0: removes the source registered under {@code name}. */
+    public static void unregisterMovingStructures(String name) {
+        if (name != null) com.simpleblood.surface.MovingBodies.unregister(name);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // RESOLVED PER-MOB VALUES (1.2.0)
     // ═══════════════════════════════════════════════════════════════════════
 
@@ -403,6 +548,8 @@ public final class SimpleBloodAPI {
         private Float particleSizeMultiplier = null;
         private Float burstIntensityMultiplier = null;
         private Float dripIntensityMultiplier = null;
+        private Float throwSpeedMultiplier = null;
+        private Float throwUpMultiplier = null;
         private SoundEvent bloodSound = null;
         private Boolean soundEnabled = null;
         private BiPredicate<LivingEntity, DamageSource> bleedPredicate = null;
@@ -555,6 +702,26 @@ public final class SimpleBloodAPI {
             return this;
         }
 
+        /**
+         * 1.3.0: how hard this mob's hit and death drops are thrown, on top of the player's
+         * Drops > Speed setting (1.0 = default, 2.0 twice as fast, 0.5 half as fast). A big
+         * beast can fling its blood far, a small one barely. Clamped to 0..10.
+         */
+        public BloodSettings setThrowSpeedMultiplier(float multiplier) {
+            this.throwSpeedMultiplier = multiplier;
+            return this;
+        }
+
+        /**
+         * 1.3.0: how high this mob's hit and death drops are thrown, on top of the player's
+         * Drops > Upward setting (1.0 = default; only the rising part of a throw is scaled, as
+         * with the setting). Clamped to 0..10.
+         */
+        public BloodSettings setThrowUpMultiplier(float multiplier) {
+            this.throwUpMultiplier = multiplier;
+            return this;
+        }
+
         /** Use a custom sound for this entity's blood instead of the default drip. */
         public BloodSettings setBloodSound(SoundEvent sound) {
             this.bloodSound = sound;
@@ -646,6 +813,10 @@ public final class SimpleBloodAPI {
         public Float getParticleSizeMultiplier() { return particleSizeMultiplier; }
         public Float getBurstIntensityMultiplier() { return burstIntensityMultiplier; }
         public Float getDripIntensityMultiplier() { return dripIntensityMultiplier; }
+        /** 1.3.0: see {@link #setThrowSpeedMultiplier}; null when unset. */
+        public Float getThrowSpeedMultiplier() { return throwSpeedMultiplier; }
+        /** 1.3.0: see {@link #setThrowUpMultiplier}; null when unset. */
+        public Float getThrowUpMultiplier() { return throwUpMultiplier; }
         public SoundEvent getBloodSound() { return bloodSound; }
         public Boolean getSoundEnabled() { return soundEnabled; }
         public BiPredicate<LivingEntity, DamageSource> getBleedPredicate() { return bleedPredicate; }

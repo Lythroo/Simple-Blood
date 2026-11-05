@@ -25,9 +25,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.util.RandomSource;
 
 //? if <=1.21.1 {
-/*public class BloodParticle extends net.minecraft.client.particle.TextureSheetParticle {
+/*public class BloodParticle extends net.minecraft.client.particle.TextureSheetParticle implements com.simpleblood.Blasts.Gusted {
 *///?} else {
-public class BloodParticle extends SingleQuadParticle {
+public class BloodParticle extends SingleQuadParticle implements com.simpleblood.Blasts.Gusted {
 //?}
 
     private static final ThreadLocal<BloodColor.Color> currentBloodColor =
@@ -112,6 +112,9 @@ public class BloodParticle extends SingleQuadParticle {
         spawnVanishes.remove();
         spawnPieceColour.remove();
         spawnThrown.remove();
+        spawnThrowSpeed.remove();
+        spawnThrowUp.remove();
+        spawnBlown.remove();
     }
 
     public static void setCarried(int pixels) {
@@ -130,10 +133,32 @@ public class BloodParticle extends SingleQuadParticle {
         return spawnThrown.get();
     }
 
-    public static double[] throwVelocity(double vx, double vy, double vz) {
-        com.simpleblood.SimpleBloodConfig c = SimpleBloodClient.getConfig();
-        float speed = c.throwSpeedMultiplier(), up = c.throwUpMultiplier();
-        return new double[]{vx * speed, vy > 0 ? vy * speed * up : vy * speed, vz * speed};
+    private static final ThreadLocal<Float> spawnThrowSpeed = ThreadLocal.withInitial(() -> 1f);
+    private static final ThreadLocal<Float> spawnThrowUp = ThreadLocal.withInitial(() -> 1f);
+
+    private static final ThreadLocal<Boolean> spawnBlown = ThreadLocal.withInitial(() -> true);
+
+    public static void setBlownByBlasts(boolean blown) {
+        spawnBlown.set(blown);
+    }
+
+    private final boolean blown = spawnBlown.get();
+
+    public static void setThrowOfMob(float speed, float up) {
+        spawnThrowSpeed.set(speed);
+        spawnThrowUp.set(up);
+    }
+
+    public static float throwSpeedNow(boolean ofMob) {
+        return SimpleBloodClient.getConfig().throwSpeedMultiplier() * (ofMob ? spawnThrowSpeed.get() : 1f);
+    }
+
+    public static float throwUpNow(boolean ofMob) {
+        return SimpleBloodClient.getConfig().throwUpMultiplier() * (ofMob ? spawnThrowUp.get() : 1f);
+    }
+
+    public static double thrown(double v, boolean vertical, float speed, float up) {
+        return vertical && v > 0 ? v * speed * up : v * speed;
     }
 
     private static final ThreadLocal<Integer> spawnPieceColour = ThreadLocal.withInitial(() -> -1);
@@ -333,9 +358,6 @@ public class BloodParticle extends SingleQuadParticle {
     private final boolean shouldMeltInWater;
     private float targetScale;
     private Vec3 born;
-    static final int FRAMES = 4;
-    private SpriteSet frames;
-    private int frameCount, firstFrame, frameOffset, ticksPerFrame = 3;
     private SpriteSet flight;
     private final int[] shown = {-1, -1};
     private float drawScale = 1f;
@@ -522,25 +544,22 @@ public class BloodParticle extends SingleQuadParticle {
         return true;
     }
 
-    void animate(SpriteSet frames, int shapes, int ticksPerFrame, net.minecraft.util.RandomSource random) {
-        this.frames = frames;
-        this.frameCount = shapes * FRAMES;
-        this.firstFrame = random.nextInt(shapes) * FRAMES;
-        this.ticksPerFrame = ticksPerFrame;
-        this.frameOffset = random.nextInt(FRAMES * ticksPerFrame);
-        nextFrame();
+    @Override
+    public void blow(double dx, double dy, double dz) {
+        xd += dx;
+        yd += dy;
+        zd += dz;
     }
 
     protected void throwHarder() {
         if (!spawnThrown.get()) return;
-        double[] v = throwVelocity(xd, yd, zd);
-        this.xd = v[0];
-        this.yd = v[1];
-        this.zd = v[2];
+        float speed = throwSpeedNow(true), up = throwUpNow(true);
+        this.xd = thrown(xd, false, speed, up);
+        this.yd = thrown(yd, true, speed, up);
+        this.zd = thrown(zd, false, speed, up);
     }
 
     void showFlight(SpriteSet sprites) {
-        this.frames = null;
         this.flight = sprites;
         setSprite(sprites.get(0, BloodSprayParticle.SPRITES - 1));
     }
@@ -591,15 +610,8 @@ public class BloodParticle extends SingleQuadParticle {
     }
     //?}
 
-    private void nextFrame() {
-        if (frames == null) return;
-        int frame = ((age + frameOffset) / ticksPerFrame) % FRAMES;
-        setSprite(frames.get(firstFrame + frame, frameCount - 1));
-    }
-
     private void tickBlood() {
         if (born == null) born = new Vec3(x, y, z);
-        if (!stopped && soakFrom < 0) nextFrame();
         if (!shouldMeltInWater) {
             boolean inWater = isInWater();
 
@@ -672,6 +684,7 @@ public class BloodParticle extends SingleQuadParticle {
         float dragMult = SimpleBloodClient.getConfig().particleDragMultiplier();
 
         yd -= BASE_GRAVITY * gravityMult;
+        if (blown) com.simpleblood.Blasts.gust(level, x, y, z, this);
 
         float dragMultiplier = Math.max(0f, 1f - (1f - BASE_DRAG) * dragMult);
 

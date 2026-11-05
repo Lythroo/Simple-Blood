@@ -236,27 +236,29 @@ public final class SimpleBlood {
     }
 
     public static String armorOf(LivingEntity entity) {
-        Identifier id = idOf(entity);
-        SimpleBloodConfig.ModdedEntities.ModdedEntitySettings modded = moddedSettings(id);
-        if (modded != null) return modded.armor == null ? "auto" : modded.armor;
-        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
-        if (cfg != null) {
-            SimpleBloodConfig.VanillaEntities.EntitySettings vanilla = cfg.vanillaEntities.getSettings(id.getPath());
-            if (vanilla != null && vanilla.armor != null) return vanilla.armor;
-        }
-        return "auto";
+        return tableValue(entity, m -> m.armor, v -> v.armor, "auto");
     }
 
     public static String gibletsOf(LivingEntity entity) {
+        return tableValue(entity, m -> m.giblets, v -> v.giblets, GibletColours.AUTO);
+    }
+
+    private static String tableValue(LivingEntity entity,
+                                     java.util.function.Function<SimpleBloodConfig.ModdedEntities.ModdedEntitySettings, String> moddedColumn,
+                                     java.util.function.Function<SimpleBloodConfig.VanillaEntities.EntitySettings, String> vanillaColumn,
+                                     String fallback) {
         Identifier id = idOf(entity);
         SimpleBloodConfig.ModdedEntities.ModdedEntitySettings modded = moddedSettings(id);
-        if (modded != null) return modded.giblets == null ? GibletColours.AUTO : modded.giblets;
+        if (modded != null) {
+            String value = moddedColumn.apply(modded);
+            return value == null ? fallback : value;
+        }
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (cfg != null) {
             SimpleBloodConfig.VanillaEntities.EntitySettings vanilla = cfg.vanillaEntities.getSettings(id.getPath());
-            if (vanilla != null && vanilla.giblets != null) return vanilla.giblets;
+            if (vanilla != null && vanillaColumn.apply(vanilla) != null) return vanillaColumn.apply(vanilla);
         }
-        return GibletColours.AUTO;
+        return fallback;
     }
 
     public static boolean bloodGlows(LivingEntity entity) {
@@ -306,6 +308,22 @@ public final class SimpleBlood {
         SimpleBloodAPI.BloodSettings api = apiSettings(idOf(entity));
         return (api != null && api.getBurstIntensityMultiplier() != null) ? api.getBurstIntensityMultiplier() : 1.0f;
     }
+
+    public static float getThrowSpeedMultiplier(LivingEntity entity) {
+        SimpleBloodAPI.BloodSettings api = apiSettings(idOf(entity));
+        return api == null || api.getThrowSpeedMultiplier() == null ? 1.0f : clampThrow(api.getThrowSpeedMultiplier());
+    }
+
+    public static float getThrowUpMultiplier(LivingEntity entity) {
+        SimpleBloodAPI.BloodSettings api = apiSettings(idOf(entity));
+        return api == null || api.getThrowUpMultiplier() == null ? 1.0f : clampThrow(api.getThrowUpMultiplier());
+    }
+
+    private static float clampThrow(float multiplier) {
+        return Float.isNaN(multiplier) ? 1.0f : Math.max(0f, Math.min(MAX_THROW_MULTIPLIER, multiplier));
+    }
+
+    private static final float MAX_THROW_MULTIPLIER = 10f;
 
     public static float getDripIntensityMultiplier(LivingEntity entity) {
         SimpleBloodAPI.BloodSettings api = apiSettings(idOf(entity));

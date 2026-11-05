@@ -1,6 +1,7 @@
 package com.simpleblood.surface;
 
 import com.simpleblood.SimpleBloodClient;
+import com.simpleblood.SimpleBloodAPI;
 import com.simpleblood.SimpleBloodConfig;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -62,9 +63,7 @@ public final class SurfaceRenderer {
         for (CanvasTile t : BloodSurfaces.tiles()) {
             if (t.slot < 0 || t.isEmpty()) continue;
 
-            com.simpleblood.compat.BodyPose sub = ContraptionRides.isPlot(t.pos)
-                    ? ContraptionRides.drawn(t.pos, frames, partialTick())
-                    : com.simpleblood.compat.SableSubLevels.drawn(t.pos, frames, partialTick());
+            SimpleBloodAPI.MovingStructures.Pose sub = MovingBodies.drawn(level, t.pos, frames, partialTick());
             if (sub == null && ContraptionRides.isPlot(t.pos)) continue;
             Vec3 c = sub == null ? t.center() : sub.toWorld(t.center());
             double dx = c.x - cam.x, dy = c.y - cam.y, dz = c.z - cam.z;
@@ -118,13 +117,13 @@ public final class SurfaceRenderer {
     }
 
     static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift, int grey,
-                         double sway, double slide, com.simpleblood.compat.BodyPose sub) {
+                         double sway, double slide, SimpleBloodAPI.MovingStructures.Pose sub) {
         drawTile(t, pose, vc, cam, origin, light, lift, grey, sway, slide, null, 0, sub);
     }
 
     static void drawTile(CanvasTile t, PoseStack.Pose pose, VertexConsumer vc, Vec3 cam, Vec3 origin, int light, double lift, int grey,
                          double sway, double slide, com.simpleblood.compat.CreateKinetics.Part spin, double spinAngle,
-                         com.simpleblood.compat.BodyPose sub) {
+                         SimpleBloodAPI.MovingStructures.Pose sub) {
         float texel = BloodCanvasAtlas.texel();
         Vec3 o = new Vec3(t.ox, t.oy, t.oz), u = new Vec3(t.ux, t.uy, t.uz), v = new Vec3(t.vx, t.vy, t.vz), n = new Vec3(t.nx, t.ny, t.nz);
         if (sway != 0 && t.swayPivot != null) {
@@ -253,7 +252,7 @@ public final class SurfaceRenderer {
         *///?}
     }
 
-    private static int light(ClientLevel level, CanvasTile t, com.simpleblood.compat.BodyPose sub) {
+    private static int light(ClientLevel level, CanvasTile t, SimpleBloodAPI.MovingStructures.Pose sub) {
         var p = t.custom ? t.pos : t.pos.relative(t.face);
         if (sub != null && ContraptionRides.isPlot(t.pos)) {
             p = net.minecraft.core.BlockPos.containing(sub.toWorld(t.center().add(t.nx * 0.5, t.ny * 0.5, t.nz * 0.5)));

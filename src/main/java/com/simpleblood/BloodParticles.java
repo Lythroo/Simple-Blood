@@ -41,6 +41,7 @@ public final class BloodParticles {
     public static final SimpleParticleType WIND_PUFF    = simple("wind_puff");
     public static final SimpleParticleType EMBER        = simple("ember");
     public static final SimpleParticleType ARMOR_SPARK  = simple("armor_spark");
+    public static final SimpleParticleType BLOOD_MIST   = simple("blood_mist");
 
     private static SimpleParticleType simple(String name) {
         return Registry.register(BuiltInRegistries.PARTICLE_TYPE,
@@ -70,6 +71,7 @@ public final class BloodParticles {
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> WIND_PUFF_H    = REGISTRY.register("wind_puff",    () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> EMBER_H        = REGISTRY.register("ember",        () -> newSimple());
     private static final DeferredHolder<ParticleType<?>, SimpleParticleType> ARMOR_SPARK_H  = REGISTRY.register("armor_spark",  () -> newSimple());
+    private static final DeferredHolder<ParticleType<?>, SimpleParticleType> BLOOD_MIST_H   = REGISTRY.register("blood_mist",   () -> newSimple());
 
     public static SimpleParticleType BLOOD_DRIP;
     public static SimpleParticleType BLOOD_SPLASH;
@@ -86,6 +88,7 @@ public final class BloodParticles {
     public static SimpleParticleType WIND_PUFF;
     public static SimpleParticleType EMBER;
     public static SimpleParticleType ARMOR_SPARK;
+    public static SimpleParticleType BLOOD_MIST;
 
     private static SimpleParticleType newSimple() {
         return new SimpleParticleType(false) {};
@@ -107,6 +110,7 @@ public final class BloodParticles {
         WIND_PUFF    = WIND_PUFF_H.get();
         EMBER        = EMBER_H.get();
         ARMOR_SPARK  = ARMOR_SPARK_H.get();
+        BLOOD_MIST   = BLOOD_MIST_H.get();
     }
     *///?}
 
@@ -129,6 +133,7 @@ public final class BloodParticles {
     private static final RegistryObject<SimpleParticleType> WIND_PUFF_H    = REGISTRY.register("wind_puff",    () -> newSimple());
     private static final RegistryObject<SimpleParticleType> EMBER_H        = REGISTRY.register("ember",        () -> newSimple());
     private static final RegistryObject<SimpleParticleType> ARMOR_SPARK_H  = REGISTRY.register("armor_spark",  () -> newSimple());
+    private static final RegistryObject<SimpleParticleType> BLOOD_MIST_H   = REGISTRY.register("blood_mist",   () -> newSimple());
 
     public static SimpleParticleType BLOOD_DRIP;
     public static SimpleParticleType BLOOD_SPLASH;
@@ -145,6 +150,7 @@ public final class BloodParticles {
     public static SimpleParticleType WIND_PUFF;
     public static SimpleParticleType EMBER;
     public static SimpleParticleType ARMOR_SPARK;
+    public static SimpleParticleType BLOOD_MIST;
 
     private static SimpleParticleType newSimple() {
         return new SimpleParticleType(false) {};
@@ -166,6 +172,7 @@ public final class BloodParticles {
         WIND_PUFF    = WIND_PUFF_H.get();
         EMBER        = EMBER_H.get();
         ARMOR_SPARK  = ARMOR_SPARK_H.get();
+        BLOOD_MIST   = BLOOD_MIST_H.get();
     }
     *///?}
 }

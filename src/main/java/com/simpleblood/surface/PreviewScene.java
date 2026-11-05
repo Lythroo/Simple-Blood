@@ -1537,8 +1537,11 @@ public final class PreviewScene {
     private boolean throwing;
 
     private static void thrown(Drop d) {
-        double[] v = com.simpleblood.particle.BloodParticle.throwVelocity(d.vx, d.vy, d.vz);
-        d.vx = v[0]; d.vy = v[1]; d.vz = v[2];
+        float speed = com.simpleblood.particle.BloodParticle.throwSpeedNow(false);
+        float up = com.simpleblood.particle.BloodParticle.throwUpNow(false);
+        d.vx = com.simpleblood.particle.BloodParticle.thrown(d.vx, false, speed, up);
+        d.vy = com.simpleblood.particle.BloodParticle.thrown(d.vy, true, speed, up);
+        d.vz = com.simpleblood.particle.BloodParticle.thrown(d.vz, false, speed, up);
     }
 
     private Drop spawn(double x, double y, double z, double vx, double vy, double vz, int kind) {

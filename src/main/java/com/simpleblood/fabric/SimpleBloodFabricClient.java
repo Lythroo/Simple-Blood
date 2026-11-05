@@ -35,6 +35,7 @@ public class SimpleBloodFabricClient implements ClientModInitializer {
         providers.register(BloodParticles.SPIRIT_SPARK, com.simpleblood.particle.SparkParticle.Factory::new);
         providers.register(BloodParticles.EMBER, com.simpleblood.particle.EmberParticle.Factory::new);
         providers.register(BloodParticles.ARMOR_SPARK, com.simpleblood.particle.ArmorSparkParticle.Factory::new);
+        providers.register(BloodParticles.BLOOD_MIST, com.simpleblood.particle.BloodMistParticle.Factory::new);
 
         ClientTickEvents.END_CLIENT_TICK.register(SimpleBloodClient::clientTick);
 

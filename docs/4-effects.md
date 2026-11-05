@@ -74,6 +74,22 @@ SimpleBloodAPI.spawnPool(entity);
 A pool of the mob's blood spreads on the ground under it, as under a body that has just
 died. Needs "Pool under the body" on.
 
+## An explosion (1.3.0)
+
+```java
+SimpleBloodAPI.spawnExplosion(level, centre, 4.0f);
+```
+
+Tells Simple Blood an explosion went off at `centre`, with power `radius` (TNT is 4, a creeper
+3). Mobs it hurts in the next few ticks get the explosion look: their blood bursts from the
+side that faced the blast and is blown away from it. A lit creeper at `centre` that is gone a
+moment later (it blew up) bursts in its own blood; one that is still there does not.
+
+You only need this for a blast of your own that the client never hears about. Explosions made
+the vanilla way (`level.explode(...)` on the server) are seen automatically. Call it on the
+client, before or in the same tick as the damage. Does nothing on a server level or when
+blood is switched off.
+
 ## Cleaning up
 
 ```java

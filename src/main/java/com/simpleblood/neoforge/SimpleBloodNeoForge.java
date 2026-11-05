@@ -59,6 +59,7 @@ public class SimpleBloodNeoForge {
         event.registerSpriteSet(BloodParticles.SPIRIT_SPARK, com.simpleblood.particle.SparkParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.EMBER, com.simpleblood.particle.EmberParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.ARMOR_SPARK, com.simpleblood.particle.ArmorSparkParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BLOOD_MIST, com.simpleblood.particle.BloodMistParticle.Factory::new);
     }
 
     private void onClientTick(ClientTickEvent.Post event) {
@@ -133,6 +134,7 @@ public class SimpleBloodNeoForge {
         event.registerSpriteSet(BloodParticles.SPIRIT_SPARK, com.simpleblood.particle.SparkParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.EMBER, com.simpleblood.particle.EmberParticle.Factory::new);
         event.registerSpriteSet(BloodParticles.ARMOR_SPARK, com.simpleblood.particle.ArmorSparkParticle.Factory::new);
+        event.registerSpriteSet(BloodParticles.BLOOD_MIST, com.simpleblood.particle.BloodMistParticle.Factory::new);
     }
 
     private void onClientTick(TickEvent.ClientTickEvent event) {

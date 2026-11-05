@@ -20,6 +20,7 @@ SimpleBloodAPI.registerEntityBlood("yourmod:cave_jelly", new SimpleBloodAPI.Bloo
 | [4. Effects on demand](4-effects.md) | Play a hit, a death burst or paint blood from your own code. |
 | [5. Examples](5-examples.md) | Ready-to-copy setups for common kinds of mobs. |
 | [6. FAQ and troubleshooting](6-faq.md) | Nothing happens? Upgrading from `bloodmod`? Start here. |
+| [7. Moving structures](7-moving-structures.md) | Ships and moving platforms from your mod: blood rides along on them. |
 
 ## Good to know
 

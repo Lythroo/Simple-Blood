@@ -74,8 +74,12 @@ and their choice wins over yours.
 | `setParticleSizeMultiplier(float)` | Size of each drop. `1.5f` = 50% bigger. | `1.0` |
 | `setBurstIntensityMultiplier(float)` | How many drops a hit or death throws. | `1.0` |
 | `setDripIntensityMultiplier(float)` | How much it drips while badly hurt. | `1.0` |
+| `setThrowSpeedMultiplier(float)` (1.3.0) | How hard its hit and death drops are thrown. `2.0f` = twice as fast, so they land further away. | `1.0` |
+| `setThrowUpMultiplier(float)` (1.3.0) | How high they are thrown (only the part of a throw that goes up). | `1.0` |
 
 These multiply the player's own settings, so a player who turned blood down still sees less.
+The two throw multipliers go on top of the player's Drops > Speed and Upward settings, and
+are kept between 0 and 10.
 
 ## Sound
 
@@ -127,6 +131,16 @@ The id should stay the same while the ragdoll exists. If it is a living entity's
 ragdoll bleeds that entity's blood; otherwise it takes the blood of a mob that just died
 where it appeared. Limbs drip, splash and stain where they land hard, and smear the ground
 when they slide, following the player's Ragdolls settings.
+
+### Moving structures (1.3.0)
+
+Blood rides along on Create contraptions and Sable ships out of the box. If your mod moves
+blocks as one body too (ships, moving platforms), register them and blood on them rides along
+the same way. See [7. Moving structures](7-moving-structures.md).
+
+```java
+SimpleBloodAPI.registerMovingStructures("yourmod", myShips);
+```
 
 ## Looking things up
 

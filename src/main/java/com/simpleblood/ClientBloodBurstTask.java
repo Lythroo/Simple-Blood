@@ -25,6 +25,8 @@ public class ClientBloodBurstTask {
         this(world, entity, HitContext.of(entity, damage, null, false, entity.getHealth() + damage));
     }
 
+    private static final int BLAST_BURST_TICKS = 2;
+
     private float share = 1f;
 
     public ClientBloodBurstTask scaled(float share) {
@@ -52,7 +54,9 @@ public class ClientBloodBurstTask {
             calculatedTicks = MIN_TICKS + (int)((MAX_TICKS - MIN_TICKS) * t);
         }
 
-        this.durationTicks = (int)(calculatedTicks * config.burstDurationMultiplier());
+        int ticks = (int)(calculatedTicks * config.burstDurationMultiplier());
+        if (ctx.weapon == HitContext.Weapon.EXPLOSION) ticks = Math.min(ticks, BLAST_BURST_TICKS);
+        this.durationTicks = ticks;
         this.ticksRemaining = durationTicks;
         this.soundPlayed = false;
     }
@@ -79,6 +83,7 @@ public class ClientBloodBurstTask {
         BloodParticle.setCurrentBloodColor(bloodColor);
 
         BloodParticle.setEntitySizeMultiplier(SimpleBlood.getParticleSizeMultiplier(entity));
+        BloodParticle.setThrowOfMob(SimpleBlood.getThrowSpeedMultiplier(entity), SimpleBlood.getThrowUpMultiplier(entity));
         BloodParticle.setCurrentKind(SimpleBlood.bloodKindOf(entity));
         BloodParticle.setGlowing(SimpleBlood.bloodGlows(entity));
         BloodParticle.setPaintsSurfaces(SimpleBlood.shouldEntityTransformToStains(entity));

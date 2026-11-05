@@ -1,6 +1,7 @@
 package com.simpleblood.surface;
 
 import com.simpleblood.SimpleBlood;
+import com.simpleblood.SimpleBloodAPI;
 import com.simpleblood.SimpleBloodClient;
 import com.simpleblood.SimpleBloodConfig;
 import com.simpleblood.RenderThread;
@@ -133,18 +134,13 @@ public final class BloodSurfaces {
         if (com.simpleblood.Capture.active()) return com.simpleblood.Capture.trace(from, to);
         Hit hit = traceWorld(level, from, to);
         if (wheels.length > 0) hit = nearerWheel(level, from, to, hit);
-        List<? extends com.simpleblood.compat.BodyPose> sable = com.simpleblood.compat.SableSubLevels.present()
-                ? com.simpleblood.compat.SableSubLevels.crossing(level, from, to) : List.of();
-        List<com.simpleblood.compat.BodyPose> rides = ContraptionRides.any() ? ContraptionRides.crossing(from, to) : List.of();
-        if (sable.isEmpty() && rides.isEmpty()) return hit;
+        if (!MovingBodies.any()) return hit;
         double[] best = {hit == null ? Double.MAX_VALUE : hit.point().distanceToSqr(from)};
-        for (com.simpleblood.compat.BodyPose pose : sable) {
-            Hit h = traceIn(level, pose, from, to, moved, best);
-            if (h != null) { hit = h; com.simpleblood.Tally.count("sable.hit"); }
-        }
-        for (com.simpleblood.compat.BodyPose pose : rides) {
-            Hit h = traceIn(level, pose, from, to, moved, best);
-            if (h != null) { hit = h; com.simpleblood.Tally.count("create.hit"); }
+        for (MovingBodies.Source source : MovingBodies.sources()) {
+            for (SimpleBloodAPI.MovingStructures.Pose pose : source.crossing(level, from, to)) {
+                Hit h = traceIn(level, pose, from, to, moved, best);
+                if (h != null) { hit = h; com.simpleblood.Tally.count(source.hitCounter); }
+            }
         }
         return hit;
     }
@@ -208,7 +204,7 @@ public final class BloodSurfaces {
         return hit;
     }
 
-    private static Hit traceIn(ClientLevel level, com.simpleblood.compat.BodyPose pose, Vec3 from, Vec3 to, boolean moved, double[] best) {
+    private static Hit traceIn(ClientLevel level, SimpleBloodAPI.MovingStructures.Pose pose, Vec3 from, Vec3 to, boolean moved, double[] best) {
         Hit inPlot = traceWorld(level, moved ? pose.lastToPlot(from) : pose.toPlot(from), pose.toPlot(to));
         if (inPlot == null) return null;
         Vec3 seen = pose.toWorld(inPlot.point());
@@ -219,10 +215,8 @@ public final class BloodSurfaces {
     }
 
     public static boolean movingBodiesCross(ClientLevel level, Vec3 from, Vec3 to) {
-        if (ContraptionRides.any() && !ContraptionRides.crossing(from, to).isEmpty()) return true;
         if (nearWheel(from, to)) return true;
-        return com.simpleblood.compat.SableSubLevels.present()
-                && !com.simpleblood.compat.SableSubLevels.crossing(level, from, to).isEmpty();
+        return MovingBodies.crossed(level, from, to);
     }
 
     private static Hit traceWorld(ClientLevel level, Vec3 from, Vec3 to) {
@@ -1225,7 +1219,7 @@ public final class BloodSurfaces {
 
     private static Slope slopeNow(ClientLevel level, CanvasTile tile) {
         boolean lid = tile.swayPivot != null && SignFaces.lidded(tile.state);
-        com.simpleblood.compat.BodyPose sub = subLevelPose(level, tile);
+        SimpleBloodAPI.MovingStructures.Pose sub = subLevelPose(level, tile);
         com.simpleblood.compat.CreateKinetics.Part spin = spinOf(level, tile);
         if (!lid && sub == null && spin == null) return null;
         Vec3 u = new Vec3(tile.ux, tile.uy, tile.uz), v = new Vec3(tile.vx, tile.vy, tile.vz), n = new Vec3(tile.nx, tile.ny, tile.nz);
@@ -1253,11 +1247,11 @@ public final class BloodSurfaces {
         return tile.slope;
     }
 
-    private static com.simpleblood.compat.BodyPose subLevelPose(ClientLevel level, CanvasTile tile) {
-        if (ContraptionRides.isPlot(tile.pos)) return ContraptionRides.logical(tile.pos);
-        if (Boolean.FALSE.equals(tile.onSubLevel) || !com.simpleblood.compat.SableSubLevels.present()) return null;
-        com.simpleblood.compat.SableSubLevels.Pose pose = com.simpleblood.compat.SableSubLevels.logical(tile.pos, level.getGameTime());
-        if (tile.onSubLevel == null) tile.onSubLevel = pose != null;
+    private static SimpleBloodAPI.MovingStructures.Pose subLevelPose(ClientLevel level, CanvasTile tile) {
+        boolean riding = ContraptionRides.isPlot(tile.pos);
+        if (!riding && (Boolean.FALSE.equals(tile.onSubLevel) || !MovingBodies.any())) return null;
+        SimpleBloodAPI.MovingStructures.Pose pose = MovingBodies.logical(level, tile.pos);
+        if (!riding && tile.onSubLevel == null) tile.onSubLevel = pose != null;
         return pose;
     }
 
@@ -1278,7 +1272,7 @@ public final class BloodSurfaces {
             if (before) a -= spin.rpm() * 2 * Math.PI / 60 / 20;
             p = spun(spin, p, a);
         }
-        com.simpleblood.compat.BodyPose sub = subLevelPose(level, tile);
+        SimpleBloodAPI.MovingStructures.Pose sub = subLevelPose(level, tile);
         if (sub == null) return p;
         return before ? sub.lastToWorld(p) : sub.toWorld(p);
     }
@@ -1349,7 +1343,7 @@ public final class BloodSurfaces {
         Vec3 n = SurfaceRenderer.swing(new Vec3(tile.nx, tile.ny, tile.nz), part.axis, a);
         Vec3 at = part.centre.add(r).add(n.scale(FLING_CLEAR)).add(out.lengthSqr() > 1.0e-6 ? out.normalize().scale(FLING_CLEAR) : Vec3.ZERO);
         Vec3 velocity = surfaceVelocity(level, tile, tile.pixelCenter(unit[0], unit[1]));
-        com.simpleblood.compat.BodyPose sub = subLevelPose(level, tile);
+        SimpleBloodAPI.MovingStructures.Pose sub = subLevelPose(level, tile);
         if (sub != null) at = sub.toWorld(at);
         BloodParticle.spawnFlung(level, at.x, at.y, at.z, unit[2], 1, velocity.x, velocity.y, velocity.z);
         com.simpleblood.Tally.count("create.fling");
@@ -1792,7 +1786,20 @@ public final class BloodSurfaces {
     }
 
     private static final Map<Long, WaterTint> TINTS = new HashMap<>();
-    private static final Map<Long, Integer> WATER_COLOURS = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap WATER_COLOURS = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap();
+    private static final int NO_TINT = 0;
+    private static final it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap NO_TINTS = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap(0);
+    private static volatile it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap waterColours = NO_TINTS;
+
+    private static void publishWaterColours() {
+        if (WATER_COLOURS.isEmpty()) {
+            waterColours = NO_TINTS;
+            return;
+        }
+        it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap copy = new it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap(WATER_COLOURS);
+        copy.defaultReturnValue(NO_TINT);
+        waterColours = copy;
+    }
     private static final float TINT_PER_DROP = 0.025f, TINT_MAX = 0.5f, TINT_CLEARS = 1f / 1200;
     private static final int TINT_STEPS = 64, TINT_REDRAW_TICKS = 5;
     private static final float TINT_BLUE_PULL = 1.6f;
@@ -1835,9 +1842,10 @@ public final class BloodSurfaces {
     }
 
     public static int cauldronWaterColour(BlockPos pos, int base) {
-        if (WATER_COLOURS.isEmpty() || pos == null) return base;
-        Integer tint = WATER_COLOURS.get(pos.asLong());
-        if (tint == null) return base;
+        it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap colours = waterColours;
+        if (colours.isEmpty() || pos == null) return base;
+        int tint = colours.get(pos.asLong());
+        if (tint == NO_TINT) return base;
         float k = ((tint >>> 24) & 0xFF) / 255.0f, kBlue = Math.min(1, k * TINT_BLUE_PULL);
         int r = Math.round(((base >> 16) & 0xFF) * (1 - k) + ((tint >> 16) & 0xFF) * k);
         int g = Math.round(((base >> 8) & 0xFF) * (1 - k) + ((tint >> 8) & 0xFF) * k);
@@ -1858,7 +1866,11 @@ public final class BloodSurfaces {
             t.amount -= t.amount * TINT_CLEARS + 1.0e-5f;
             if (h <= 0 || t.amount <= 0.01f) {
                 it.remove();
-                if (WATER_COLOURS.remove(e.getKey()) != null) redrawWater(level, pos);
+                if (WATER_COLOURS.containsKey(e.getKey().longValue())) {
+                    WATER_COLOURS.remove(e.getKey().longValue());
+                    publishWaterColours();
+                    redrawWater(level, pos);
+                }
                 continue;
             }
             int step = Math.round(t.amount * opacity * TINT_STEPS);
@@ -1866,7 +1878,8 @@ public final class BloodSurfaces {
                 t.shownStep = step;
                 t.shownTick = now;
                 int amount = Math.min(255, Math.round(step * 255.0f / TINT_STEPS));
-                WATER_COLOURS.put(e.getKey(), (amount << 24) | (t.colour & 0xFFFFFF));
+                WATER_COLOURS.put(e.getKey().longValue(), (amount << 24) | (t.colour & 0xFFFFFF));
+                publishWaterColours();
                 redrawWater(level, pos);
             }
         }
@@ -1880,6 +1893,7 @@ public final class BloodSurfaces {
     private static void clearTints() {
         TINTS.clear();
         WATER_COLOURS.clear();
+        waterColours = NO_TINTS;
     }
 
     private static void dripFromCeiling(ClientLevel level, CanvasTile tile) {
