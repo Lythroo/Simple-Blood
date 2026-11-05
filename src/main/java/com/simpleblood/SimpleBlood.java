@@ -205,6 +205,15 @@ public final class SimpleBlood {
                 || source.is(DamageTypes.DRY_OUT);
     }
 
+    public static boolean hasFleshBlood(LivingEntity entity) {
+        //? if >=26.2 {
+        /*boolean gel = entity instanceof net.minecraft.world.entity.monster.cubemob.Slime;
+        *///?} else {
+        boolean gel = entity instanceof net.minecraft.world.entity.monster.Slime;
+        //?}
+        return !gel && bloodKindOf(entity) == BloodKind.LIQUID;
+    }
+
     public static BloodKind bloodKindOf(LivingEntity entity) {
         if (Capture.kind != null && Capture.active()) return Capture.kind;
         if (entity instanceof net.minecraft.world.entity.player.Player) {

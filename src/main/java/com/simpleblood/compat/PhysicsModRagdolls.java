@@ -131,7 +131,7 @@ public final class PhysicsModRagdolls {
         SimpleBlood.LOGGER.warn("Physics Mod ragdoll blood switched off after an error", t);
     }
 
-    private record Death(Vec3 pos, long tick, BloodColor.Color colour, BloodKind kind, boolean glows,
+    private record Death(Vec3 pos, long tick, BloodColor.Color colour, BloodKind kind, boolean flesh, boolean glows,
                          boolean stains, float size, int entityId, String type) {}
 
     private static final class Bleeding {
@@ -219,7 +219,7 @@ public final class PhysicsModRagdolls {
 
     private static Death deathOf(LivingEntity entity, ClientLevel level) {
         return new Death(entity.position().add(0, entity.getBbHeight() * 0.5, 0), level.getGameTime(),
-                BloodColor.getBloodColor(entity), SimpleBlood.bloodKindOf(entity),
+                BloodColor.getBloodColor(entity), SimpleBlood.bloodKindOf(entity), SimpleBlood.hasFleshBlood(entity),
                 SimpleBlood.bloodGlows(entity), SimpleBlood.shouldEntityTransformToStains(entity),
                 SimpleBlood.getParticleSizeMultiplier(entity), entity.getId(),
                 String.valueOf(net.minecraft.world.entity.EntityType.getKey(entity.getType())));
@@ -410,7 +410,7 @@ public final class PhysicsModRagdolls {
                         new Spurt(now, Math.min(PIECE_SHARE, b.blood * 0.5f))));
                 com.simpleblood.Tally.count("ragdoll.tear");
                 Vec3 at = bodyWas.add(world(bodyLocal, turn.apply(body) == null ? new org.joml.Quaternionf() : turn.apply(body)));
-                if (b.death.kind == BloodKind.LIQUID) BloodSounds.stump(level, at);
+                if (b.death.flesh()) BloodSounds.stump(level, at);
             }
         }
         Vec3[] moved = new Vec3[parts.length];
@@ -418,7 +418,7 @@ public final class PhysicsModRagdolls {
             if (parts[i] != null && b.seen[i] != null) moved[i] = parts[i].subtract(b.seen[i]);
             if (parts[i] != null) b.seen[i] = parts[i];
         }
-        if (b.tears.isEmpty() || b.death.kind != BloodKind.LIQUID) return;
+        if (b.tears.isEmpty() || !b.death.flesh()) return;
         prepare(b.death);
         try {
             for (Tear t : b.tears) {
@@ -599,12 +599,12 @@ public final class PhysicsModRagdolls {
                 if (was == null) continue;
                 b.stumps[i] = new Spurt(now);
                 b.stumpAt[i] = was.subtract(torso).scale(0.6);
-                if (b.death.kind == BloodKind.LIQUID) BloodSounds.stump(level, torso.add(b.stumpAt[i]));
+                if (b.death.flesh()) BloodSounds.stump(level, torso.add(b.stumpAt[i]));
             }
             b.severed = mask;
         }
         for (int i = 0; i < Math.min(parts.length, b.lastSeen.length); i++) if (parts[i] != null) b.lastSeen[i] = parts[i];
-        if (b.death.kind != BloodKind.LIQUID) return;
+        if (!b.death.flesh()) return;
         prepare(b.death);
         try {
             for (int i = 1; i < b.stumpAt.length; i++) {
@@ -619,7 +619,7 @@ public final class PhysicsModRagdolls {
     }
 
     private static void cutEnd(ClientLevel level, Bleeding b, Vec3 at, Vec3 dir, long now) {
-        if (b.death.kind != BloodKind.LIQUID) return;
+        if (!b.death.flesh()) return;
         if (b.cut == null) b.cut = new Spurt(b.born);
         if (b.blood <= DRY) return;
         prepare(b.death);
@@ -808,7 +808,7 @@ public final class PhysicsModRagdolls {
 
     private static List<PieceWound> pieceWounds(ClientLevel level, Death death, List<Object> pieces, Object world,
                                                 org.joml.Vector3d offset, long now) {
-        if (death.kind != BloodKind.LIQUID || pieces.isEmpty()) return List.of();
+        if (!death.flesh() || pieces.isEmpty()) return List.of();
         List<PieceWound> out = new ArrayList<>();
         int n = pieces.size(), wounds = Math.min(MAX_PIECE_WOUNDS, n);
         for (int k = 0; k < wounds; k++) {
@@ -1291,6 +1291,7 @@ public final class PhysicsModRagdolls {
     private static void prepare(Death d) {
         BloodParticle.setCurrentBloodColor(d.colour);
         BloodParticle.setCurrentKind(d.kind);
+        BloodParticle.setStreaks(d.flesh());
         BloodParticle.setGlowing(d.glows);
         BloodParticle.setPaintsSurfaces(d.stains);
         BloodParticle.setShouldTransformToFog(d.kind == BloodKind.LIQUID && d.stains);

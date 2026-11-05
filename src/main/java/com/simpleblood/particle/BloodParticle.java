@@ -112,6 +112,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         spawnVanishes.remove();
         spawnPieceColour.remove();
         spawnThrown.remove();
+        spawnStreaks.remove();
         spawnThrowSpeed.remove();
         spawnThrowUp.remove();
         spawnBlown.remove();
@@ -124,6 +125,12 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
     private static final ThreadLocal<Boolean> spawnVanishes = ThreadLocal.withInitial(() -> false);
 
     private static final ThreadLocal<Boolean> spawnThrown = ThreadLocal.withInitial(() -> false);
+
+    private static final ThreadLocal<Boolean> spawnStreaks = ThreadLocal.withInitial(() -> true);
+
+    public static void setStreaks(boolean streaks) {
+        spawnStreaks.set(streaks);
+    }
 
     public static void setThrown(boolean thrown) {
         spawnThrown.set(thrown);
@@ -368,6 +375,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
     private float targetScale;
     private Vec3 born;
     private SpriteSet flight;
+    private FlightSprites flightSet = BloodSprayParticle.FLIGHT;
     private final int[] shown = {-1, -1};
     private float drawScale = 1f;
     private static final float FLIGHT_DRAW_SCALE = 0.5f;
@@ -571,8 +579,15 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
     }
 
     void showFlight(SpriteSet sprites) {
-        this.flight = sprites;
-        setSprite(sprites.get(0, BloodSprayParticle.SPRITES - 1));
+        showFlight(sprites, BloodSprayParticle.FLIGHT);
+    }
+
+    void showFlight(SpriteSet sprites, FlightSprites set) {
+        if (spawnStreaks.get()) {
+            this.flight = sprites;
+            this.flightSet = set;
+        }
+        setSprite(sprites.get(0, set.sprites() - 1));
     }
 
     private float stainScale() {
@@ -598,7 +613,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         //?}
         double sy = vx * up.x() + vy * up.y() + vz * up.z();
         double sx = -(vx * left.x() + vy * left.y() + vz * left.z());
-        this.setSprite(flight.get(BloodSprayParticle.pick(sx, sy, Math.sqrt(speed2), shown), BloodSprayParticle.SPRITES - 1));
+        this.setSprite(flight.get(flightSet.pick(sx, sy, Math.sqrt(speed2), shown), flightSet.sprites() - 1));
     }
 
     //? if <=1.21.1 {

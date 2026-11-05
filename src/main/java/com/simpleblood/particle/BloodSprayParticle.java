@@ -12,12 +12,9 @@ import net.minecraft.util.RandomSource;
 public class BloodSprayParticle extends BloodParticle {
 
     private static final float QUAD = 0.25f;
-    private static final double HEADING_MARGIN = Math.toRadians(8);
-    private static final double LENGTH_MARGIN = 0.07;
-    private static final double LONG_FROM = 0.2;
-    private static final double SHORT_FROM = 0.06;
+    static final FlightSprites FLIGHT = new FlightSprites(8, new double[]{0.35, 0.75}, new double[]{0.06, 0.2});
 
-    static final int SPRITES = 17;
+    static final int SPRITES = FLIGHT.sprites();
 
     protected BloodSprayParticle(ClientLevel world, double x, double y, double z,
                                  double velX, double velY, double velZ,
@@ -36,40 +33,7 @@ public class BloodSprayParticle extends BloodParticle {
     }
 
     public static int pick(double sx, double sy, double speed, int[] shown) {
-        if (speed < 3.0e-4) return index(shown);
-        double screen = Math.sqrt(sx * sx + sy * sy);
-        double sideOn = screen / speed;
-        if (shown[1] < 0) {
-            shown[1] = lengthFor(sideOn, screen, 0);
-        } else {
-            int longer = lengthFor(sideOn, screen, LENGTH_MARGIN), shorter = lengthFor(sideOn, screen, -LENGTH_MARGIN);
-            if (longer > shown[1]) shown[1] = longer;
-            else if (shorter < shown[1]) shown[1] = shorter;
-        }
-        if (screen > 1.0e-5) {
-            double angle = Math.atan2(sy, sx);
-            if (shown[0] < 0) {
-                shown[0] = nearestHeading(angle);
-            } else {
-                double off = Math.abs(Math.IEEEremainder(angle - shown[0] * Math.PI / 4, Math.PI * 2));
-                if (off > Math.PI / 8 + HEADING_MARGIN) shown[0] = nearestHeading(angle);
-            }
-        }
-        return index(shown);
-    }
-
-    private static int index(int[] shown) {
-        return shown[1] <= 0 || shown[0] < 0 ? 0 : (shown[1] == 1 ? 1 : 9) + shown[0];
-    }
-
-    private static int lengthFor(double sideOn, double screen, double bias) {
-        if (sideOn > 0.75 + bias && screen > LONG_FROM * (1 + 2 * bias)) return 2;
-        if (sideOn > 0.35 + bias && screen > SHORT_FROM * (1 + 2 * bias)) return 1;
-        return 0;
-    }
-
-    private static int nearestHeading(double angle) {
-        return (int) Math.round(angle / (Math.PI / 4)) & 7;
+        return FLIGHT.pick(sx, sy, speed, shown);
     }
 
     public static class Factory implements ParticleProvider<SimpleParticleType> {

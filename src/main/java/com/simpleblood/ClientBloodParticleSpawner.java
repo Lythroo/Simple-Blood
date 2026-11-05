@@ -160,6 +160,7 @@ public class ClientBloodParticleSpawner {
         BloodParticle.setEntitySizeMultiplier(SimpleBlood.getParticleSizeMultiplier(entity));
         BloodParticle.setThrowOfMob(SimpleBlood.getThrowSpeedMultiplier(entity), SimpleBlood.getThrowUpMultiplier(entity));
         BloodParticle.setCurrentKind(SimpleBlood.bloodKindOf(entity));
+        BloodParticle.setStreaks(SimpleBlood.hasFleshBlood(entity));
         BloodParticle.setGlowing(SimpleBlood.bloodGlows(entity));
         BloodParticle.setPaintsSurfaces(SimpleBlood.shouldEntityTransformToStains(entity));
 
@@ -261,6 +262,7 @@ public class ClientBloodParticleSpawner {
 
         BloodParticle.setEntitySizeMultiplier(SimpleBlood.getParticleSizeMultiplier(entity));
         BloodParticle.setCurrentKind(SimpleBlood.bloodKindOf(entity));
+        BloodParticle.setStreaks(SimpleBlood.hasFleshBlood(entity));
         BloodParticle.setGlowing(SimpleBlood.bloodGlows(entity));
         BloodParticle.setPaintsSurfaces(SimpleBlood.shouldEntityTransformToStains(entity));
 

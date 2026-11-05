@@ -250,9 +250,8 @@ public final class SceneRenderer {
 
     private static int streakIndex(Quaternionf view, PreviewScene.Drop d) {
         Vector3f v = view.transform(new Vector3f((float) d.vx, (float) d.vy, (float) d.vz));
-        double angle = Math.atan2(-v.y, v.x);
-        int idx = (int) Math.round(angle / (Math.PI / 4)) & 7;
-        return idx;
+        double speed = Math.sqrt(d.vx * d.vx + d.vy * d.vy + d.vz * d.vz);
+        return com.simpleblood.particle.BloodStreakParticle.pick(v.x, -v.y, speed, d.shown);
     }
 
     private static Identifier zombieTexture;

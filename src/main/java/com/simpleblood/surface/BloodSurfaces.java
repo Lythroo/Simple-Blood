@@ -2086,6 +2086,7 @@ public final class BloodSurfaces {
             return planeTile(level, pos, state, tilted.index(), create);
         }
         if (flat == null || flatScore[0] > 0.35) return null;
+        if (face == Direction.UP && flat.box().maxY <= cauldronWater(state) + 1.0e-3) return null;
         if (flat.cut() != null) return planeTile(level, pos, state, flat.quad(), create);
         return quadFaceTile(level, pos, state, face, flat.box(), create);
     }

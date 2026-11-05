@@ -25,8 +25,9 @@ public final class CreeperBlast {
     private static final int MAX_CANDIDATES = 8;
     private static final float WISPS_PER_RADIUS = 4f;
     private static final int MAX_WISPS = 24;
-    private static final double CLOUD_REACH = 0.3;
-    private static final float WISP_SIZE = 0.45f;
+    private static final double CLOUD_REACH = 0.12;
+    private static final double WISP_SPEED = 0.07, WISP_SPEED_SPREAD = 0.04;
+    private static final float WISP_SIZE = 0.6f;
     private static final int BURST_DROPS = 300;
     private static final float BURST_SPEED = 0.5f;
     private static final int MAX_PENDING = 16;
@@ -128,10 +129,10 @@ public final class CreeperBlast {
         BloodMistParticle.setSize(radius * WISP_SIZE);
         try {
             for (int i = 0; i < wisps; i++) {
-                double z = rng.nextDouble() * 1.6 - 0.6, a = rng.nextDouble() * Math.PI * 2, r = Math.sqrt(1 - z * z);
+                double z = rng.nextDouble() * 2 - 1, a = rng.nextDouble() * Math.PI * 2, r = Math.sqrt(1 - z * z);
                 Vec3 dir = new Vec3(r * Math.cos(a), z, r * Math.sin(a));
                 Vec3 p = middle.add(dir.scale(radius * CLOUD_REACH * Math.cbrt(rng.nextDouble())));
-                Vec3 v = dir.scale(0.05 + rng.nextDouble() * 0.07);
+                Vec3 v = dir.scale(radius * (WISP_SPEED + rng.nextDouble() * WISP_SPEED_SPREAD));
                 ClientBloodParticleSpawner.emitPlain(level, BloodParticles.BLOOD_MIST, p.x, p.y, p.z, v.x, v.y, v.z);
                 Tally.count("creeper.cloud");
             }
