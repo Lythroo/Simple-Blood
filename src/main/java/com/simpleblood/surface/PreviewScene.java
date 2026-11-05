@@ -1559,6 +1559,8 @@ public final class PreviewScene {
             double len = Math.sqrt(jx * jx + jy * jy + jz * jz);
             if (len < 1e-6) len = 1;
             vx = jx / len * mag * 0.4; vy = jy / len * mag * 0.4 + 0.1; vz = jz / len * mag * 0.4;
+            double scale = com.simpleblood.particle.BloodParticle.speedScaleNow();
+            vx *= scale; vy *= scale; vz *= scale;
         }
         if (this.kind == Kind.WATER) { vx *= 0.3; vy *= 0.3; vz *= 0.3; }
         d.vx = vx; d.vy = vy; d.vz = vz;
@@ -1594,7 +1596,7 @@ public final class PreviewScene {
 
     private void moveEachDrop(SimpleBloodConfig c) {
         double gravity = 0.04 * c.particleGravityMultiplier();
-        double drag = 0.98 * c.particleDragMultiplier();
+        double drag = Math.max(0, 1 - 0.02 * c.particleDragMultiplier());
         boolean fog = kind == Kind.WATER && c.underwater.transformToFog;
         Iterator<Drop> it = drops.iterator();
         while (it.hasNext()) {

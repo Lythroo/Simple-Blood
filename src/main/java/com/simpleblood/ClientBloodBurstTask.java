@@ -72,6 +72,7 @@ public class ClientBloodBurstTask {
             return tickSpurt();
         } finally {
             BloodParticle.clearCarry();
+            BloodParticle.setSpeedScale(1f);
         }
     }
 
@@ -130,6 +131,7 @@ public class ClientBloodBurstTask {
         int splashThisTick = shareOf(totalSplash, tick);
 
         float velocityAdjust = entityIsUnderwater ? 0.3f : 1.0f;
+        BloodParticle.setSpeedScale(spreadMult * velocityAdjust);
 
         Capture.part = Capture.Part.DRIPS;
         for (int i = 0; i < dripsThisTick; i++) {

@@ -181,7 +181,7 @@ public class BloodFogParticle extends SingleQuadParticle implements DrawnBeforeW
     }
 
     private void drift() {
-        if (this.age++ >= this.lifetime) {
+        if (this.age >= this.lifetime) {
             this.remove();
             return;
         }

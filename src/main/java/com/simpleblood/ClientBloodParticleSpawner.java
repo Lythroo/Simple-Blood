@@ -146,6 +146,7 @@ public class ClientBloodParticleSpawner {
             burstOnDeath(world, entity, ctx);
         } finally {
             BloodParticle.clearCarry();
+            BloodParticle.setSpeedScale(1f);
         }
     }
 
@@ -185,6 +186,7 @@ public class ClientBloodParticleSpawner {
         BloodSounds.hit(world, entity, Math.min(0.3f + sizeFactor * 0.2f, 1.0f), true, entityIsUnderwater);
 
         float velocityAdjust = entityIsUnderwater ? 0.3f : 1.0f;
+        BloodParticle.setSpeedScale(spreadMult * velocityAdjust);
 
         for (int i = 0; i < dripCount; i++) {
             double offsetX = (world.getRandom().nextDouble() - 0.5) * entity.getBbWidth() * 1.8 * spreadMult;
@@ -232,6 +234,7 @@ public class ClientBloodParticleSpawner {
             emitThrown(world, BloodParticles.BLOOD_SPLASH, spawnX, spawnY, spawnZ, velX, velY, velZ);
         }
 
+        BloodParticle.setSpeedScale(1f);
         Giblets.death(world, entity, ctx);
         if (Capture.active()) return;
         com.simpleblood.mob.MobBlood.death(entity, ctx);

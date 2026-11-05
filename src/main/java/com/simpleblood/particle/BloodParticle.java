@@ -112,6 +112,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         spawnVanishes.remove();
         spawnPieceColour.remove();
         spawnThrown.remove();
+        spawnSpeedScale.remove();
         spawnStreaks.remove();
         spawnThrowSpeed.remove();
         spawnThrowUp.remove();
@@ -134,6 +135,16 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
 
     public static void setThrown(boolean thrown) {
         spawnThrown.set(thrown);
+    }
+
+    private static final ThreadLocal<Float> spawnSpeedScale = ThreadLocal.withInitial(() -> 1f);
+
+    public static void setSpeedScale(float scale) {
+        spawnSpeedScale.set(scale);
+    }
+
+    public static float speedScaleNow() {
+        return spawnSpeedScale.get();
     }
 
     public static boolean spawnsThrown() {
@@ -397,10 +408,16 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         this.census = countBirth(this);
         this.counted = true;
         this.madeAt = world.getGameTime();
+        this.friction = 1.0f;
         if (spawnExact.get()) {
             this.xd = velX;
             this.yd = velY;
             this.zd = velZ;
+        } else {
+            float scale = spawnSpeedScale.get();
+            this.xd *= scale;
+            this.yd *= scale;
+            this.zd *= scale;
         }
         throwHarder();
         double[] carry = spawnCarry.get();
