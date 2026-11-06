@@ -129,6 +129,103 @@ public final class OtherRagdolls {
         return new Vec3(w.x, w.y, w.z);
     }
 
+    private static Method livingMask;
+    private static Method livingNone;
+    private static Method worldAnchor;
+    private static Object[] ragdollParts;
+    private static boolean livingLooked;
+
+    static boolean livingCuts() {
+        if (!livingLooked) {
+            livingLooked = true;
+            ClassLoader cl = OtherRagdolls.class.getClassLoader();
+            try {
+                Class<?> state = find("com.raiiiden.ragdollifiedamp.client.ClientAmputationState", cl);
+                Class<?> anchors = find("com.raiiiden.ragdollified.LimbAnchors", cl);
+                Class<?> part = find("com.raiiiden.ragdollified.RagdollPart", cl);
+                if (state != null && anchors != null && part != null) {
+                    livingMask = state.getMethod("severedMask", Entity.class);
+                    livingNone = state.getMethod("isEmpty");
+                    worldAnchor = anchors.getMethod("worldAnchor", LivingEntity.class, part);
+                    ragdollParts = part.getEnumConstants();
+                    SimpleBlood.LOGGER.info("Ragdollified Amputation found: stumps on living mobs bleed");
+                }
+            } catch (Throwable t) {
+                livingMask = null;
+                SimpleBlood.LOGGER.warn("Ragdollified Amputation looks different than expected: stumps on living mobs will not bleed ({})", t.toString());
+            }
+        }
+        if (livingMask == null) return false;
+        try {
+            return !(Boolean) livingNone.invoke(null);
+        } catch (Throwable t) {
+            livingMask = null;
+            return false;
+        }
+    }
+
+    static int livingSeveredMask(Entity e) {
+        if (livingMask == null) return 0;
+        try {
+            return (Integer) livingMask.invoke(null, e);
+        } catch (Throwable t) {
+            livingMask = null;
+            SimpleBlood.LOGGER.warn("Ragdollified Amputation: cut parts not readable, stumps on living mobs stop bleeding ({})", t.toString());
+            return 0;
+        }
+    }
+
+    static Vec3 anchor(LivingEntity e, int index) {
+        if (worldAnchor == null || index < 0 || index >= ragdollParts.length) return null;
+        try {
+            return (Vec3) worldAnchor.invoke(null, e, ragdollParts[index]);
+        } catch (Throwable t) {
+            worldAnchor = null;
+            SimpleBlood.LOGGER.warn("Ragdollified: limb positions not readable, stumps on living mobs stop bleeding ({})", t.toString());
+            return null;
+        }
+    }
+
+    static int partCount() {
+        return ragdollParts == null ? 0 : ragdollParts.length;
+    }
+
+    private static Method worldPose;
+    private static Field poseId, poseRotation, rx, ry, rz, rw;
+    private static boolean poseLooked;
+
+    static org.joml.Quaternionf[] turns(int ragdollId) {
+        try {
+            if (!poseLooked) {
+                poseLooked = true;
+                ClassLoader cl = OtherRagdolls.class.getClassLoader();
+                worldPose = Class.forName("com.raiiiden.ragdollified.api.RagdollifiedApi", false, cl).getMethod("worldPose", int.class);
+                Class<?> transform = Class.forName("com.raiiiden.ragdollified.RagdollTransform", false, cl);
+                poseId = transform.getField("partId");
+                poseRotation = transform.getField("rotation");
+                Class<?> q = poseRotation.getType();
+                rx = q.getField("x");
+                ry = q.getField("y");
+                rz = q.getField("z");
+                rw = q.getField("w");
+            }
+            if (worldPose == null) return null;
+            if (!(worldPose.invoke(null, ragdollId) instanceof Optional<?> pose) || pose.isEmpty() || !(pose.get() instanceof Object[] all)) return null;
+            org.joml.Quaternionf[] out = new org.joml.Quaternionf[8];
+            for (Object t : all) {
+                int i = poseId.getInt(t);
+                if (i < 0 || i >= out.length) continue;
+                Object r = poseRotation.get(t);
+                out[i] = new org.joml.Quaternionf(rx.getFloat(r), ry.getFloat(r), rz.getFloat(r), rw.getFloat(r));
+            }
+            return out;
+        } catch (Throwable t) {
+            if (worldPose != null) SimpleBlood.LOGGER.warn("Ragdollified: part turns not readable, bullet wounds on its ragdolls stay unturned ({})", t.toString());
+            worldPose = null;
+            return null;
+        }
+    }
+
     private static boolean looked;
 
     private static Method ragdollIds;

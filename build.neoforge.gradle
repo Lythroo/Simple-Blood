@@ -88,7 +88,7 @@ processResources {
     def minecraftRange = "[${mcVersion}]" // Maven exact range → correct Modrinth detection
     inputs.property 'version', project.version
     inputs.property 'mixinCompat', project.property('mixin_compat')
-    def extraMixins = (stonecutter.eval(stonecutter.current.version, '>=1.21.11') ? ', "RenderTypeInvoker", "MobRenderStateMixin", "RenderLayerMixin", "ModelPartRagdollCatchMixin", "RagdollifiedRendererMixin", "EntityRenderDispatcherRagdollMixin", "SubmitModelPartCatchMixin"' : ', "ModelPartCatchMixin"')
+    def extraMixins = (stonecutter.eval(stonecutter.current.version, '>=1.21.11') ? ', "RenderTypeInvoker", "MobRenderStateMixin", "RenderLayerMixin", "ModelPartRagdollCatchMixin", "RagdollifiedRendererMixin", "EntityRenderDispatcherRagdollMixin", "SubmitModelPartCatchMixin"' : ', "ModelPartCatchMixin", "RagdollifiedRendererMixin"')
     inputs.property 'extraMixins', extraMixins // a mixin added here must rebuild the list
     inputs.property 'minecraftRange', minecraftRange
     // NeoForge 26.3 retired `logoFile` in favour of `iconFile` (square) / `bannerFile`; older loaders only know `logoFile`.

@@ -1,4 +1,4 @@
-//? if >=1.21.11 {
+//? if >=1.21.1 {
 package com.simpleblood.mixin;
 
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -50,5 +50,10 @@ public abstract class RagdollifiedRendererMixin {
                                                        int light, double offset, CallbackInfo ci) {
         RagdollCoats.finish(buffers, light);
     }
+
+    //? if neoforge && 1.21.1 {
+    //?}
+    //? if fabric && 1.21.1 {
+    //?}
 }
 //?}

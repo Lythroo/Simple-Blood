@@ -285,7 +285,7 @@ public final class ModelFacesOfMob {
     /^* A drawn part's cubes and the pose they are drawn with. ^/
     private static void caught(ModelPart part, PoseStack.Pose pose, List<ModelPart.Cube> cubes) {
         if (cubes.isEmpty() || SKIPPED.contains(part)) return;
-        CAUGHT.add(new Object[]{new Matrix4f(pose.pose()), new Matrix3f(pose.normal()), cubes});
+        CAUGHT.add(new Object[]{new Matrix4f(pose.pose()), new Matrix3f(pose.normal()), cubes, part});
     }
 
     /^* The faces caught while the mob was drawn (this frame). ^/
@@ -299,7 +299,7 @@ public final class ModelFacesOfMob {
             Matrix4f m = (Matrix4f) c[0];
             Matrix3f n = (Matrix3f) c[1];
             for (ModelPart.Cube cube : (List<ModelPart.Cube>) c[2]) {
-                if (!addPolygons(cube, id, m, n, toWorld, camera, out)) addBox(cube, id, m, n, toWorld, camera, out);
+                if (!addPolygons(cube, id, m, n, toWorld, camera, out, (ModelPart) c[3])) addBox(cube, id, m, n, toWorld, camera, out);
                 id++;
             }
         }
@@ -311,7 +311,7 @@ public final class ModelFacesOfMob {
     private static java.lang.reflect.Field fPolygons, fVertices, fNormal, fPos, fU, fV;
     private static boolean looked, readable;
 
-    private static boolean addPolygons(ModelPart.Cube cube, int id, Matrix4f m, Matrix3f n, Quaternionf toWorld, Vec3 camera, List<Face> out) {
+    private static boolean addPolygons(ModelPart.Cube cube, int id, Matrix4f m, Matrix3f n, Quaternionf toWorld, Vec3 camera, List<Face> out, ModelPart part) {
         if (!looked) {
             looked = true;
             try {
@@ -354,13 +354,25 @@ public final class ModelFacesOfMob {
                     v[k * 5 + 4] = fV.getFloat(vs[k]);
                 }
                 Vector3f normal = (Vector3f) fNormal.get(polygon);
+                int before = out.size();
                 addPolygon(polygon, id, v, normal.x, normal.y, normal.z, m, n, toWorld, camera, out);
+                if (shaped && part != null && out.size() > before) out.get(before).shape = shapeOf(part, v);
             }
             return true;
         } catch (Throwable t) {
             readable = false;
             return false;
         }
+    }
+
+    private static long shapeOf(ModelPart part, float[] v) {
+        net.minecraft.client.model.geom.PartPose rest = part.getInitialPose();
+        long h = 1125899906842597L;
+        h = 31 * h + Float.floatToIntBits(rest.x);
+        h = 31 * h + Float.floatToIntBits(rest.y);
+        h = 31 * h + Float.floatToIntBits(rest.z);
+        for (float f : v) h = 31 * h + Float.floatToIntBits(f);
+        return h == 0 ? 1 : h;
     }
 
     private static final int[][][] SIDES = {
@@ -411,7 +423,7 @@ public final class ModelFacesOfMob {
             Matrix3f n = stack.last().normal();
             for (ModelPart.Cube cube : parts.simpleblood$cubes()) {
                 int id = cubes[0]++;
-                if (!addPolygons(cube, id, m, n, null, Vec3.ZERO, out)) addBox(cube, id, m, n, null, Vec3.ZERO, out);
+                if (!addPolygons(cube, id, m, n, null, Vec3.ZERO, out, part)) addBox(cube, id, m, n, null, Vec3.ZERO, out);
             }
         }
         for (Map.Entry<String, ModelPart> child : parts.simpleblood$children().entrySet()) {

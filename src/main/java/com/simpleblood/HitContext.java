@@ -7,6 +7,7 @@ import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 
@@ -89,6 +90,8 @@ public final class HitContext {
                 if (d.lengthSqr() > 0.01) direction = d.normalize();
             }
         }
+        Vec3 flight = shotFlight(source);
+        if (flight != null) direction = flight;
         if (direction == null && entity.hurtTime > 0 && entity instanceof Player) {
             double angle = Math.toRadians(entity.getYRot() + entity.getHurtDir());
             Vec3 towardAttacker = new Vec3(Math.cos(angle), 0, Math.sin(angle));
@@ -222,6 +225,9 @@ public final class HitContext {
         if (source.is(DamageTypes.SPEAR)) return Weapon.SPEAR;
         //?}
         if (source.is(DamageTypeTags.IS_PROJECTILE)) return Weapon.ARROW;
+        if (source.getDirectEntity() instanceof Projectile && source.getDirectEntity() != source.getEntity()) {
+            return Weapon.ARROW;
+        }
 
         Entity attacker = source.getEntity();
         if (attacker instanceof LivingEntity living) {
@@ -230,6 +236,14 @@ public final class HitContext {
             return Weapon.OTHER;
         }
         return Weapon.OTHER;
+    }
+
+    private static final double SHOT_MIN_SPEED = 0.05;
+
+    private static Vec3 shotFlight(DamageSource source) {
+        if (source == null || !(source.getDirectEntity() instanceof Projectile shot) || shot == source.getEntity()) return null;
+        Vec3 v = shot.getDeltaMovement();
+        return v.lengthSqr() > SHOT_MIN_SPEED * SHOT_MIN_SPEED ? v.normalize() : null;
     }
 
     public Vec3 entryPoint() {

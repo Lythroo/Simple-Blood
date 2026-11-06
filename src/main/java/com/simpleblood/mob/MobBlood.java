@@ -364,6 +364,20 @@ public final class MobBlood {
         coat.pending.add(new MobCoat.Splat(from, dir, HitContext.Weapon.NONE, size * amount, 2, now, colour, true));
     }
 
+    public static void shotIntoBody(int entityId, Vec3 at, Vec3 dir) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        MobCoat coat = COATS.get(entityId);
+        if (cfg == null || !cfg.mobCoat.enabled || coat == null || coat.pending.size() >= 48) return;
+        ClientLevel level = Minecraft.getInstance().level;
+        Entity e = level == null ? null : level.getEntity(entityId);
+        Vec3 origin = e != null ? e.position() : coat.lastPos;
+        if (origin == null) return;
+        float amount = settings().amount / 100f;
+        coat.pending.add(new MobCoat.Splat(at.subtract(dir.scale(0.3)).subtract(origin), dir, HitContext.Weapon.ARROW,
+                0.7f * amount, 2, now));
+        com.simpleblood.Tally.count("coat.shot");
+    }
+
     public static boolean seep(LivingEntity e, int units) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (cfg == null || !cfg.mobCoat.enabled) return false;
@@ -480,10 +494,28 @@ public final class MobBlood {
         }
         MobCoat coat = COATS.get(entityId);
         if (coat == null || invisible || posed.isEmpty() || com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
+        if (ModelFacesOfMob.shaped) coat.noteShapes(posed); // a ragdoll mod's copy of the model finds the blood by them
         coat.lastFaces = posed;
         List<Quad> quads = prepare(coat, posed, camera, light);
         if (quads.isEmpty()) return;
         draw(quads, new PoseStack().last(), buffers.getBuffer((net.minecraft.client.renderer.RenderType) SurfaceRenderer.renderType()));
+    }
+
+    static void drawOnRagdoll(int entityId, List<ModelFacesOfMob.Face> drawn, PoseStack.Pose pose, VertexConsumer vc, int light) {
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null || coat.shapes.isEmpty()) return;
+        List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
+        for (ModelFacesOfMob.Face face : drawn) {
+            Object key = face.shape == 0 ? null : coat.shapes.get(face.shape);
+            if (key == null) continue;
+            face.key = key;
+            posed.add(face);
+        }
+        if (posed.isEmpty()) return;
+        com.simpleblood.Tally.count("coat.ragdoll");
+        coat.onRagdoll = now;
+        List<Quad> quads = prepare(coat, posed, SurfaceRenderer.cameraPos(), light);
+        if (!quads.isEmpty()) draw(quads, pose, vc);
     }
     *///?}
 

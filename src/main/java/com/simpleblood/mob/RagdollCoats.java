@@ -1,4 +1,4 @@
-//? if >=1.21.11 {
+//? if >=1.21.1 {
 package com.simpleblood.mob;
 
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -18,9 +18,11 @@ public final class RagdollCoats {
     private RagdollCoats() {}
 
     private static int drawing = -1;
+    //? if >=1.21.11 {
     private static final List<ModelFacesOfMob.Face> faces = new ArrayList<>();
     private static final Set<ModelPart> walked = Collections.newSetFromMap(new IdentityHashMap<>());
     private static final int[] cubes = {0};
+    //?}
 
     public static boolean catching() {
         return drawing >= 0;
@@ -33,11 +35,16 @@ public final class RagdollCoats {
         com.simpleblood.Tally.count("ragdoll.drawn.bloody");
         if (!com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
         drawing = mobId;
+        //? if >=1.21.11 {
         faces.clear();
         walked.clear();
         cubes[0] = 0;
+        //?} else {
+        /*ModelFacesOfMob.startCatching();
+        *///?}
     }
 
+    //? if >=1.21.11 {
     public static void rendering(ModelPart part, PoseStack stack) {
         if (drawing < 0 || walked.contains(part)) return;
         com.simpleblood.Tally.count("ragdoll.part");
@@ -51,14 +58,21 @@ public final class RagdollCoats {
             com.simpleblood.Guard.fail(com.simpleblood.Guard.Part.SURFACES, "reading a ragdoll model", t);
         }
     }
+    //?}
 
     public static void finish(Object buffers, int light) {
         int id = drawing;
         drawing = -1;
+        //? if >=1.21.11 {
         if (id < 0 || faces.isEmpty()) return;
         List<ModelFacesOfMob.Face> drawn = new ArrayList<>(faces);
         faces.clear();
         walked.clear();
+        //?} else {
+        /*if (id < 0) return;
+        List<ModelFacesOfMob.Face> drawn = ModelFacesOfMob.collectCaught(SurfaceRenderer.cameraPos());
+        if (drawn.isEmpty()) return;
+        *///?}
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on a ragdoll", () -> {
             VertexConsumer vc = bufferOf(buffers);
             if (vc != null) MobBlood.drawOnRagdoll(id, drawn, new PoseStack().last(), vc, light);
@@ -66,6 +80,7 @@ public final class RagdollCoats {
         });
     }
 
+    //? if >=1.21.11 {
     public static void beginEntity(Object state) {
         if (drawing >= 0 || !(state instanceof MobRenderState s)) return;
         net.minecraft.client.multiplayer.ClientLevel level = net.minecraft.client.Minecraft.getInstance().level;
@@ -96,26 +111,33 @@ public final class RagdollCoats {
                 (p, vc) -> com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on a ragdoll",
                         () -> MobBlood.drawOnRagdoll(id, drawn, p, vc, light)));
     }
+    //?}
 
-    private static Method getBuffer;
-    private static boolean bufferLooked;
+    private static final java.util.Map<Class<?>, Method> GET_BUFFER = new java.util.HashMap<>();
 
     private static VertexConsumer bufferOf(Object buffers) {
         if (buffers == null) return null;
-        if (!bufferLooked) {
-            bufferLooked = true;
-            for (Method m : buffers.getClass().getMethods()) {
+        Class<?> type = buffers.getClass();
+        if (!GET_BUFFER.containsKey(type)) {
+            Method found = null;
+            Class<?> lookIn = type;
+            //? if <26.1 {
+            /*            if (net.minecraft.client.renderer.MultiBufferSource.class.isAssignableFrom(type)) lookIn = net.minecraft.client.renderer.MultiBufferSource.class;
+            *///?}
+            for (Method m : lookIn.getMethods()) {
                 if (m.getName().equals("getBuffer") && m.getParameterCount() == 1 && VertexConsumer.class.isAssignableFrom(m.getReturnType())) {
-                    getBuffer = m;
+                    found = m;
                     break;
                 }
             }
+            GET_BUFFER.put(type, found);
         }
+        Method getBuffer = GET_BUFFER.get(type);
         if (getBuffer == null) return null;
         try {
             return (VertexConsumer) getBuffer.invoke(buffers, SurfaceRenderer.renderType());
-        } catch (ReflectiveOperationException e) {
-            getBuffer = null;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            GET_BUFFER.put(type, null);
             return null;
         }
     }
