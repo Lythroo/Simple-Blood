@@ -16,6 +16,7 @@ public final class BloodSounds {
     private static final SoundEvent SQUELCH = own("hit.squelch"), DEATH_SPLAT = own("death.splat"), SLAP = own("slap"),
             GIBLET = own("giblet.land"), SIZZLE = own("sizzle"), STUMP = own("stump");
     private static final float GIBLET_VOLUME = 0.16f;
+    private static final float SIZZLE_VOLUME = 0.125f;
 
     private static SoundEvent own(String name) {
         return SoundEvent.createVariableRangeEvent(Ids.mod(name));
@@ -223,7 +224,7 @@ public final class BloodSounds {
         com.simpleblood.Tally.count("sound.heatVolume");
         RandomSource rng = RNG;
         if (!budget(level)) return;
-        play(level, SIZZLE, at, 0.25f, 0.9f + rng.nextFloat() * 0.2f);
+        play(level, SIZZLE, at, SIZZLE_VOLUME, 0.9f + rng.nextFloat() * 0.2f);
     }
 
     public static void stump(ClientLevel level, Vec3 at) {
@@ -413,7 +414,7 @@ public final class BloodSounds {
                 case WOUND_DRIPS -> play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_LAVA, null, 0.4f, 0.8f + rng.nextFloat() * 0.3f);
                 case SLAPS -> play(null, SLAP, null, 0.6f, 0.85f + rng.nextFloat() * 0.1f);
                 case WATER -> play(null, SoundEvents.POINTED_DRIPSTONE_DRIP_WATER_INTO_CAULDRON, null, 0.3f, 1.0f + rng.nextFloat() * 0.25f);
-                case HEAT -> play(null, SIZZLE, null, 0.25f, 0.9f + rng.nextFloat() * 0.2f);
+                case HEAT -> play(null, SIZZLE, null, SIZZLE_VOLUME, 0.9f + rng.nextFloat() * 0.2f);
                 case PIECES -> play(null, GIBLET, null, GIBLET_VOLUME, 0.9f + rng.nextFloat() * 0.25f);
                 case FOOTSTEPS -> play(null, SoundEvents.MUD_STEP, null, 0.15f, 1.25f + rng.nextFloat() * 0.25f);
                 case TEARS -> tear(null, null);
