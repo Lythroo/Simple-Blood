@@ -217,6 +217,8 @@ public class LivingEntityMixin implements BloodEntityAccess {
             if (ctx.smash) com.simpleblood.Tally.count("hit.smash");
             simpleblood$lastContextTick = entity.tickCount;
             simpleblood$setWound(ctx.wound);
+            if (died) com.simpleblood.compat.PhysicsModRagdolls.killedByShot(entity, ctx);
+            else com.simpleblood.mob.BulletWounds.hit(entity, ctx);
             float through = com.simpleblood.ArmorSparks.hit(clientWorld, entity, ctx, source);
             if (through < 1f) com.simpleblood.Tally.count("armor.absorbed");
             SimpleBloodClient.addBurstTask(new ClientBloodBurstTask(clientWorld, entity, ctx).scaled(through));

@@ -13,9 +13,16 @@ import java.util.Map;
 
 final class MobCoat {
     final java.util.Map<Long, Object> shapes = new java.util.HashMap<>();
+    net.minecraft.world.entity.EntityType<?> type;
+    boolean baby;
     java.util.List<ModelFacesOfMob.Face> lastFaces;
     int onRagdoll = -1000;
     net.minecraft.world.phys.Vec3 lastPos;
+
+    void model(net.minecraft.world.entity.LivingEntity e) {
+        type = e.getType();
+        baby = e.isBaby();
+    }
 
     void noteShapes(java.util.List<ModelFacesOfMob.Face> faces) {
         for (ModelFacesOfMob.Face f : faces) if (f.shape != 0) shapes.putIfAbsent(f.shape, f.key);

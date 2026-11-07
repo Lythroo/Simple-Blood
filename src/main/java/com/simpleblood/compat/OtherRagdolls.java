@@ -1,6 +1,7 @@
 package com.simpleblood.compat;
 
 import com.simpleblood.SimpleBlood;
+import com.simpleblood.mob.RagdollBodies;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -190,38 +191,131 @@ public final class OtherRagdolls {
         return ragdollParts == null ? 0 : ragdollParts.length;
     }
 
-    private static Method worldPose;
-    private static Field poseId, poseRotation, rx, ry, rz, rw;
-    private static boolean poseLooked;
+    private static Method allRagdolls;
+    private static Method ragdollIdOf, originalIdOf, ragdollGone, snapshotOf;
+    private static Field snapPositions, snapRotations, snapHalves, snapGone;
+    private static Field tupleX, tupleY, tupleZ, quatX, quatY, quatZ, quatW;
+    private static boolean boxesLooked;
+    private static Method saroRotation, saroBoxSize, saroQx, saroQy, saroQz, saroQw;
+    private static boolean saroBoxesLooked;
+    private static final int LIMB_FRESH = 10;
 
-    static org.joml.Quaternionf[] turns(int ragdollId) {
-        try {
-            if (!poseLooked) {
-                poseLooked = true;
+    static void bodies(ClientLevel level, java.util.List<RagdollBodies.Body> out) {
+        if (!any()) return;
+        if (ragdollIds != null) ragdollifiedBoxes(out);
+        if (!LIMBS.isEmpty()) {
+            long now = level.getGameTime();
+            LIMBS.forEach((id, l) -> {
+                if (now - l.seen() > LIMB_FRESH || now < l.seen() || l.turn() == null || l.half() == null) return;
+                com.simpleblood.geom.OrientedBox box = box(l.at().x, l.at().y, l.at().z, l.turn().x, l.turn().y, l.turn().z, l.turn().w,
+                        l.half().x, l.half().y, l.half().z);
+                RagdollBodies.Body b = RagdollBodies.body("ragdollified-limb", id, null, l.source(), new com.simpleblood.geom.OrientedBox[]{box});
+                if (b != null) out.add(b);
+            });
+        }
+        if (saroEntity != null) saroBoxes(level, out);
+    }
+
+    private static void ragdollifiedBoxes(java.util.List<RagdollBodies.Body> out) {
+        if (!boxesLooked) {
+            boxesLooked = true;
+            try {
                 ClassLoader cl = OtherRagdolls.class.getClassLoader();
-                worldPose = Class.forName("com.raiiiden.ragdollified.api.RagdollifiedApi", false, cl).getMethod("worldPose", int.class);
-                Class<?> transform = Class.forName("com.raiiiden.ragdollified.RagdollTransform", false, cl);
-                poseId = transform.getField("partId");
-                poseRotation = transform.getField("rotation");
-                Class<?> q = poseRotation.getType();
-                rx = q.getField("x");
-                ry = q.getField("y");
-                rz = q.getField("z");
-                rw = q.getField("w");
+                allRagdolls = Class.forName("com.raiiiden.ragdollified.client.ClientRagdollManager", false, cl).getMethod("getAll");
+                Class<?> ragdoll = Class.forName("com.raiiiden.ragdollified.client.ClientRagdoll", false, cl);
+                ragdollIdOf = ragdoll.getMethod("getId");
+                originalIdOf = ragdoll.getMethod("getOriginalEntityId");
+                ragdollGone = ragdoll.getMethod("isDestroyed");
+                snapshotOf = ragdoll.getMethod("getSnapshot");
+                Class<?> snap = snapshotOf.getReturnType();
+                snapPositions = snap.getField("positions");
+                snapRotations = snap.getField("rotations");
+                snapHalves = snap.getField("halfExtents");
+                snapGone = snap.getField("destroyed");
+                Class<?> vector = snapPositions.getType().getComponentType(), quat = snapRotations.getType().getComponentType();
+                tupleX = vector.getField("x");
+                tupleY = vector.getField("y");
+                tupleZ = vector.getField("z");
+                quatX = quat.getField("x");
+                quatY = quat.getField("y");
+                quatZ = quat.getField("z");
+                quatW = quat.getField("w");
+            } catch (Throwable t) {
+                allRagdolls = null;
+                SimpleBlood.LOGGER.warn("Ragdollified: ragdoll parts not readable; blood passes through its ragdolls and shots do not hit them ({})", t.toString());
             }
-            if (worldPose == null) return null;
-            if (!(worldPose.invoke(null, ragdollId) instanceof Optional<?> pose) || pose.isEmpty() || !(pose.get() instanceof Object[] all)) return null;
-            org.joml.Quaternionf[] out = new org.joml.Quaternionf[8];
-            for (Object t : all) {
-                int i = poseId.getInt(t);
-                if (i < 0 || i >= out.length) continue;
-                Object r = poseRotation.get(t);
-                out[i] = new org.joml.Quaternionf(rx.getFloat(r), ry.getFloat(r), rz.getFloat(r), rw.getFloat(r));
+        }
+        if (allRagdolls == null) return;
+        try {
+            if (!(allRagdolls.invoke(null) instanceof java.util.Collection<?> all)) return;
+            for (Object r : all) {
+                if (Boolean.TRUE.equals(ragdollGone.invoke(r))) continue;
+                Object s = snapshotOf.invoke(r);
+                if (s == null || snapGone.getBoolean(s)) continue;
+                Object[] at = (Object[]) snapPositions.get(s), turn = (Object[]) snapRotations.get(s), half = (Object[]) snapHalves.get(s);
+                if (at == null || turn == null || half == null) continue;
+                com.simpleblood.geom.OrientedBox[] parts = new com.simpleblood.geom.OrientedBox[at.length];
+                for (int i = 0; i < at.length; i++) {
+                    if (at[i] == null || i >= turn.length || turn[i] == null || i >= half.length || half[i] == null) continue;
+                    parts[i] = box(tupleX.getFloat(at[i]), tupleY.getFloat(at[i]), tupleZ.getFloat(at[i]),
+                            quatX.getFloat(turn[i]), quatY.getFloat(turn[i]), quatZ.getFloat(turn[i]), quatW.getFloat(turn[i]),
+                            tupleX.getFloat(half[i]), tupleY.getFloat(half[i]), tupleZ.getFloat(half[i]));
+                }
+                RagdollBodies.Body b = RagdollBodies.body("ragdollified", (Integer) ragdollIdOf.invoke(r), null, (Integer) originalIdOf.invoke(r), parts);
+                if (b != null) out.add(b);
             }
-            return out;
         } catch (Throwable t) {
-            if (worldPose != null) SimpleBlood.LOGGER.warn("Ragdollified: part turns not readable, bullet wounds on its ragdolls stay unturned ({})", t.toString());
-            worldPose = null;
+            allRagdolls = null;
+            SimpleBlood.LOGGER.warn("Ragdollified: ragdoll parts not readable any more; blood passes through its ragdolls and shots do not hit them ({})", t.toString());
+        }
+    }
+
+    private static void saroBoxes(ClientLevel level, java.util.List<RagdollBodies.Body> out) {
+        if (!saroBoxesLooked) {
+            saroBoxesLooked = true;
+            try {
+                ClassLoader cl = OtherRagdolls.class.getClassLoader();
+                saroRotation = saroTransform.getReturnType().getMethod("getRotation");
+                Class<?> quat = saroRotation.getReturnType();
+                saroQx = quat.getMethod("getX");
+                saroQy = quat.getMethod("getY");
+                saroQz = quat.getMethod("getZ");
+                saroQw = quat.getMethod("getW");
+                saroBoxSize = Class.forName("de.sarocesch.sarosragdoll.ragdoll.physics.EnumRagdollBodyPart", false, cl).getMethod("getBoxSize");
+            } catch (Throwable t) {
+                saroRotation = null;
+                SimpleBlood.LOGGER.warn("Saro's Player Ragdoll: part boxes not readable; blood passes through its ragdolls ({})", t.toString());
+            }
+        }
+        if (saroRotation == null) return;
+        try {
+            for (Entity e : level.entitiesForRendering()) {
+                if (!saroEntity.isInstance(e)) continue;
+                com.simpleblood.geom.OrientedBox[] parts = new com.simpleblood.geom.OrientedBox[saroParts.length];
+                for (int i = 0; i < parts.length; i++) {
+                    Object sync = saroPart.invoke(e, saroParts[i]);
+                    if (sync == null) continue;
+                    Object transform = saroTransform.invoke(sync);
+                    Object p = saroPosition.invoke(transform), q = saroRotation.invoke(transform), half = saroBoxSize.invoke(saroParts[i]);
+                    if (p == null || q == null || half == null) continue;
+                    parts[i] = box(vx.getFloat(p), vy.getFloat(p), vz.getFloat(p),
+                            (Float) saroQx.invoke(q), (Float) saroQy.invoke(q), (Float) saroQz.invoke(q), (Float) saroQw.invoke(q),
+                            vx.getFloat(half), vy.getFloat(half), vz.getFloat(half));
+                }
+                RagdollBodies.Body b = RagdollBodies.body("saros", e.getId(), null, (Integer) saroPlayerId.invoke(e), parts);
+                if (b != null) out.add(b);
+            }
+        } catch (Throwable t) {
+            saroRotation = null;
+            SimpleBlood.LOGGER.warn("Saro's Player Ragdoll: part boxes not readable any more; blood passes through its ragdolls ({})", t.toString());
+        }
+    }
+
+    private static com.simpleblood.geom.OrientedBox box(double x, double y, double z, double qx, double qy, double qz, double qw,
+                                                        double hx, double hy, double hz) {
+        try {
+            return new com.simpleblood.geom.OrientedBox(x, y, z, qx, qy, qz, qw, Math.abs(hx), Math.abs(hy), Math.abs(hz));
+        } catch (IllegalArgumentException e) {
             return null;
         }
     }

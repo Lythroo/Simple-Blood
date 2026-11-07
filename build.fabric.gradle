@@ -29,6 +29,8 @@ loom {
     }
 }
 
+apply from: rootProject.file('unit-tests.gradle') // JUnit for the plain-Java maths
+
 repositories {
     mavenCentral()
     maven { url = 'https://maven.terraformersmc.com/releases/' }

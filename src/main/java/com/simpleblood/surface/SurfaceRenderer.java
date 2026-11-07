@@ -50,6 +50,15 @@ public final class SurfaceRenderer {
     }
 
     public static void render(ClientLevel level, Vec3 cam, PoseStack.Pose pose, VertexConsumer vc, boolean onSeeThrough) {
+        long started = com.simpleblood.Tally.ON ? System.nanoTime() : 0;
+        try {
+            renderTimed(level, cam, pose, vc, onSeeThrough);
+        } finally {
+            if (com.simpleblood.Tally.ON) com.simpleblood.Tally.add("surface.render.ns", System.nanoTime() - started);
+        }
+    }
+
+    private static void renderTimed(ClientLevel level, Vec3 cam, PoseStack.Pose pose, VertexConsumer vc, boolean onSeeThrough) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (!onSeeThrough && cfg != null) {
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on a physics ragdoll",

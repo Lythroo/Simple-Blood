@@ -50,6 +50,8 @@ mixin {
     config 'simpleblood.mixins.json'
 }
 
+apply from: rootProject.file('unit-tests.gradle') // JUnit for the plain-Java maths
+
 repositories {
     mavenCentral()
 }

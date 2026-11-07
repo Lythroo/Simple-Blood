@@ -51,6 +51,8 @@ configurations {
     devShaderMods { transitive = false } // Iris + Sodium for the dev client (see copyShaderMods)
 }
 
+apply from: rootProject.file('unit-tests.gradle') // JUnit for the plain-Java maths
+
 repositories {
     mavenCentral()
     exclusiveContent {

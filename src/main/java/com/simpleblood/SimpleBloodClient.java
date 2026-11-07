@@ -81,7 +81,9 @@ public final class SimpleBloodClient {
         Guard.run(Guard.Part.PARTICLES, "counting blood particles", com.simpleblood.particle.ParticleCensus::tick);
         Guard.run(Guard.Part.SURFACES, "footprints", () -> com.simpleblood.surface.Footprints.tick(client));
         Guard.run(Guard.Part.HITS, "an exploded creeper's blood", () -> CreeperBlast.tick(client.level));
+        Guard.run(Guard.Part.HITS, "reading ragdoll bodies", () -> com.simpleblood.compat.RagdollBodyReader.tick(client.level));
         Guard.run(Guard.Part.HITS, "Physics Mod ragdolls bleeding", () -> com.simpleblood.compat.PhysicsModRagdolls.tick(client.level));
+        Guard.run(Guard.Part.HITS, "shot mobs' wounds pumping", () -> com.simpleblood.mob.BulletWounds.tick(client.level));
 
         Iterator<ClientBloodBurstTask> it = activeBursts.iterator();
         while (it.hasNext()) {

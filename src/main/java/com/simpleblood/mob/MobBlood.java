@@ -31,7 +31,7 @@ public final class MobBlood {
     private MobBlood() {}
 
     private static final Map<Integer, MobCoat> COATS = new HashMap<>();
-    private static final boolean RAGDOLL_MODELS = com.simpleblood.Platform.modIds().contains("ragdollified")
+    static final boolean RAGDOLL_MODELS = com.simpleblood.Platform.modIds().contains("ragdollified")
             || com.simpleblood.Platform.modIds().contains("saros_ragdoll");
     private static final RandomSource RNG = RandomSource.create();
     private static final int MAX_COATS = 96;
@@ -48,6 +48,10 @@ public final class MobBlood {
 
     static int now() {
         return now;
+    }
+
+    private static Map<Long, Object> shapesOf(MobCoat coat) {
+        return coat.shapes.isEmpty() ? ModelShapes.of(coat.type, coat.baby) : coat.shapes;
     }
 
     static void drawPosed(MobCoat coat, List<ModelFacesOfMob.Face> posed, float[] fade, PoseStack.Pose pose, VertexConsumer vc, Vec3 camera, int light) {
@@ -79,6 +83,7 @@ public final class MobBlood {
         if (coat == null) {
             if (COATS.size() >= MAX_COATS) return;
             coat = new MobCoat(e.getId(), colourOf(e));
+            coat.model(e);
             COATS.put(e.getId(), coat);
         }
         float amount = Math.max(0, cfg.mobCoat.amount) / 100f;
@@ -178,7 +183,8 @@ public final class MobBlood {
     }
 
     public static boolean watching(int entityId) {
-        return COATS.containsKey(entityId) || WoundAnchors.wants(entityId) || CORPSES.containsKey(entityId);
+        return COATS.containsKey(entityId) || WoundAnchors.wants(entityId) || CORPSES.containsKey(entityId)
+                || ModelShapes.wanted(entityId);
     }
 
     private static final class Corpse {
@@ -356,6 +362,7 @@ public final class MobBlood {
         if (coat == null) {
             if (COATS.size() >= MAX_COATS) return;
             coat = new MobCoat(e.getId(), colourOf(e));
+            coat.model(e);
             COATS.put(e.getId(), coat);
         }
         if (coat.pending.size() >= 48) return;
@@ -364,13 +371,28 @@ public final class MobBlood {
         coat.pending.add(new MobCoat.Splat(from, dir, HitContext.Weapon.NONE, size * amount, 2, now, colour, true));
     }
 
+    public static void landedOnRagdoll(int entityId, Vec3 at, Vec3 dir, int colour, float size) {
+        MobCoat coat = COATS.get(entityId);
+        if (!catchesDrops() || coat == null || coat.pending.size() >= 48) return;
+        Vec3 origin = originOf(coat);
+        if (origin == null) return;
+        com.simpleblood.Tally.count("coat.landed.ragdoll");
+        float amount = settings().amount / 100f;
+        coat.pending.add(new MobCoat.Splat(at.subtract(dir.scale(0.3)).subtract(origin), dir, HitContext.Weapon.NONE,
+                size * amount, 2, now, colour, true));
+    }
+
+    private static Vec3 originOf(MobCoat coat) {
+        ClientLevel level = Minecraft.getInstance().level;
+        Entity e = level == null ? null : level.getEntity(coat.entityId);
+        return e != null ? e.position() : coat.lastPos;
+    }
+
     public static void shotIntoBody(int entityId, Vec3 at, Vec3 dir) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         MobCoat coat = COATS.get(entityId);
         if (cfg == null || !cfg.mobCoat.enabled || coat == null || coat.pending.size() >= 48) return;
-        ClientLevel level = Minecraft.getInstance().level;
-        Entity e = level == null ? null : level.getEntity(entityId);
-        Vec3 origin = e != null ? e.position() : coat.lastPos;
+        Vec3 origin = originOf(coat);
         if (origin == null) return;
         float amount = settings().amount / 100f;
         coat.pending.add(new MobCoat.Splat(at.subtract(dir.scale(0.3)).subtract(origin), dir, HitContext.Weapon.ARROW,
@@ -415,8 +437,8 @@ public final class MobBlood {
     public static void submit(int entityId, Object state, net.minecraft.client.model.geom.ModelPart root, PoseStack pose,
                               net.minecraft.client.renderer.SubmitNodeCollector collector, int light, Object texture) {
         frame = null;
-        boolean coated = COATS.containsKey(entityId);
-        if (!coated && !WoundAnchors.wants(entityId) && !CORPSES.containsKey(entityId)) return;
+        boolean coated = COATS.containsKey(entityId), shapesWanted = ModelShapes.wanted(entityId);
+        if (!coated && !shapesWanted && !WoundAnchors.wants(entityId) && !CORPSES.containsKey(entityId)) return;
         if (com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
         Frame f = new Frame(entityId, state, SurfaceRenderer.cameraPos(), light);
         com.simpleblood.compat.EmfPoses.pose(state, root);
@@ -424,6 +446,7 @@ public final class MobBlood {
         textured(f.faces, 0, texture);
         WoundAnchors.posed(entityId, f.faces);
         lieDown(entityId, f.faces);
+        if (shapesWanted) ModelShapes.note(entityId, f.faces);
         if (!coated) return;
         if (ModelFacesOfMob.shaped) COATS.get(entityId).noteShapes(f.faces);
         frame = f;
@@ -452,10 +475,11 @@ public final class MobBlood {
 
     static void drawOnRagdoll(int entityId, List<ModelFacesOfMob.Face> drawn, PoseStack.Pose pose, VertexConsumer vc, int light) {
         MobCoat coat = COATS.get(entityId);
-        if (coat == null || coat.shapes.isEmpty()) return;
+        Map<Long, Object> shapes = coat == null ? Map.of() : shapesOf(coat);
+        if (shapes.isEmpty()) return;
         List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
         for (ModelFacesOfMob.Face face : drawn) {
-            Object key = face.shape == 0 ? null : coat.shapes.get(face.shape);
+            Object key = face.shape == 0 ? null : shapes.get(face.shape);
             if (key == null) continue;
             face.key = key;
             posed.add(face);
@@ -491,6 +515,7 @@ public final class MobBlood {
         if (!com.simpleblood.compat.ShaderPacks.inShadowPass()) {
             WoundAnchors.posed(entityId, posed);
             lieDown(entityId, posed);
+            if (ModelShapes.wanted(entityId)) ModelShapes.note(entityId, posed);
         }
         MobCoat coat = COATS.get(entityId);
         if (coat == null || invisible || posed.isEmpty() || com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
@@ -503,10 +528,11 @@ public final class MobBlood {
 
     static void drawOnRagdoll(int entityId, List<ModelFacesOfMob.Face> drawn, PoseStack.Pose pose, VertexConsumer vc, int light) {
         MobCoat coat = COATS.get(entityId);
-        if (coat == null || coat.shapes.isEmpty()) return;
+        Map<Long, Object> shapes = coat == null ? Map.of() : shapesOf(coat);
+        if (shapes.isEmpty()) return;
         List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
         for (ModelFacesOfMob.Face face : drawn) {
-            Object key = face.shape == 0 ? null : coat.shapes.get(face.shape);
+            Object key = face.shape == 0 ? null : shapes.get(face.shape);
             if (key == null) continue;
             face.key = key;
             posed.add(face);

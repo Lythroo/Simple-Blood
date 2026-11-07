@@ -378,6 +378,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
     protected final com.simpleblood.BloodKind kind;
     protected final boolean glows;
     private final int chainDepth;
+    private final int clearsAtBirth = com.simpleblood.surface.BloodSurfaces.clears();
     private final int carriedPixels;
     private final double floorY;
     private final float baseRed, baseGreen, baseBlue;
@@ -551,6 +552,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         if (!Double.isFinite(x + y + z + fromX + fromY + fromZ)) return true;
         Vec3 from = new Vec3(fromX, fromY, fromZ), to = new Vec3(x, y, z);
         if (from.distanceToSqr(to) > 16 * 16) return false;
+        if (landsOnRagdoll(fromX, fromY, fromZ)) return true;
         net.minecraft.world.phys.AABB path = new net.minecraft.world.phys.AABB(from, to).inflate(0.05);
         if (com.simpleblood.RenderThread.on()) {
             for (net.minecraft.world.entity.LivingEntity e : level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, path)) {
@@ -564,16 +566,37 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         return false;
     }
 
+    private boolean landsOnRagdoll(double fromX, double fromY, double fromZ) {
+        if (born == null) return false;
+        com.simpleblood.mob.RagdollBodies.Hit hit = com.simpleblood.mob.RagdollBodies.dropHit(fromX, fromY, fromZ, x, y, z,
+                born.x, born.y, born.z, age < com.simpleblood.mob.RagdollBodies.BORN_GRACE_TICKS);
+        if (hit == null) return false;
+        com.simpleblood.Tally.count("ragdoll.drop.hit");
+        int mobId = hit.body().mobId();
+        if (mobId < 0) return true;
+        Vec3 d = new Vec3(x - fromX, y - fromY, z - fromZ);
+        Vec3 dir = d.lengthSqr() < 1.0e-8 ? new Vec3(0, -1, 0) : d.normalize();
+        int colour = dropColour();
+        float size = splash ? 1.2f : 0.8f;
+        Vec3 point = hit.at();
+        com.simpleblood.RenderThread.run(() -> com.simpleblood.mob.MobBlood.landedOnRagdoll(mobId, point, dir, colour, size));
+        return true;
+    }
+
+    private int dropColour() {
+        int rgb = ((int) (baseRed * 255) << 16) | ((int) (baseGreen * 255) << 8) | (int) (baseBlue * 255);
+        if (rgb == 0) rgb = 0x010101;
+        if (glows) rgb |= com.simpleblood.BloodColor.GLOW_BIT;
+        return rgb;
+    }
+
     private boolean stains(net.minecraft.world.entity.LivingEntity e, net.minecraft.world.phys.AABB box, Vec3 from, Vec3 to) {
         if (box.inflate(0.3).contains(born)) return false;
         java.util.Optional<Vec3> at = box.clip(from, to);
         if (at.isEmpty() && !box.contains(to)) return false;
         Vec3 d = to.subtract(from);
         Vec3 dir = d.lengthSqr() < 1.0e-8 ? new Vec3(0, -1, 0) : d.normalize();
-        int rgb = ((int) (baseRed * 255) << 16) | ((int) (baseGreen * 255) << 8) | (int) (baseBlue * 255);
-        if (rgb == 0) rgb = 0x010101;
-        if (glows) rgb |= com.simpleblood.BloodColor.GLOW_BIT;
-        int colour = rgb;
+        int colour = dropColour();
         Vec3 point = at.orElse(to);
         float size = splash ? 1.2f : 0.8f;
         com.simpleblood.RenderThread.run(() -> com.simpleblood.mob.MobBlood.landed(e, point, dir, colour, size));
@@ -976,6 +999,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
 
     private boolean depositOnSurface(double fromX, double fromY, double fromZ,
                                      double wantX, double wantY, double wantZ, boolean touching) {
+        if (clearsAtBirth != com.simpleblood.surface.BloodSurfaces.clears()) return true;
         Vec3 from = new Vec3(fromX, fromY, fromZ);
         Vec3 dir = new Vec3(wantX, wantY, wantZ);
         double len = dir.length();

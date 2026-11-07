@@ -1,0 +1,11 @@
+// Unit tests of the plain-Java parts (src/test, no game classes): JUnit 5, `gradlew :<node>:test`.
+// Applied by every loader's build script, so each node can run them.
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.0'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

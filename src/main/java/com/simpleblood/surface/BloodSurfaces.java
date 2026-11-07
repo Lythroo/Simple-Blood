@@ -1303,6 +1303,10 @@ public final class BloodSurfaces {
 
     private static void letGo(ClientLevel level, CanvasTile tile, Vec3 rest, int colour, int carried, double floorY) {
         Vec3 at = posed(level, tile, rest);
+        if (insideHitbox(level, at)) {
+            com.simpleblood.Tally.count("drop.inside");
+            return;
+        }
         Vec3 v = surfaceVelocity(level, tile, rest);
         if (v.lengthSqr() < 1.0e-8) {
             BloodParticle.spawnDroplet(level, at.x, at.y, at.z, colour, carried, floorY);
@@ -1312,6 +1316,17 @@ public final class BloodSurfaces {
             com.simpleblood.Tally.add("drop.moving.speed.mm", Math.round(v.length() * 1000));
             if (com.simpleblood.Tally.ON && MOVING_DROPS.size() < 256) MOVING_DROPS.add(new double[]{at.x, at.y, at.z, v.x, v.y, v.z});
         }
+    }
+
+    private static boolean insideHitbox(ClientLevel level, Vec3 at) {
+        BlockPos pos = BlockPos.containing(at);
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) return false;
+        double lx = at.x - pos.getX(), ly = at.y - pos.getY(), lz = at.z - pos.getZ();
+        for (AABB b : state.getCollisionShape(level, pos).toAabbs()) {
+            if (b.contains(lx, ly, lz)) return true;
+        }
+        return false;
     }
 
     private static final Map<Long, com.simpleblood.compat.CreateKinetics.Part> SPIN_PARTS = new HashMap<>();
@@ -2670,6 +2685,21 @@ public final class BloodSurfaces {
     }
 
     public static void tick(Minecraft mc) {
+        long started = com.simpleblood.Tally.ON ? System.nanoTime() : 0;
+        try {
+            tickTimed(mc);
+        } finally {
+            if (com.simpleblood.Tally.ON) com.simpleblood.Tally.add("surface.tick.ns", System.nanoTime() - started);
+        }
+    }
+
+    private static volatile int clears;
+
+    public static int clears() { return clears; }
+
+    public static int movingCount() { return RUNS.size() + FALLING.size(); }
+
+    private static void tickTimed(Minecraft mc) {
         ClientLevel level = mc.level;
         if (level == null) {
             if (!TILES.isEmpty() || trackedLevel != null) {
@@ -2895,6 +2925,7 @@ public final class BloodSurfaces {
             RenderThread.run(BloodSurfaces::clear);
             return;
         }
+        clears++;
         PENDING.clear();
         pendingCount.set(0);
         com.simpleblood.mob.MobBlood.clear();

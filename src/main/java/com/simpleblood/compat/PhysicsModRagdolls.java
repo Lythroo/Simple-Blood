@@ -9,6 +9,9 @@ import com.simpleblood.Platform;
 import com.simpleblood.SimpleBlood;
 import com.simpleblood.SimpleBloodClient;
 import com.simpleblood.SimpleBloodConfig;
+import com.simpleblood.geom.OrientedBox;
+import com.simpleblood.mob.RagdollBodies;
+import com.simpleblood.mob.PumpingWound;
 import com.simpleblood.particle.BloodParticle;
 import com.simpleblood.surface.BloodSurfaces;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -152,6 +155,7 @@ public final class PhysicsModRagdolls {
         Spurt cut;
         final List<ShotWound> shotWounds = new ArrayList<>(0);
         final Set<Integer> shotBy = new java.util.HashSet<>();
+        KillShot killShot;
 
         float blood = 1f;
         private long drained = Long.MIN_VALUE;
@@ -175,14 +179,6 @@ public final class PhysicsModRagdolls {
 
         float pressure(Spurt sp) {
             return sp.own >= 0f ? sp.own : blood;
-        }
-
-        boolean pumping() {
-            if (blood > DRY && (cut != null || !tears.isEmpty())) return true;
-            for (Spurt sp : stumps) if (sp != null && blood > DRY) return true;
-            if (pieceWounds != null && !pieceWounds.isEmpty() && blood > DRY) return true;
-            for (Tear t : tears) if (t.atPiece().own > DRY) return true;
-            return !shotWounds.isEmpty();
         }
 
         int[][] links;
@@ -228,7 +224,7 @@ public final class PhysicsModRagdolls {
                 String.valueOf(net.minecraft.world.entity.EntityType.getKey(entity.getType())));
     }
 
-    private static boolean enabled() {
+    static boolean enabled() {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         return cfg != null && cfg.globalEnabled() && cfg.general.physicsModRagdolls && (available() || OtherRagdolls.any());
     }
@@ -248,9 +244,7 @@ public final class PhysicsModRagdolls {
     }
 
     private static int scaled(int base, int percent) {
-        float f = base * Math.max(0, percent) / 100f;
-        int n = (int) f;
-        return RNG.nextFloat() < f - n ? n + 1 : n;
+        return PumpingWound.scaled(base, percent);
     }
 
     public static void tick(ClientLevel level) {
@@ -262,14 +256,17 @@ public final class PhysicsModRagdolls {
             SEEN_OTHER.clear();
             BLEEDING.clear();
             LIVING.clear();
+            KILL_SHOTS.clear();
         }
         if (!enabled()) {
             BLEEDING.clear();
             LIVING.clear();
+            KILL_SHOTS.clear();
             return;
         }
         long now = level.getGameTime();
         DEATHS.removeIf(d -> now - d.tick > MATCH_WINDOW);
+        KILL_SHOTS.values().removeIf(k -> now - k.tick() > MATCH_WINDOW || now < k.tick());
         if (available()) {
             try {
                 tickBodies(level);
@@ -285,78 +282,144 @@ public final class PhysicsModRagdolls {
 
     private record ShotWound(int part, Vec3 offset, Vec3 facing, Spurt spurt) {}
 
+    private record KillShot(Vec3 at, Vec3 dir, long tick) {}
+
     private static final List<Shot> SHOTS = new ArrayList<>();
     private static long shotsSeen = Long.MIN_VALUE;
+    private static final Map<Integer, KillShot> KILL_SHOTS = new HashMap<>();
     private static final double SHOT_SPEED = 0.6;
-    private static final double SHOT_REACH = 0.35;
     private static final int SHOT_BLEED = 100;
-    private static final float SHOT_SIZE = 0.4f;
-    private static final double SHOT_DEPTH = 0.13;
+    private static final double SHOT_OUT = 0.03;
+    private static final double KILL_SHOT_REACH = 0.8;
+    private static final double SHOT_PUSH = 0.04;
+    private static final int SHOT_PUSH_STEPS = 8;
     private static final int SHOT_EXIT = 4;
+
+    private static it.unimi.dsi.fastutil.ints.IntOpenHashSet fastNow = new it.unimi.dsi.fastutil.ints.IntOpenHashSet(),
+            fastBefore = new it.unimi.dsi.fastutil.ints.IntOpenHashSet();
 
     private static List<Shot> shots(ClientLevel level, long now) {
         if (shotsSeen != now) {
             shotsSeen = now;
             SHOTS.clear();
+            it.unimi.dsi.fastutil.ints.IntOpenHashSet was = fastBefore;
+            fastBefore = fastNow;
+            fastNow = was;
+            fastNow.clear();
             for (net.minecraft.world.entity.Entity e : level.entitiesForRendering()) {
                 if (!(e instanceof net.minecraft.world.entity.projectile.Projectile) || e.isRemoved()) continue;
-                Vec3 to = e.position(), from = new Vec3(e.xo, e.yo, e.zo);
-                if (from.distanceToSqr(to) < SHOT_SPEED * SHOT_SPEED) continue;
-                SHOTS.add(new Shot(e.getId(), from, to));
-                com.simpleblood.Tally.count("ragdoll.shot.flying");
+                double moved2 = e.position().distanceToSqr(e.xo, e.yo, e.zo);
+                boolean fast = moved2 >= SHOT_SPEED * SHOT_SPEED;
+                if (fast) fastNow.add(e.getId());
+                else if (!fastBefore.contains(e.getId()) || moved2 < LAST_STEP * LAST_STEP) continue;
+                SHOTS.add(new Shot(e.getId(), new Vec3(e.xo, e.yo, e.zo), e.position()));
+                com.simpleblood.Tally.count(fast ? "ragdoll.shot.flying" : "ragdoll.shot.landing");
             }
         }
         return SHOTS;
     }
 
-    private static void shot(ClientLevel level, Bleeding b, Vec3[] parts,
-                             java.util.function.IntFunction<org.joml.Quaternionf> turnOf, long now) {
+    private static final double LAST_STEP = 0.01;
+
+    public static void killedByShot(LivingEntity mob, com.simpleblood.HitContext ctx) {
+        if (ctx.weapon != com.simpleblood.HitContext.Weapon.ARROW || ctx.wound == null || ctx.direction == null) return;
+        if (!enabled() || !(mob.level() instanceof ClientLevel level)) return;
+        KILL_SHOTS.put(mob.getId(), new KillShot(ctx.wound, ctx.direction, level.getGameTime()));
+        com.simpleblood.Tally.count("ragdoll.shot.kill");
+    }
+
+    private static void shot(ClientLevel level, Bleeding b, RagdollBodies.Body body, long now) {
         Death d = b.death;
         if (d.kind != BloodKind.LIQUID) return;
+        b.shotWounds.removeIf(w -> now - w.spurt().since() > SHOT_BLEED);
+        if (body == null) return;
         List<Shot> shots = shots(level, now);
-        b.shotWounds.removeIf(w -> now - w.spurt().since > SHOT_BLEED);
-        if (shots.isEmpty() && b.shotWounds.isEmpty()) return;
+        if (shots.isEmpty() && b.shotWounds.isEmpty() && b.killShot == null) return;
         prepare(d);
         try {
+            if (b.killShot != null) {
+                killShotWound(level, b, body, now);
+                b.killShot = null;
+            }
             for (Shot shot : shots) {
                 if (b.shotBy.contains(shot.id())) continue;
-                Vec3 path = shot.to().subtract(shot.from());
-                double length2 = path.lengthSqr();
-                for (int i = 0; i < parts.length; i++) {
-                    Vec3 p = parts[i];
-                    if (p == null) continue;
-                    double t = Math.max(0, Math.min(1, p.subtract(shot.from()).dot(path) / length2));
-                    Vec3 at = shot.from().add(path.scale(t));
-                    if (at.distanceToSqr(p) > SHOT_REACH * SHOT_REACH) continue;
-                    Vec3 dir = path.normalize();
-                    Vec3 entry = at.subtract(dir.scale(SHOT_DEPTH));
-                    org.joml.Quaternionf turn = turnOf.apply(i);
-                    org.joml.Quaternionf back = turn == null ? null : new org.joml.Quaternionf(turn).conjugate();
-                    b.shotBy.add(shot.id());
-                    b.shotWounds.add(new ShotWound(i, turned(entry.subtract(p), back), turned(dir.scale(-1), back), new Spurt(now)));
-                    exitSpray(level, at.add(dir.scale(SHOT_DEPTH)), dir);
-                    if (d.flesh()) com.simpleblood.mob.MobBlood.shotIntoBody(d.entityId(), entry, dir);
-                    com.simpleblood.Tally.count("ragdoll.shot");
-                    break;
-                }
+                RagdollBodies.Hit hit = RagdollBodies.firstEntry(body, shot.from(), shot.to());
+                if (hit == null) continue;
+                b.shotBy.add(shot.id());
+                Vec3 dir = shot.to().subtract(shot.from()).normalize();
+                openShotWound(b, body, hit.part(), hit.at(), hit.normal(), now);
+                OrientedBox box = body.parts()[hit.part()];
+                double out = box.exit(shot.from().x, shot.from().y, shot.from().z, shot.to().x, shot.to().y, shot.to().z);
+                if (out > 0) exitSpray(level, shot.from().add(shot.to().subtract(shot.from()).scale(out)).add(dir.scale(SHOT_OUT)), dir);
+                if (d.flesh()) com.simpleblood.mob.MobBlood.shotIntoBody(d.entityId(), hit.at(), dir);
+                com.simpleblood.Tally.count("ragdoll.shot");
             }
+            if (!d.flesh()) return;
+            double[] p = new double[3], n = new double[3];
             for (ShotWound w : b.shotWounds) {
-                Vec3 p = w.part() < parts.length ? parts[w.part()] : null;
-                if (p == null || !d.flesh()) continue;
-                org.joml.Quaternionf turn = turnOf.apply(w.part());
-                float left = 1f - (now - w.spurt().since) / (float) SHOT_BLEED;
-                pump(level, w.spurt(), p.add(turned(w.offset(), turn)), turned(w.facing(), turn), Vec3.ZERO,
-                        left * Math.max(0.3f, b.blood), now, SHOT_SIZE);
+                OrientedBox box = w.part() < body.parts().length ? body.parts()[w.part()] : null;
+                if (box == null) continue;
+                box.toWorldPoint(w.offset().x, w.offset().y, w.offset().z, p);
+                box.toWorldDir(w.facing().x, w.facing().y, w.facing().z, n);
+                float left = 1f - (now - w.spurt().since()) / (float) SHOT_BLEED;
+                pumpShot(level, d, w.spurt(), new Vec3(p[0], p[1], p[2]), new Vec3(n[0], n[1], n[2]), left * Math.max(0.3f, b.blood), now,
+                        body, w.part());
             }
         } finally {
             BloodParticle.setBallistic(false, 1.0f);
         }
     }
 
-    private static Vec3 turned(Vec3 v, org.joml.Quaternionf turn) {
-        if (turn == null) return v;
-        org.joml.Vector3f w = new org.joml.Vector3f((float) v.x, (float) v.y, (float) v.z).rotate(turn);
-        return new Vec3(w.x, w.y, w.z);
+    private static void killShotWound(ClientLevel level, Bleeding b, RagdollBodies.Body body, long now) {
+        KillShot k = b.killShot;
+        Vec3 from = k.at().subtract(k.dir().scale(KILL_SHOT_REACH)), to = k.at().add(k.dir().scale(KILL_SHOT_REACH));
+        RagdollBodies.Hit hit = RagdollBodies.firstEntry(body, from, to);
+        if (hit != null) {
+            openShotWound(b, body, hit.part(), hit.at(), hit.normal(), now);
+            com.simpleblood.Tally.count("ragdoll.shot.kill.ray");
+            return;
+        }
+        int nearest = -1;
+        double best = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < body.parts().length; i++) {
+            OrientedBox box = body.parts()[i];
+            if (box == null) continue;
+            double dd = k.at().distanceToSqr(box.cx, box.cy, box.cz);
+            if (dd < best) {
+                best = dd;
+                nearest = i;
+            }
+        }
+        if (nearest < 0) return;
+        double[] p = new double[3], n = new double[3];
+        body.parts()[nearest].nearestOnSurface(k.at().x, k.at().y, k.at().z, p, n);
+        openShotWound(b, body, nearest, new Vec3(p[0], p[1], p[2]), new Vec3(n[0], n[1], n[2]), now);
+        com.simpleblood.Tally.count("ragdoll.shot.kill.near");
+    }
+
+    private static void openShotWound(Bleeding b, RagdollBodies.Body body, int part, Vec3 at, Vec3 normal, long now) {
+        OrientedBox box = body.parts()[part];
+        double[] offset = new double[3], facing = new double[3];
+        box.toLocalPoint(at.x, at.y, at.z, offset);
+        box.toLocalDir(normal.x, normal.y, normal.z, facing);
+        b.shotWounds.add(new ShotWound(part, new Vec3(offset[0], offset[1], offset[2]), new Vec3(facing[0], facing[1], facing[2]), new Spurt(now)));
+    }
+
+    private static void pumpShot(ClientLevel level, Death d, Spurt s, Vec3 at, Vec3 facing, float pressure, long now,
+                                 RagdollBodies.Body body, int part) {
+        double[] from = {at.x + facing.x * SHOT_OUT, at.y + facing.y * SHOT_OUT, at.z + facing.z * SHOT_OUT};
+        OrientedBox own = part >= 0 && part < body.parts().length ? body.parts()[part] : null;
+        if (own != null && own.contains(from[0], from[1], from[2])) com.simpleblood.Tally.count("ragdoll.shot.inside.own");
+        int steps = OrientedBox.stepOut(body.parts(), from, facing.x, facing.y, facing.z, SHOT_PUSH, SHOT_PUSH_STEPS);
+        if (steps > 0) com.simpleblood.Tally.count("ragdoll.shot.pushed");
+        else if (steps < 0) com.simpleblood.Tally.count("ragdoll.shot.inside");
+        BloodParticle.setEntitySizeMultiplier(d.size() * com.simpleblood.mob.BulletWounds.DROP_SIZE);
+        try {
+            pump(level, s, new Vec3(from[0], from[1], from[2]), facing, Vec3.ZERO, pressure, now,
+                    com.simpleblood.mob.BulletWounds.DROPS, com.simpleblood.mob.BulletWounds.JET);
+        } finally {
+            BloodParticle.setEntitySizeMultiplier(d.size());
+        }
     }
 
     private static void exitSpray(ClientLevel level, Vec3 at, Vec3 dir) {
@@ -374,13 +437,85 @@ public final class PhysicsModRagdolls {
         }
     }
 
-    public static Vec3 bodyPartNearForTests(Vec3 near) {
-        Vec3 best = null;
-        for (Bleeding b : BLEEDING) {
-            if (b.last == null) continue;
-            for (Vec3 p : b.last) if (p != null && (best == null || p.distanceToSqr(near) < best.distanceToSqr(near))) best = p;
+    private static final Map<Object, float[]> MESH_BOXES = new WeakHashMap<>();
+    private static boolean boxesFailed;
+
+    static void bodies(ClientLevel level, List<RagdollBodies.Body> out) {
+        if (boxesFailed || !available()) return;
+        try {
+            Object mod = getInstanceNullable.invoke(null, level);
+            Object world = mod == null ? null : physicsWorldField.get(mod);
+            if (world == null) return;
+            if (worldRagdolls.get(world) instanceof Iterable<?> ragdolls) {
+                for (Object ragdoll : ragdolls) {
+                    List<Object> rigids = rigidsOf(ragdoll);
+                    if (rigids.isEmpty() || !isMob(rigids.get(0))) continue;
+                    Bleeding b = bleedingOf(ragdoll);
+                    RagdollBodies.Body body = RagdollBodies.body(MOD_ID, -1, ragdoll, b == null ? -1 : b.death.entityId(), boxes(rigids, world));
+                    if (body != null) out.add(body);
+                }
+            }
+            for (Bleeding b : BLEEDING) {
+                if (b.pieces == null) continue;
+                RagdollBodies.Body body = RagdollBodies.body(MOD_ID + "-pieces", -1, b.pieces, b.death.entityId(), boxes(b.pieces, world));
+                if (body != null) out.add(body);
+            }
+        } catch (Throwable t) {
+            boxesFailed = true;
+            SimpleBlood.LOGGER.warn("Physics Mod: ragdoll parts not readable as boxes; blood passes through its ragdolls and shots do not hit them ({})", t.toString());
         }
-        return best;
+    }
+
+    private static Bleeding bleedingOf(Object ragdoll) {
+        for (Bleeding b : BLEEDING) if (b.ragdoll == ragdoll) return b;
+        return null;
+    }
+
+    private static OrientedBox[] boxes(List<Object> rigids, Object world) {
+        OrientedBox[] out = new OrientedBox[rigids.size()];
+        for (int i = 0; i < out.length; i++) {
+            PhysicsLimb limb = new PhysicsLimb(rigids.get(i), world);
+            Vec3 at = limb.position(1f);
+            org.joml.Quaternionf turn = at == null ? null : limb.rotation(1f);
+            float[] mesh = turn == null ? null : meshBoxOf(rigids.get(i), limb);
+            if (mesh == null) continue;
+            org.joml.Vector3f scale = limb.scale();
+            float sx = scale == null ? 1f : Math.abs(scale.x), sy = scale == null ? 1f : Math.abs(scale.y), sz = scale == null ? 1f : Math.abs(scale.z);
+            org.joml.Vector3f mid = new org.joml.Vector3f((mesh[0] + mesh[3]) / 2 * (scale == null ? 1f : scale.x),
+                    (mesh[1] + mesh[4]) / 2 * (scale == null ? 1f : scale.y), (mesh[2] + mesh[5]) / 2 * (scale == null ? 1f : scale.z));
+            turn.transform(mid);
+            try {
+                out[i] = new OrientedBox(at.x + mid.x, at.y + mid.y, at.z + mid.z, turn.x, turn.y, turn.z, turn.w,
+                        (mesh[3] - mesh[0]) / 2 * sx, (mesh[4] - mesh[1]) / 2 * sy, (mesh[5] - mesh[2]) / 2 * sz);
+            } catch (IllegalArgumentException e) {
+                out[i] = null;
+            }
+        }
+        return out;
+    }
+
+    private static float[] meshBoxOf(Object rigid, PhysicsLimb limb) {
+        float[] box = MESH_BOXES.get(rigid);
+        if (box != null) return box;
+        box = meshBox(limb);
+        if (box.length == 0) return null;
+        MESH_BOXES.put(rigid, box);
+        return box;
+    }
+
+    private static float[] meshBox(PhysicsLimb limb) {
+        float[] box = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
+        boolean any = false;
+        for (float[] q : limb.quads()) {
+            for (int k = 0; k < 4; k++) {
+                for (int a = 0; a < 3; a++) {
+                    box[a] = Math.min(box[a], q[k * 5 + a]);
+                    box[a + 3] = Math.max(box[a + 3], q[k * 5 + a]);
+                }
+                any = true;
+            }
+        }
+        return any ? box : new float[0];
     }
 
     private static final class LivingCuts {
@@ -430,7 +565,7 @@ public final class PhysicsModRagdolls {
                     if (limb == null) continue;
                     Vec3 off = limb.subtract(torso);
                     Vec3 dir = off.lengthSqr() < 1.0e-6 ? new Vec3(0, 1, 0) : off.normalize();
-                    float left = 1f - (now - s.since) / (float) spurtTicks();
+                    float left = 1f - (now - s.since()) / (float) spurtTicks();
                     pump(level, s, torso.add(off.scale(JOINT)), dir, Vec3.ZERO, left, now);
                 }
             } finally {
@@ -476,6 +611,8 @@ public final class PhysicsModRagdolls {
                 if (body.source() >= 0) {
                     Bleeding from = bleedingFor(new OtherRagdolls.Key("ragdollified", body.source()));
                     b.blood = Math.min(PIECE_SHARE, (from != null ? from.blood : 1f) * 0.5f);
+                } else {
+                    b.killShot = KILL_SHOTS.remove(death.entityId());
                 }
                 BLEEDING.add(b);
             }
@@ -486,18 +623,14 @@ public final class PhysicsModRagdolls {
             if (!(b.ragdoll instanceof OtherRagdolls.Key key)) continue;
             OtherRagdolls.Body body = bodies.get(key);
             b.drain(now);
-            boolean bleeding = b.fresh(now) > 0f;
-            if (body == null || !bleeding && !b.pumping()) {
+            if (body == null) {
                 it.remove();
                 continue;
             }
+            boolean bleeding = b.fresh(now) > 0f;
             if ("ragdollified".equals(key.mod())) stumps(level, b, key.id(), body.parts(), now);
             if (body.cutAt() != null) cutEnd(level, b, body.cutAt(), body.cutDir(), now);
-            shot(level, b, body.parts(), i -> {
-                if (!"ragdollified".equals(key.mod())) return null;
-                org.joml.Quaternionf[] turns = OtherRagdolls.turns(key.id());
-                return turns == null || i >= turns.length ? null : turns[i];
-            }, now);
+            shot(level, b, RagdollBodies.find(key.mod(), key.id()), now);
             if (bleeding) bleed(level, b, body.parts(), now);
         }
     }
@@ -732,23 +865,22 @@ public final class PhysicsModRagdolls {
         return new Vec3(w.x, w.y, w.z);
     }
 
-    private static final int FIRST_GUSH = 30;
-    private static final int BEAT_TICKS = 4;
-
-    private static final float DRY = 0.02f;
+    private static final float DRY = PumpingWound.DRY;
     private static final float STILL_DRAIN = 0.4f;
     private static final float WOUND_DRAIN = 2f;
     private static final float PIECE_SHARE = 0.35f;
 
     static final class Spurt {
-        final long since;
-        long nextBeat;
+        final PumpingWound wound;
         Vec3 lastAt;
         float own = -1f;
 
         Spurt(long since) {
-            this.since = since;
-            this.nextBeat = since + FIRST_GUSH;
+            this.wound = new PumpingWound(since);
+        }
+
+        long since() {
+            return wound.since();
         }
 
         Spurt(long since, float own) {
@@ -801,52 +933,14 @@ public final class PhysicsModRagdolls {
     }
 
     private static void pump(ClientLevel level, Spurt s, Vec3 at, Vec3 dir, Vec3 carried, float pressure, long now) {
-        pump(level, s, at, dir, carried, pressure, now, 1f);
+        pump(level, s, at, dir, carried, pressure, now, 1f, 1f);
     }
 
-    private static void pump(ClientLevel level, Spurt s, Vec3 at, Vec3 dir, Vec3 carried, float pressure, long now, float size) {
-        if (pressure <= DRY) return;
-        int percent = Math.round(settings().spurts * size);
-        if (percent <= 0) return;
-        long age = now - s.since;
-        float life = (float) Math.sqrt(Math.min(1f, pressure));
-        com.simpleblood.Tally.count("ragdoll.stump");
-        long intoBeat = now - s.nextBeat;
-        if (intoBeat >= BEAT_TICKS) {
-            s.nextBeat = now + 8 + Math.round((1f - life) * 10);
-            intoBeat = now - s.nextBeat;
-        }
-        int drops;
-        double speed;
-        if (age < FIRST_GUSH) {
-            float gush = 1f - age / (float) FIRST_GUSH;
-            drops = scaled(RNG.nextFloat() < 0.4f + 0.6f * gush ? 3 : 2, percent);
-            speed = (0.10 + 0.14 * gush) * (0.35 + 0.65 * life);
-        } else if (intoBeat >= 0) {
-            drops = scaled(life > 0.5f ? 3 : 2, Math.round(percent * life));
-            speed = 0.07 + 0.15 * life;
-        } else {
-            drops = RNG.nextFloat() < 0.55f * life ? scaled(1, percent) : 0;
-            speed = 0.025 + 0.02 * life;
-        }
-        if (drops <= 0) return;
-        speed *= 0.45 + 0.55 * size;
-        Vec3 side = Math.abs(dir.y) < 0.9 ? dir.cross(new Vec3(0, 1, 0)).normalize() : dir.cross(new Vec3(1, 0, 0)).normalize();
-        Vec3 over = dir.cross(side);
-        for (int k = 0; k < drops; k++) {
-            double tilt = SPRAY_CONE * RNG.nextDouble(), round = RNG.nextDouble() * Math.PI * 2;
-            double along = Math.cos(tilt), across = Math.sin(tilt);
-            double v = speed * (0.85 + 0.3 * RNG.nextDouble());
-            double cx = Math.cos(round) * across, cy = Math.sin(round) * across;
-            ClientBloodParticleSpawner.emit(level, BloodParticles.BLOOD_SPRAY, at.x, at.y, at.z,
-                    (dir.x * along + side.x * cx + over.x * cy) * v + carried.x * CARRY,
-                    (dir.y * along + side.y * cx + over.y * cy) * v + carried.y * CARRY,
-                    (dir.z * along + side.z * cx + over.z * cy) * v + carried.z * CARRY);
+    private static void pump(ClientLevel level, Spurt s, Vec3 at, Vec3 dir, Vec3 carried, float pressure, long now, float drops, float jet) {
+        if (s.wound.pump(level, at, dir, carried, pressure, now, Math.round(settings().spurts * drops), jet)) {
+            com.simpleblood.Tally.count("ragdoll.stump");
         }
     }
-
-    private static final double SPRAY_CONE = Math.toRadians(50);
-    private static final double CARRY = 1.0;
 
     private static void tickBodies(ClientLevel level) throws Exception {
         long now = level.getGameTime();
@@ -887,7 +981,9 @@ public final class PhysicsModRagdolls {
                 SEEN.add(ragdoll);
                 DEATHS.remove(death);
                 boolean breaks = breakableRagdoll != null && breakableRagdoll.isInstance(ragdoll);
-                BLEEDING.add(new Bleeding(death, now, breaks, ragdoll, null));
+                Bleeding matched = new Bleeding(death, now, breaks, ragdoll, null);
+                matched.killShot = KILL_SHOTS.remove(death.entityId());
+                BLEEDING.add(matched);
                 com.simpleblood.Tally.count("ragdoll.matched");
                 SimpleBlood.LOGGER.debug("[decap] {} ragdoll matched to its death ({}, {} parts)", death.type(), breaks ? "breakable" : "whole", rigids.size());
                 List<com.simpleblood.mob.RigidCoats.Limb> limbs = new ArrayList<>(rigids.size());
@@ -932,7 +1028,7 @@ public final class PhysicsModRagdolls {
             if (b.ragdoll instanceof OtherRagdolls.Key) continue;
             b.drain(now);
             boolean bleeding = b.fresh(now) > 0f;
-            if (!bleeding && !b.pumping() && !mayTear(b) || (b.ragdoll != null && !aliveRagdolls.contains(b.ragdoll))) {
+            if (b.ragdoll != null && !aliveRagdolls.contains(b.ragdoll)) {
                 it.remove();
                 continue;
             }
@@ -966,17 +1062,9 @@ public final class PhysicsModRagdolls {
             }
             if (b.pieces != null && b.pieceWounds == null && now - b.born >= 2) b.pieceWounds = pieceWounds(level, b.death, b.pieces, world, offset, now);
             if (b.pieceWounds != null && !b.pieceWounds.isEmpty() && settings().spurts > 0) pumpPieces(level, b, parts, world, now);
-            List<Object> turning = rigids;
-            shot(level, b, parts, i -> i < turning.size() ? new PhysicsLimb(turning.get(i), world).rotation(1f) : null, now);
+            shot(level, b, RagdollBodies.find(b.ragdoll != null ? b.ragdoll : b.pieces), now);
             if (bleeding) bleed(level, b, parts, now);
         }
-    }
-
-    private static boolean mayTear(Bleeding b) {
-        if (!b.gore || b.ragdoll == null || pxJoints == null || settings().spurts <= 0) return false;
-        if (b.links == null) return true;
-        for (boolean torn : b.linkTorn) if (!torn) return true;
-        return false;
     }
 
     private static final int MAX_PIECE_WOUNDS = 4;
