@@ -348,6 +348,8 @@
   "simpleblood.gui.sound.metal_clanking_on_armor": "Metal clanking on armor.",
   "simpleblood.gui.sound.limbs_tearing_off": "Limbs tearing off",
   "simpleblood.gui.sound.a_ragdoll_losing_a_head": "A ragdoll losing a head or limb, a mob breaking apart.",
+  "simpleblood.gui.sound.coughing": "Coughing",
+  "simpleblood.gui.sound.a_player_low_on_health": "A player low on health coughing up blood (switched on under Bleeding).",
   "simpleblood.gui.shaders.only_with_an_iris_shader": "Only with an Iris shader pack on.",
   "simpleblood.gui.shaders.clouds_with_shaders": "Clouds with shaders",
   "simpleblood.gui.shaders.cloud_thickness_with_shaders_on": "Cloud thickness with shaders on.",

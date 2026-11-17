@@ -876,6 +876,8 @@ public final class Pages {
                 () -> c.audio.armorVolume, v -> c.audio.armorVolume = v, d.audio.armorVolume);
         b.soundSlider(Lang.t("simpleblood.gui.sound.limbs_tearing_off"), Lang.t("simpleblood.gui.sound.a_ragdoll_losing_a_head"), com.simpleblood.BloodSounds.Preview.TEARS,
                 () -> c.audio.tearVolume, v -> c.audio.tearVolume = v, d.audio.tearVolume);
+        b.soundSlider(Lang.t("simpleblood.gui.sound.coughing"), Lang.t("simpleblood.gui.sound.a_player_low_on_health"), com.simpleblood.BloodSounds.Preview.COUGHS,
+                () -> c.audio.coughVolume, v -> c.audio.coughVolume = v, d.audio.coughVolume);
     }
 
     private static void shaders(Builder b) {

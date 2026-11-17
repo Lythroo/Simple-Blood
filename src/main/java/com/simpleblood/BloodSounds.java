@@ -14,9 +14,10 @@ public final class BloodSounds {
     private BloodSounds() {}
 
     private static final SoundEvent SQUELCH = own("hit.squelch"), DEATH_SPLAT = own("death.splat"), SLAP = own("slap"),
-            GIBLET = own("giblet.land"), SIZZLE = own("sizzle"), STUMP = own("stump");
+            GIBLET = own("giblet.land"), SIZZLE = own("sizzle"), STUMP = own("stump"), COUGH = own("cough");
     private static final float GIBLET_VOLUME = 0.16f;
     private static final float SIZZLE_VOLUME = 0.125f;
+    private static final float COUGH_VOLUME = 0.3f, COUGH_WET_VOLUME = 0.05f;
 
     private static SoundEvent own(String name) {
         return SoundEvent.createVariableRangeEvent(Ids.mod(name));
@@ -245,6 +246,24 @@ public final class BloodSounds {
         play(level, SLAP, at, 0.16f, 0.5f + RNG.nextFloat() * 0.05f);
     }
 
+    public static void cough(ClientLevel level, Vec3 at) {
+        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
+        if (cfg == null || !cfg.soundEnabled()) return;
+        if (!nearEnough(level, at)) return;
+        if (!RenderThread.on()) {
+            RenderThread.run(() -> cough(level, at));
+            return;
+        }
+        if (!channel(Preview.COUGHS, cfg.audio.coughVolume)) return;
+        com.simpleblood.Tally.count("sound.cough");
+        coughSound(level, at);
+    }
+
+    private static void coughSound(ClientLevel level, Vec3 at) {
+        play(level, COUGH, at, COUGH_VOLUME, 0.92f + RNG.nextFloat() * 0.16f);
+        play(level, SQUELCH, at, COUGH_WET_VOLUME, 1.3f + RNG.nextFloat() * 0.2f);
+    }
+
     public static void splat(ClientLevel level, Vec3 at, float size) {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         if (cfg == null || !cfg.soundEnabled()) return;
@@ -326,7 +345,7 @@ public final class BloodSounds {
         return playedThisTick++ < MAX_PER_TICK;
     }
 
-    public enum Preview { HITS, LANDING, LEDGE_DRIPS, WOUND_DRIPS, SLAPS, WATER, HEAT, PIECES, FOOTSTEPS, ARMOR, TEARS }
+    public enum Preview { HITS, LANDING, LEDGE_DRIPS, WOUND_DRIPS, SLAPS, WATER, HEAT, PIECES, FOOTSTEPS, ARMOR, TEARS, COUGHS }
 
     private static boolean previewing;
     private static Preview looping;
@@ -394,6 +413,7 @@ public final class BloodSounds {
             case FOOTSTEPS -> a.footstepVolume;
             case ARMOR -> a.armorVolume;
             case TEARS -> a.tearVolume;
+            case COUGHS -> a.coughVolume;
         };
         if (!channel(which, percent)) {
             previewFiles = "muted";
@@ -418,6 +438,7 @@ public final class BloodSounds {
                 case PIECES -> play(null, GIBLET, null, GIBLET_VOLUME, 0.9f + rng.nextFloat() * 0.25f);
                 case FOOTSTEPS -> play(null, SoundEvents.MUD_STEP, null, 0.15f, 1.25f + rng.nextFloat() * 0.25f);
                 case TEARS -> tear(null, null);
+                case COUGHS -> coughSound(null, null);
                 case ARMOR -> {
                     float base = 0.85f + rng.nextFloat() * 0.3f;
                     play(null, SoundEvents.CHAIN_HIT, null, 0.8f, base);

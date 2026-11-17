@@ -390,6 +390,7 @@ public class SimpleBloodConfig {
         public int footstepVolume = 100;
         public int armorVolume = 100;
         public int tearVolume = 100;
+        public int coughVolume = 100;
         public java.util.List<String> muted = new java.util.ArrayList<>();
 
         public boolean muted(String sound) {

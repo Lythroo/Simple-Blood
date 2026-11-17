@@ -8,5 +8,6 @@ sizzle1-3                "Burning Flesh" by magnuswaker        https://freesound
 stump1                   "Blood Gush" by FlaxGod               https://freesound.org/people/FlaxGod/sounds/654101/
 giblet1-3                "Three Flesh Impacts" by jawbutch     https://freesound.org/people/jawbutch/sounds/344409/
 slap1                    "Heavy, wet impact" by puppetmaster685719  https://freesound.org/people/puppetmaster685719/sounds/626405/
+cough1-4                 "Coughs" pack by qubodup              https://freesound.org/people/qubodup/packs/41326/
 
 Trimmed, faded and evened out for the mod.

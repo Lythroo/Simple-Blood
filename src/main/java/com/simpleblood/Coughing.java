@@ -103,6 +103,7 @@ public final class Coughing {
                         look.y * speed - 0.02 + RNG.nextGaussian() * STRAY,
                         look.z * speed + RNG.nextGaussian() * STRAY);
             }
+            BloodSounds.cough(level, new Vec3(mx, my, mz));
             Tally.count("cough.cough");
             Tally.add("cough.drop", drops);
         } finally {

@@ -34,5 +34,13 @@
     "sounds": [
       "simpleblood:stump1"
     ]
+  },
+  "cough": {
+    "sounds": [
+      "simpleblood:cough1",
+      "simpleblood:cough2",
+      "simpleblood:cough3",
+      "simpleblood:cough4"
+    ]
   }
 }
