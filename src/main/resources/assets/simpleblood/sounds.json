@@ -42,10 +42,5 @@
       "simpleblood:cough3",
       "simpleblood:cough4"
     ]
-  },
-  "cough.classic": {
-    "sounds": [
-      "minecraft:random/classic_hurt"
-    ]
   }
 }

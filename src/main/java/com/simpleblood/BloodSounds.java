@@ -14,8 +14,7 @@ public final class BloodSounds {
     private BloodSounds() {}
 
     private static final SoundEvent SQUELCH = own("hit.squelch"), DEATH_SPLAT = own("death.splat"), SLAP = own("slap"),
-            GIBLET = own("giblet.land"), SIZZLE = own("sizzle"), STUMP = own("stump"), COUGH = own("cough"),
-            COUGH_CLASSIC = own("cough.classic");
+            GIBLET = own("giblet.land"), SIZZLE = own("sizzle"), STUMP = own("stump"), COUGH = own("cough");
     private static final float GIBLET_VOLUME = 0.16f;
     private static final float SIZZLE_VOLUME = 0.125f;
     private static final float COUGH_VOLUME = 0.3f, COUGH_WET_VOLUME = 0.05f;
@@ -261,11 +260,6 @@ public final class BloodSounds {
     }
 
     private static void coughSound(ClientLevel level, Vec3 at) {
-        SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
-        if (cfg != null && cfg.audio.classicCough) {
-            play(level, COUGH_CLASSIC, at, COUGH_VOLUME, 0.95f + RNG.nextFloat() * 0.2f);
-            return;
-        }
         play(level, COUGH, at, COUGH_VOLUME, 0.92f + RNG.nextFloat() * 0.16f);
         play(level, SQUELCH, at, COUGH_WET_VOLUME, 1.3f + RNG.nextFloat() * 0.2f);
     }

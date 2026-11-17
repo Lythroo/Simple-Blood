@@ -391,7 +391,6 @@ public class SimpleBloodConfig {
         public int armorVolume = 100;
         public int tearVolume = 100;
         public int coughVolume = 100;
-        public boolean classicCough = true;
         public java.util.List<String> muted = new java.util.ArrayList<>();
 
         public boolean muted(String sound) {
