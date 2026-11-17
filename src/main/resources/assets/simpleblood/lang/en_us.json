@@ -350,6 +350,8 @@
   "simpleblood.gui.sound.a_ragdoll_losing_a_head": "A ragdoll losing a head or limb, a mob breaking apart.",
   "simpleblood.gui.sound.coughing": "Coughing",
   "simpleblood.gui.sound.a_player_low_on_health": "A player low on health coughing up blood (switched on under Bleeding).",
+  "simpleblood.gui.sound.classic_cough": "Classic cough sound",
+  "simpleblood.gui.sound.the_old_minecraft_hurt_sound": "Coughs sound like the old Minecraft hurt sound. Off: a real cough.",
   "simpleblood.gui.shaders.only_with_an_iris_shader": "Only with an Iris shader pack on.",
   "simpleblood.gui.shaders.clouds_with_shaders": "Clouds with shaders",
   "simpleblood.gui.shaders.cloud_thickness_with_shaders_on": "Cloud thickness with shaders on.",

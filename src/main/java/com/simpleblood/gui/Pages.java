@@ -878,6 +878,8 @@ public final class Pages {
                 () -> c.audio.tearVolume, v -> c.audio.tearVolume = v, d.audio.tearVolume);
         b.soundSlider(Lang.t("simpleblood.gui.sound.coughing"), Lang.t("simpleblood.gui.sound.a_player_low_on_health"), com.simpleblood.BloodSounds.Preview.COUGHS,
                 () -> c.audio.coughVolume, v -> c.audio.coughVolume = v, d.audio.coughVolume);
+        b.bool(Lang.t("simpleblood.gui.sound.classic_cough"), Lang.t("simpleblood.gui.sound.the_old_minecraft_hurt_sound"),
+                () -> c.audio.classicCough, v -> c.audio.classicCough = v, d.audio.classicCough);
     }
 
     private static void shaders(Builder b) {
