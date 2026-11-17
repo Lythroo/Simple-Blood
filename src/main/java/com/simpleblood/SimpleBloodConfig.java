@@ -21,6 +21,7 @@ public class SimpleBloodConfig {
     public HitBurstSettings hitBurst = new HitBurstSettings();
     public DeathBurstSettings deathBurst = new DeathBurstSettings();
     public LowHealthSettings lowHealth = new LowHealthSettings();
+    public CoughSettings cough = new CoughSettings();
     public AudioSettings audio = new AudioSettings();
     public UnderwaterSettings underwater = new UnderwaterSettings();
     public KindSettings kinds = new KindSettings();
@@ -125,6 +126,7 @@ public class SimpleBloodConfig {
         if (hitBurst == null) hitBurst = new HitBurstSettings();
         if (deathBurst == null) deathBurst = new DeathBurstSettings();
         if (lowHealth == null) lowHealth = new LowHealthSettings();
+        if (cough == null) cough = new CoughSettings();
         if (audio == null) audio = new AudioSettings();
         if (!audio.landingSounds) {
             audio.landingVolume = 0;
@@ -230,6 +232,7 @@ public class SimpleBloodConfig {
         public boolean colourFromSkins = true;
         public int skinColourAdopted = -1;
         public String clientPlayerBloodKind = "liquid";
+        public boolean clientPlayerBloodGlows = false;
         public String skinKindAdopted = "";
 
         public BloodColor.Color getClientPlayerColor() {
@@ -359,6 +362,15 @@ public class SimpleBloodConfig {
         public float getDripIntensityMultiplier() {
             return dripIntensity / 100.0f;
         }
+    }
+
+    public static class CoughSettings {
+        public boolean enabled = false;
+        public int threshold = 30;
+        public int frequency = 100;
+        public int amount = 100;
+        public int fitLength = 2;
+        public boolean otherPlayers = true;
     }
 
     public static class AudioSettings {

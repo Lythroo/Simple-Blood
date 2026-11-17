@@ -96,6 +96,7 @@ public final class SimpleBloodClient {
         if (config.globalEnabled() && config.lowHealthEnabled()) {
             Guard.run(Guard.Part.HITS, "low health dripping", () -> dripLowHealth(client));
         }
+        Guard.run(Guard.Part.HITS, "coughing up blood", () -> Coughing.tick(client));
     }
 
     private static void dripLowHealth(Minecraft client) {

@@ -195,6 +195,7 @@ public final class MobBlood {
         List<Vec3> low;
         List<Vec3> seeds;
         int bled;
+        int goneFor;
 
         Corpse(LivingEntity e, int colour) {
             this.colour = colour;
@@ -205,6 +206,7 @@ public final class MobBlood {
     }
 
     private static final int SETTLE_TICKS = 60;
+    private static final int RAGDOLL_WAIT_TICKS = 10;
 
     private static final Map<Integer, Corpse> CORPSES = new HashMap<>();
 
@@ -214,6 +216,10 @@ public final class MobBlood {
         if (SimpleBlood.bloodKindOf(e) != BloodKind.LIQUID || !SimpleBlood.shouldEntityTransformToStains(e)) return;
         if (!com.simpleblood.SimpleBloodAPI.leavesPool(e)) return;
         if (CORPSES.size() < 64) CORPSES.put(e.getId(), new Corpse(e, colourOf(e)));
+    }
+
+    public static void ragdollTookOver(int entityId) {
+        CORPSES.remove(entityId);
     }
 
     public static void poolNow(LivingEntity e) {
@@ -252,6 +258,7 @@ public final class MobBlood {
             Map.Entry<Integer, Corpse> entry = it.next();
             Corpse c = entry.getValue();
             if (!(level.getEntity(entry.getKey()) instanceof LivingEntity body) || body.isRemoved()) {
+                if (c.seeds == null && c.goneFor++ < RAGDOLL_WAIT_TICKS && com.simpleblood.compat.PhysicsModRagdolls.enabled()) continue;
                 if (c.seeds == null) {
                     settle(level, c);
                     for (int i = 0; i < 3; i++) bleed(level, c);

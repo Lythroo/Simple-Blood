@@ -1,0 +1,12 @@
+name: I have an idea
+description: A new feature, a setting, or a mod you'd like Simple Blood to work with.
+labels: ["suggestion"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What's your idea?
+      description: As short or as long as you like. Pictures or videos from other games are welcome, just drag them in.
+      placeholder: "Coughing up blood when you're low on health."
+    validations:
+      required: true

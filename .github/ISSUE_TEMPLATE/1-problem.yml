@@ -1,0 +1,33 @@
+name: Something's broken
+description: A crash, an error in chat, or blood doing something weird.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: A sentence or two is plenty. Screenshots, clips and log files can be dragged straight in here.
+      placeholder: "Puddles under Ragdollified bodies never dry up."
+    validations:
+      required: true
+  - type: dropdown
+    id: mc
+    attributes:
+      label: Minecraft version
+      options: ["Not sure", "26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1"]
+      default: 0
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Loader
+      options: ["Not sure", "Fabric", "NeoForge", "Forge (with Sinytra Connector)", "Quilt"]
+      default: 0
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else? (optional)
+      description: |
+        Only if you have it handy. All of these help, none are needed:
+        - If Simple Blood said "error" in chat, click **[Copy error]** and paste it (also saved in `logs/simpleblood-error.txt`).
+        - If the game crashed, drag in the file from `crash-reports/`.
+        - Other mods, shaders or resource packs you use, or the modpack name.

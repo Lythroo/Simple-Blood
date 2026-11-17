@@ -79,7 +79,7 @@ public final class PhysicsModRagdolls {
             Class<?> linked = Class.forName("net.diebuddies.physics.ragdoll.Ragdoll$LinkedBody", false, cl);
             Class<?> rigid = Class.forName("net.diebuddies.physics.IRigidBody", false, cl);
             Class<?> renderable = Class.forName("net.diebuddies.physics.PhysicsRenderable", false, cl);
-            getInstanceNullable = mod.getMethod("getInstanceNullable", ClientLevel.class);
+            getInstanceNullable = instanceGetter(mod);
             physicsWorldField = mod.getField("physicsWorld");
             worldRagdolls = world.getDeclaredField("ragdolls");
             worldRagdolls.setAccessible(true);
@@ -100,11 +100,12 @@ public final class PhysicsModRagdolls {
             if (breakableRagdoll != null) {
                 try {
                     Class<?> joint = Class.forName("physx.extensions.PxJoint", false, cl);
-                    Class<?> tuple = Class.forName("net.diebuddies.physics.PhysicsWorld$Tuple", false, cl);
                     pxJoints = breakableRagdoll.getField("pxJoints");
                     jointParents = world.getMethod("getJointParents", joint);
-                    tupleA = tuple.getMethod("getA");
-                    tupleB = tuple.getMethod("getB");
+                    Class<?> tuple = jointParents.getReturnType();
+                    boolean vanilla = vanillaTuple(tuple);
+                    tupleA = vanilla ? null : tuple.getMethod("getA");
+                    tupleB = vanilla ? null : tuple.getMethod("getB");
                 } catch (Throwable t) {
                     pxJoints = null;
                     SimpleBlood.LOGGER.warn("Physics Mod: ragdoll joints not readable, parts knocked off will not spurt ({})", t.toString());
@@ -128,6 +129,20 @@ public final class PhysicsModRagdolls {
             SimpleBlood.LOGGER.warn("Physics Mod found, but not a version Simple Blood knows; its ragdolls will not bleed ({})", t.toString());
             return false;
         }
+    }
+
+    private static Method instanceGetter(Class<?> mod) throws NoSuchMethodException {
+        for (Method m : mod.getMethods()) {
+            if (m.getName().equals("getInstanceNullable") && java.lang.reflect.Modifier.isStatic(m.getModifiers())
+                    && m.getParameterCount() == 1 && m.getParameterTypes()[0].isAssignableFrom(ClientLevel.class)) {
+                return m;
+            }
+        }
+        throw new NoSuchMethodException("PhysicsMod.getInstanceNullable(ClientLevel)");
+    }
+
+    public static boolean unsupported() {
+        return Platform.modIds().contains(MOD_ID) && !available();
     }
 
     private static void disable(Throwable t) {
@@ -224,7 +239,7 @@ public final class PhysicsModRagdolls {
                 String.valueOf(net.minecraft.world.entity.EntityType.getKey(entity.getType())));
     }
 
-    static boolean enabled() {
+    public static boolean enabled() {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         return cfg != null && cfg.globalEnabled() && cfg.general.physicsModRagdolls && (available() || OtherRagdolls.any());
     }
@@ -613,6 +628,7 @@ public final class PhysicsModRagdolls {
                     b.blood = Math.min(PIECE_SHARE, (from != null ? from.blood : 1f) * 0.5f);
                 } else {
                     b.killShot = KILL_SHOTS.remove(death.entityId());
+                    com.simpleblood.mob.MobBlood.ragdollTookOver(death.entityId());
                 }
                 BLEEDING.add(b);
             }
@@ -656,7 +672,7 @@ public final class PhysicsModRagdolls {
             for (Object joint : joints) {
                 Object tuple = jointParents.invoke(world, joint);
                 if (tuple == null) continue;
-                int ia = indexOf(b.firstRigids, tupleA.invoke(tuple)), ib = indexOf(b.firstRigids, tupleB.invoke(tuple));
+                int ia = indexOf(b.firstRigids, parentA(tuple)), ib = indexOf(b.firstRigids, parentB(tuple));
                 if (ia < 0 || ib < 0) continue;
                 links.add(new int[]{ia, ib});
                 held.add(joint);
@@ -984,6 +1000,7 @@ public final class PhysicsModRagdolls {
                 Bleeding matched = new Bleeding(death, now, breaks, ragdoll, null);
                 matched.killShot = KILL_SHOTS.remove(death.entityId());
                 BLEEDING.add(matched);
+                com.simpleblood.mob.MobBlood.ragdollTookOver(death.entityId());
                 com.simpleblood.Tally.count("ragdoll.matched");
                 SimpleBlood.LOGGER.debug("[decap] {} ragdoll matched to its death ({}, {} parts)", death.type(), breaks ? "breakable" : "whole", rigids.size());
                 List<com.simpleblood.mob.RigidCoats.Limb> limbs = new ArrayList<>(rigids.size());
@@ -1014,6 +1031,7 @@ public final class PhysicsModRagdolls {
             batches.forEach((death, pieces) -> {
                 DEATHS.remove(death);
                 BLEEDING.add(new Bleeding(death, now, true, null, pieces));
+                com.simpleblood.mob.MobBlood.ragdollTookOver(death.entityId());
                 com.simpleblood.Tally.count("ragdoll.pieces");
                 SimpleBlood.LOGGER.debug("[decap] {} matched to {} loose pieces", death.type(), pieces.size());
                 List<com.simpleblood.mob.RigidCoats.Limb> limbs = new ArrayList<>(pieces.size());
@@ -1138,6 +1156,28 @@ public final class PhysicsModRagdolls {
 
     private static java.lang.reflect.Field pxJoints;
     private static java.lang.reflect.Method jointParents, tupleA, tupleB;
+
+    private static boolean vanillaTuple(Class<?> type) {
+        //? if <26.1 {
+        /*return net.minecraft.util.Tuple.class.isAssignableFrom(type);
+        *///?} else {
+        return false;
+        //?}
+    }
+
+    private static Object parentA(Object tuple) throws Exception {
+        //? if <26.1 {
+        /*if (tupleA == null) return ((net.minecraft.util.Tuple<?, ?>) tuple).getA();
+        *///?}
+        return tupleA.invoke(tuple);
+    }
+
+    private static Object parentB(Object tuple) throws Exception {
+        //? if <26.1 {
+        /*if (tupleB == null) return ((net.minecraft.util.Tuple<?, ?>) tuple).getB();
+        *///?}
+        return tupleB.invoke(tuple);
+    }
     private static java.lang.reflect.Field plannedJoints, plannedBodies, plannedIndex1, plannedIndex2, plannedPoint1, plannedPoint2;
     private static java.lang.reflect.Method linkedEntity;
 

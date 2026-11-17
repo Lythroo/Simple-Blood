@@ -385,6 +385,8 @@ public final class Pages {
                 () -> c.player.clientPlayerBloodColor, v -> c.player.clientPlayerBloodColor = v, d.player.clientPlayerBloodColor);
         b.choice(Lang.t("simpleblood.gui.colour.your_type"), Lang.t("simpleblood.gui.colour.blood_bone_metal_embers_snow"),
                 KIND_KEYS, Lang.all(KIND_LABELS), () -> c.player.clientPlayerBloodKind, v -> c.player.clientPlayerBloodKind = v, d.player.clientPlayerBloodKind);
+        b.bool(Lang.t("simpleblood.gui.colour.your_blood_glows"), Lang.t("simpleblood.gui.colour.your_blood_glows_in_the_dark"),
+                () -> c.player.clientPlayerBloodGlows, v -> c.player.clientPlayerBloodGlows = v, d.player.clientPlayerBloodGlows);
         b.bloodKind(null);
         b.figure(PreviewScene.ZOMBIE);
         b.preview(null, null);
@@ -424,8 +426,8 @@ public final class Pages {
     }
 
     private static boolean ownKindShown(SimpleBloodConfig c) {
-        String carried = SkinColours.ownKind();
-        return (carried == null ? "liquid" : carried).equals(c.player.clientPlayerBloodKind);
+        String carried = SkinColours.ownType();
+        return (carried == null ? "liquid" : carried).equals(SkinColours.typeOf(c.player.clientPlayerBloodKind, c.player.clientPlayerBloodGlows));
     }
 
     private static void confirmUpload(Builder b) {
@@ -491,6 +493,20 @@ public final class Pages {
         b.slider(Lang.t("simpleblood.gui.bleeding.how_much"), Lang.t("simpleblood.gui.bleeding.drops_per_drip"), 20, 300, 10, "%", () -> c.lowHealth.dripIntensity, v -> c.lowHealth.dripIntensity = v, d.lowHealth.dripIntensity);
         b.preview(null, null);
         b.slider(Lang.t("simpleblood.gui.bleeding.lasts"), Lang.t("simpleblood.gui.bleeding.stops_this_long_after_the"), 3, 120, 1, Lang.t("simpleblood.unit.seconds"), () -> c.lowHealth.dripDurationSeconds, v -> c.lowHealth.dripDurationSeconds = v, d.lowHealth.dripDurationSeconds);
+
+        b.heading(Lang.t("simpleblood.gui.bleeding.coughing"));
+        b.bool(Lang.t("simpleblood.gui.bleeding.coughing"), Lang.t("simpleblood.gui.bleeding.players_low_on_health_cough"),
+                () -> c.cough.enabled, v -> c.cough.enabled = v, d.cough.enabled);
+        b.slider(Lang.t("simpleblood.gui.bleeding.starts_below"), Lang.t("simpleblood.gui.bleeding.health_left_when_the_coughing"), 5, 90, 5, "%",
+                () -> c.cough.threshold, v -> c.cough.threshold = v, d.cough.threshold);
+        b.slider(Lang.t("simpleblood.gui.bleeding.how_often"), Lang.t("simpleblood.gui.bleeding.a_fit_every_few_seconds"), 20, 500, 10, "%",
+                () -> c.cough.frequency, v -> c.cough.frequency = v, d.cough.frequency);
+        b.slider(Lang.t("simpleblood.gui.bleeding.how_much"), Lang.t("simpleblood.gui.bleeding.drops_per_cough"), 20, 300, 10, "%",
+                () -> c.cough.amount, v -> c.cough.amount = v, d.cough.amount);
+        b.slider(Lang.t("simpleblood.gui.bleeding.fit_length"), Lang.t("simpleblood.gui.bleeding.coughs_in_a_row"), 1, 6, 1, "",
+                () -> c.cough.fitLength, v -> c.cough.fitLength = v, d.cough.fitLength);
+        b.bool(Lang.t("simpleblood.gui.bleeding.other_players_cough"), Lang.t("simpleblood.gui.bleeding.other_players_low_on_health"),
+                () -> c.cough.otherPlayers, v -> c.cough.otherPlayers = v, d.cough.otherPlayers);
 
     }
 
@@ -712,7 +728,9 @@ public final class Pages {
     }
 
     private static void ragdolls(Builder b) {
-        if (!com.simpleblood.compat.PhysicsModRagdolls.anyRagdollMod()) {
+        if (com.simpleblood.compat.PhysicsModRagdolls.unsupported()) {
+            b.note(Lang.t("simpleblood.gui.ragdolls.physics_mod_not_supported"));
+        } else if (!com.simpleblood.compat.PhysicsModRagdolls.anyRagdollMod()) {
             b.note(Lang.t("simpleblood.gui.ragdolls.needs_a_ragdoll_mod_none"));
         }
         physicsMod(b);
@@ -982,7 +1000,7 @@ public final class Pages {
     private static String ragdollModsFound() {
         java.util.List<String> ids = com.simpleblood.Platform.modIds();
         java.util.List<String> names = new java.util.ArrayList<>();
-        if (ids.contains("physicsmod")) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.physics_mod"));
+        if (com.simpleblood.compat.PhysicsModRagdolls.available()) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.physics_mod"));
         if (ids.contains("ragdollified")) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.ragdollified"));
         if (ids.contains("saros_ragdoll")) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.saro_s_player_ragdoll"));
         return String.join(", ", names);
