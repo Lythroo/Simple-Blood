@@ -56,8 +56,21 @@ public final class MobTextures {
         }
     }
 
+    private static final Map<Object, Alpha> BY_POLYGON = new ConcurrentHashMap<>();
+
+    static void drawnWith(Object polygon, Alpha alpha) {
+        if (polygon == null) return;
+        if (alpha == null) BY_POLYGON.remove(polygon);
+        else BY_POLYGON.put(polygon, alpha);
+    }
+
+    static Alpha ofPolygon(Object polygon) {
+        return polygon == null ? null : BY_POLYGON.get(polygon);
+    }
+
     static void clear() {
         CACHE.clear();
+        BY_POLYGON.clear();
     }
 
     public static void resourcesChanged() {

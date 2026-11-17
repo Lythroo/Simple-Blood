@@ -79,27 +79,66 @@ public final class RagdollBodies {
         return best < 0 ? null : hit(body, best, from.x, from.y, from.z, to.x, to.y, to.z, bestT);
     }
 
+    private static final ThreadLocal<double[]> SCRATCH = ThreadLocal.withInitial(() -> new double[7]);
+
     public static Hit dropHit(double ax, double ay, double az, double bx, double by, double bz,
                               double bornX, double bornY, double bornZ, boolean young) {
         List<Body> bodies = snapshot;
+        if (bodies.isEmpty()) return null;
+        double[] out = SCRATCH.get();
         Body bestBody = null;
-        int bestPart = -1;
         double bestT = Double.POSITIVE_INFINITY;
+        double hx = 0, hy = 0, hz = 0, nx = 0, ny = 0, nz = 0;
         for (Body body : bodies) {
-            if (!body.near(ax, ay, az, bx, by, bz)) continue;
-            OrientedBox[] parts = body.parts();
-            for (int i = 0; i < parts.length; i++) {
-                OrientedBox p = parts[i];
-                if (p == null || young && p.contains(bornX, bornY, bornZ, BORN_MARGIN)) continue;
-                double t = p.entry(ax, ay, az, bx, by, bz, null);
-                if (t >= 0 && t < bestT) {
-                    bestT = t;
-                    bestBody = body;
-                    bestPart = i;
+            if (!body.near(ax, ay, az, bx, by, bz) || young && bornIn(body, bornX, bornY, bornZ)) continue;
+            boolean seen = body.mobId() >= 0 && RagdollSurfaces.drawn(body.mobId());
+            double t = seen ? RagdollSurfaces.firstHit(body.mobId(), ax, ay, az, bx, by, bz, out) : -1;
+            if (t < 0) {
+                if (entersPart(body, ax, ay, az, bx, by, bz)) {
+                    com.simpleblood.Tally.count(seen ? "ragdoll.drop.through" : "ragdoll.drop.unseen");
                 }
+                continue;
+            }
+            if (t < bestT) {
+                bestT = t;
+                bestBody = body;
+                hx = out[0];
+                hy = out[1];
+                hz = out[2];
+                nx = out[3];
+                ny = out[4];
+                nz = out[5];
             }
         }
-        return bestBody == null ? null : hit(bestBody, bestPart, ax, ay, az, bx, by, bz, bestT);
+        if (bestBody == null) return null;
+        Hit hit = new Hit(bestBody, -1, new Vec3(hx, hy, hz), new Vec3(nx, ny, nz), bestT);
+        if (recordStops) {
+            STOPS.add(hit);
+            while (STOPS.size() > 1024) STOPS.poll();
+        }
+        return hit;
+    }
+
+    private static boolean bornIn(Body body, double x, double y, double z) {
+        for (OrientedBox p : body.parts()) if (p != null && p.contains(x, y, z, BORN_MARGIN)) return true;
+        return false;
+    }
+
+    private static boolean entersPart(Body body, double ax, double ay, double az, double bx, double by, double bz) {
+        for (OrientedBox p : body.parts()) if (p != null && p.entry(ax, ay, az, bx, by, bz, null) >= 0) return true;
+        return false;
+    }
+
+    private static volatile boolean recordStops;
+    private static final java.util.concurrent.ConcurrentLinkedQueue<Hit> STOPS = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    public static void recordStopsForTests(boolean on) {
+        STOPS.clear();
+        recordStops = on;
+    }
+
+    public static List<Hit> stopsForTests() {
+        return List.copyOf(STOPS);
     }
 
     private static Hit hit(Body body, int part, double ax, double ay, double az, double bx, double by, double bz, double t) {

@@ -16,6 +16,7 @@ final class MobCoat {
     net.minecraft.world.entity.EntityType<?> type;
     boolean baby;
     java.util.List<ModelFacesOfMob.Face> lastFaces;
+    final Map<Object, java.util.List<ModelFacesOfMob.Face>> ragdollPieces = new java.util.HashMap<>();
     int onRagdoll = -1000;
     net.minecraft.world.phys.Vec3 lastPos;
 
@@ -47,6 +48,7 @@ final class MobCoat {
     int rinsed;
     Object woundFace;
     int woundX, woundY, woundW, woundH;
+    boolean[] woundDrawn;
     int seep;
     int strokes;
 
@@ -204,6 +206,7 @@ final class MobCoat {
         woundY = px[1];
         woundW = canvas.pw;
         woundH = canvas.ph;
+        woundDrawn = canvas.drawn;
     }
 
     private static ModelFacesOfMob.Face strike(Vec3 point, Vec3 dir, List<ModelFacesOfMob.Face> faces, int[] px) {
@@ -264,7 +267,11 @@ final class MobCoat {
 
     void bleed(int now, int lifetime, RandomSource rng) {
         if (seep <= 0 || woundFace == null) return;
-        MobFace canvas = faces.computeIfAbsent(woundFace, k -> new MobFace(woundW, woundH));
+        MobFace canvas = faces.computeIfAbsent(woundFace, k -> {
+            MobFace back = new MobFace(woundW, woundH);
+            back.drawn = woundDrawn;
+            return back;
+        });
         canvas.add(Math.min(woundX, canvas.pw - 1), Math.min(woundY, canvas.ph - 1), seep, colour, now, lifetime, rng);
         seep = 0;
     }

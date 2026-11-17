@@ -57,8 +57,17 @@ public final class MobBlood {
     static void drawPosed(MobCoat coat, List<ModelFacesOfMob.Face> posed, float[] fade, PoseStack.Pose pose, VertexConsumer vc, Vec3 camera, int light) {
         coat.onRagdoll = now;
         com.simpleblood.Tally.count("coat.ragdoll");
+        coat.ragdollPieces.put(posed.get(0).key, shown(posed, fade));
+        RagdollSurfaces.publish(coat.entityId, posed, fade, now);
         List<Quad> quads = prepare(coat, posed, fade, camera, light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
+    }
+
+    private static List<ModelFacesOfMob.Face> shown(List<ModelFacesOfMob.Face> posed, float[] fade) {
+        if (fade == null) return posed;
+        List<ModelFacesOfMob.Face> out = new ArrayList<>(posed.size());
+        for (int i = 0; i < posed.size(); i++) if (fade[i] > 0f) out.add(posed.get(i));
+        return out;
     }
 
     public static boolean has(int entityId) {
@@ -72,6 +81,15 @@ public final class MobBlood {
     public static void death(LivingEntity entity, HitContext ctx) {
         splat(entity, ctx, true);
         MobCoat coat = COATS.get(entity.getId());
+        if (coat == null && catchesDrops() && com.simpleblood.compat.PhysicsModRagdolls.anyRagdollMod()
+                && com.simpleblood.SimpleBloodAPI.takesBloodOnBody(entity) && COATS.size() < MAX_COATS) {
+            coat = new MobCoat(entity.getId(), colourOf(entity));
+            coat.model(entity);
+            coat.lastPos = entity.position();
+            coat.lastSeen = now;
+            COATS.put(entity.getId(), coat);
+            com.simpleblood.Tally.count("coat.ragdoll.empty");
+        }
         if (coat != null) coat.onRagdoll = now;
     }
 
@@ -166,6 +184,38 @@ public final class MobBlood {
     public static int coatStrokes(int entityId) {
         MobCoat coat = COATS.get(entityId);
         return coat == null ? 0 : coat.strokes;
+    }
+
+    public static long[] auditRagdollCoatForTests(int entityId, double maxOff) {
+        long[] r = new long[4];
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null || coat.ragdollPieces.isEmpty()) return r;
+        List<ModelFacesOfMob.Face> all = new ArrayList<>();
+        for (List<ModelFacesOfMob.Face> piece : coat.ragdollPieces.values()) all.addAll(piece);
+        Map<Object, ModelFacesOfMob.Face> byKey = new java.util.HashMap<>();
+        for (ModelFacesOfMob.Face f : all) byKey.putIfAbsent(f.key, f);
+        com.simpleblood.geom.QuadSurface drawn = RagdollSurfaces.surfaceOf(all, null);
+        for (Map.Entry<Object, MobFace> e : coat.faces.entrySet()) {
+            MobFace canvas = e.getValue();
+            if (canvas.count == 0) continue;
+            ModelFacesOfMob.Face f = byKey.get(e.getKey());
+            for (int y = 0; y < canvas.ph; y++) {
+                for (int x = 0; x < canvas.pw; x++) {
+                    if (canvas.depthAt(x, y) <= 0) continue;
+                    if (f == null) {
+                        r[3]++;
+                        continue;
+                    }
+                    r[0]++;
+                    double fx = (x + 0.5) / canvas.pw, fy = (y + 0.5) / canvas.ph;
+                    double[] ab = f.edgeWeights(fx, fy);
+                    if (!f.drawnAt(ab[0], ab[1])) r[1]++;
+                    Vec3 p = f.at(fx, fy);
+                    if (drawn.distanceToDrawn(p.x, p.y, p.z, 16) > maxOff) r[2]++;
+                }
+            }
+        }
+        return r;
     }
 
     public static int coatUnits(int entityId) {
@@ -476,8 +526,11 @@ public final class MobBlood {
 
     private static void textured(List<ModelFacesOfMob.Face> faces, int from, Object texture) {
         MobTextures.Alpha alpha = MobTextures.of(texture);
-        if (alpha == null) return;
-        for (int i = from; i < faces.size(); i++) faces.get(i).alpha = alpha;
+        for (int i = from; i < faces.size(); i++) {
+            ModelFacesOfMob.Face f = faces.get(i);
+            if (alpha != null) f.alpha = alpha;
+            MobTextures.drawnWith(f.key, alpha);
+        }
     }
 
     static void drawOnRagdoll(int entityId, List<ModelFacesOfMob.Face> drawn, PoseStack.Pose pose, VertexConsumer vc, int light) {
@@ -485,15 +538,21 @@ public final class MobBlood {
         Map<Long, Object> shapes = coat == null ? Map.of() : shapesOf(coat);
         if (shapes.isEmpty()) return;
         List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
+        boolean textured = false;
         for (ModelFacesOfMob.Face face : drawn) {
             Object key = face.shape == 0 ? null : shapes.get(face.shape);
             if (key == null) continue;
             face.key = key;
+            face.alpha = MobTextures.ofPolygon(key);
+            if (face.alpha != null) textured = true;
             posed.add(face);
         }
+        if (textured) com.simpleblood.Tally.count("coat.ragdoll.textured");
         if (posed.isEmpty()) return;
         com.simpleblood.Tally.count("coat.ragdoll");
         coat.onRagdoll = now;
+        coat.ragdollPieces.put(posed.get(0).key, posed);
+        RagdollSurfaces.publish(entityId, posed, null, now);
         List<Quad> quads = prepare(coat, posed, SurfaceRenderer.cameraPos(), light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
     }
@@ -538,15 +597,21 @@ public final class MobBlood {
         Map<Long, Object> shapes = coat == null ? Map.of() : shapesOf(coat);
         if (shapes.isEmpty()) return;
         List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
+        boolean textured = false;
         for (ModelFacesOfMob.Face face : drawn) {
             Object key = face.shape == 0 ? null : shapes.get(face.shape);
             if (key == null) continue;
             face.key = key;
+            face.alpha = MobTextures.ofPolygon(key);
+            if (face.alpha != null) textured = true;
             posed.add(face);
         }
+        if (textured) com.simpleblood.Tally.count("coat.ragdoll.textured");
         if (posed.isEmpty()) return;
         com.simpleblood.Tally.count("coat.ragdoll");
         coat.onRagdoll = now;
+        coat.ragdollPieces.put(posed.get(0).key, posed);
+        RagdollSurfaces.publish(entityId, posed, null, now);
         List<Quad> quads = prepare(coat, posed, SurfaceRenderer.cameraPos(), light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
     }
@@ -567,13 +632,21 @@ public final class MobBlood {
             Entity e = level == null ? null : level.getEntity(coat.entityId);
             Vec3 origin = e != null ? e.position() : coat.lastPos;
             if (origin != null) {
-                for (MobCoat.Splat sp : coat.pending) {
-                    if (now - sp.made() > 40) continue;
+                java.util.Iterator<MobCoat.Splat> it = coat.pending.iterator();
+                while (it.hasNext()) {
+                    MobCoat.Splat sp = it.next();
+                    if (now - sp.made() > 40) {
+                        it.remove();
+                        continue;
+                    }
                     MobCoat.Splat placed = new MobCoat.Splat(sp.at().add(origin), sp.dir(), sp.weapon(), sp.size(), sp.units(), sp.made(), sp.colour(), sp.drop());
+                    int before = coat.strokes;
                     coat.paint(placed, posed, now, lifetime, RNG);
+                    if (coat.strokes != before) it.remove();
                 }
+            } else {
+                coat.pending.clear();
             }
-            coat.pending.clear();
         }
         if (coat.lastSim != now) {
             coat.lastSim = now;
@@ -670,6 +743,7 @@ public final class MobBlood {
         float opacity = SimpleBloodClient.getConfig().surfaces.opacity / 100f;
         if (!still) {
             now++;
+            RagdollSurfaces.prune();
             if (!settings().enabled) {
                 clearCoats();
                 return;
@@ -765,5 +839,6 @@ public final class MobBlood {
         BloodCanvasAtlas atlas = BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null;
         for (MobCoat coat : COATS.values()) coat.dispose(atlas);
         COATS.clear();
+        RagdollSurfaces.clear();
     }
 }

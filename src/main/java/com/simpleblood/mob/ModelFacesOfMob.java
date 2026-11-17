@@ -224,13 +224,24 @@ public final class ModelFacesOfMob {
     private static final Set<ModelPart> SKIPPED = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private static boolean catching;
     private static final Set<ModelPart> WALKED = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private static int baseParts = -1;
+    private static Object baseTexture;
 
     /^* From the mob's renderer: its model and layers are about to be drawn. ^/
     public static void startCatching() {
         CAUGHT.clear();
         SKIPPED.clear();
         WALKED.clear();
+        baseParts = -1;
+        baseTexture = null;
         catching = true;
+    }
+
+    /^* From the mob's renderer: its own model is drawn, with this texture; what is caught from here on are its layers. ^/
+    public static void baseDrawn(Object texture) {
+        if (!catching) return;
+        baseParts = CAUGHT.size();
+        baseTexture = texture;
     }
 
     /^*
@@ -241,7 +252,6 @@ public final class ModelFacesOfMob {
      ^/
     public static void rendering(ModelPart part, PoseStack stack) {
         if (!catching || WALKED.contains(part)) return;
-        // Called from the head of the game's own ModelPart.render: a failure here must not
         try {
             PoseStack copy = new PoseStack();
             copy.last().pose().set(stack.last().pose());
@@ -295,19 +305,28 @@ public final class ModelFacesOfMob {
         List<Face> out = new ArrayList<>();
         int id = 0;
         Quaternionf toWorld = viewToWorld();
-        for (Object[] c : CAUGHT) {
+        MobTextures.Alpha alpha = baseParts > 0 ? MobTextures.of(baseTexture) : null;
+        for (int i = 0; i < CAUGHT.size(); i++) {
+            Object[] c = CAUGHT.get(i);
             Matrix4f m = (Matrix4f) c[0];
             Matrix3f n = (Matrix3f) c[1];
+            int from = out.size();
             for (ModelPart.Cube cube : (List<ModelPart.Cube>) c[2]) {
                 if (!addPolygons(cube, id, m, n, toWorld, camera, out, (ModelPart) c[3])) addBox(cube, id, m, n, toWorld, camera, out);
                 id++;
+            }
+            if (i >= baseParts) continue;
+            // The mob's own model: its see-through texels take no blood, and its ragdoll (drawn
+            for (int k = from; k < out.size(); k++) {
+                Face f = out.get(k);
+                if (alpha != null) f.alpha = alpha;
+                MobTextures.drawnWith(f.key, alpha);
             }
         }
         CAUGHT.clear();
         return out;
     }
 
-    // These versions keep a cube's polygons to themselves; they are read by the types of their
     private static java.lang.reflect.Field fPolygons, fVertices, fNormal, fPos, fU, fV;
     private static boolean looked, readable;
 

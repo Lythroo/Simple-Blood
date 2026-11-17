@@ -46,6 +46,17 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     }
 
     @org.spongepowered.asm.mixin.injection.Inject(method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
+            at = @org.spongepowered.asm.mixin.injection.At(value = "INVOKE", target = "Ljava/util/List;iterator()Ljava/util/Iterator;", ordinal = 0),
+            require = 0)
+    @SuppressWarnings("unchecked")
+    private void simpleblood$baseDrawn(T entity, float yaw, float partialTick, com.mojang.blaze3d.vertex.PoseStack pose,
+                                       net.minecraft.client.renderer.MultiBufferSource buffers, int light,
+                                       org.spongepowered.asm.mixin.injection.callback.CallbackInfo ci) {
+        if (!com.simpleblood.mob.ModelFacesOfMob.catching()) return;
+        com.simpleblood.mob.ModelFacesOfMob.baseDrawn(((net.minecraft.client.renderer.entity.EntityRenderer<T>) (Object) this).getTextureLocation(entity));
+    }
+
+    @org.spongepowered.asm.mixin.injection.Inject(method = "render(Lnet/minecraft/world/entity/LivingEntity;FFLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;I)V",
             at = @org.spongepowered.asm.mixin.injection.At("RETURN"))
     private void simpleblood$drawBlood(T entity, float yaw, float partialTick, com.mojang.blaze3d.vertex.PoseStack pose,
                                        net.minecraft.client.renderer.MultiBufferSource buffers, int light,
