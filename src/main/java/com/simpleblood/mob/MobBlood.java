@@ -50,6 +50,57 @@ public final class MobBlood {
         return now;
     }
 
+    static final Object UNBOUND = new Object();
+
+    private static Object liveKeyOf(MobCoat coat, Map<Long, Object> shapes, ModelFacesOfMob.Face face) {
+        Object key = face.shape == 0 ? null : shapes.get(face.shape);
+        if (key != null || face.form == 0 || face.key == null) return key;
+        Object known = coat.bound.get(face.key);
+        if (known != null) return known == UNBOUND ? null : known;
+        Object found = byForm(coat, face, face.form);
+        if (found == null && face.texForm != 0) found = byForm(coat, face, face.texForm);
+        coat.bound.put(face.key, found == null ? UNBOUND : found);
+        com.simpleblood.Tally.count(found == null ? "coat.ragdoll.unbound" : "coat.ragdoll.bound");
+        return found;
+    }
+
+    private static Object byForm(MobCoat coat, ModelFacesOfMob.Face face, long form) {
+        List<Object> candidates = (coat.forms.isEmpty() ? ModelShapes.formsOf(coat.type, coat.baby) : coat.forms).get(form);
+        if (candidates == null || candidates.isEmpty()) return null;
+        Object free = null;
+        int left = 0;
+        for (Object c : candidates) {
+            if (coat.bound.containsValue(c)) continue;
+            free = c;
+            left++;
+        }
+        if (left <= 1) return free;
+        if (coat.lastFaces == null) return null;
+        double cx = 0, cy = 0, cz = 0;
+        for (int k = 0; k < 4; k++) {
+            cx += face.wx(k) / 4;
+            cy += face.wy(k) / 4;
+            cz += face.wz(k) / 4;
+        }
+        Object best = null;
+        double bestD = Double.POSITIVE_INFINITY;
+        for (ModelFacesOfMob.Face alive : coat.lastFaces) {
+            if (alive.form != form && alive.texForm != form || coat.bound.containsValue(alive.key) || !candidates.contains(alive.key)) continue;
+            double ax = 0, ay = 0, az = 0;
+            for (int k = 0; k < 4; k++) {
+                ax += alive.wx(k) / 4;
+                ay += alive.wy(k) / 4;
+                az += alive.wz(k) / 4;
+            }
+            double d = (ax - cx) * (ax - cx) + (ay - cy) * (ay - cy) + (az - cz) * (az - cz);
+            if (d < bestD) {
+                bestD = d;
+                best = alive.key;
+            }
+        }
+        return best;
+    }
+
     private static Map<Long, Object> shapesOf(MobCoat coat) {
         return coat.shapes.isEmpty() ? ModelShapes.of(coat.type, coat.baby) : coat.shapes;
     }
@@ -540,7 +591,7 @@ public final class MobBlood {
         List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
         boolean textured = false;
         for (ModelFacesOfMob.Face face : drawn) {
-            Object key = face.shape == 0 ? null : shapes.get(face.shape);
+            Object key = liveKeyOf(coat, shapes, face);
             if (key == null) continue;
             face.key = key;
             face.alpha = MobTextures.ofPolygon(key);
@@ -599,7 +650,7 @@ public final class MobBlood {
         List<ModelFacesOfMob.Face> posed = new ArrayList<>(drawn.size());
         boolean textured = false;
         for (ModelFacesOfMob.Face face : drawn) {
-            Object key = face.shape == 0 ? null : shapes.get(face.shape);
+            Object key = liveKeyOf(coat, shapes, face);
             if (key == null) continue;
             face.key = key;
             face.alpha = MobTextures.ofPolygon(key);

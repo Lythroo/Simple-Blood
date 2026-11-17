@@ -22,6 +22,8 @@ public final class ModelFacesOfMob {
     static final class Face {
         Object key;
         long shape;
+        long form;
+        long texForm;
         final int cube;
         final float[] p = new float[12];
         final double[] w = new double[12];
@@ -43,6 +45,8 @@ public final class ModelFacesOfMob {
         Face moved(double[] world, org.joml.Vector3f normal, Vec3 camera) {
             Face f = new Face(key, cube);
             f.shape = shape;
+            f.form = form;
+            f.texForm = texForm;
             f.pw = pw;
             f.ph = ph;
             f.alpha = alpha;
@@ -156,6 +160,14 @@ public final class ModelFacesOfMob {
 
     static boolean shaped;
 
+    static long formOf(float[] v) {
+        return com.simpleblood.geom.PolygonForms.form(v);
+    }
+
+    static long texFormOf(float[] v) {
+        return com.simpleblood.geom.PolygonForms.textureForm(v);
+    }
+
     //? if >=1.21.11 {
     static void collect(ModelPart root, PoseStack pose, Vec3 camera, List<Face> out, int[] cubes) {
         walk(root, pose, camera, out, cubes, null);
@@ -198,7 +210,11 @@ public final class ModelFacesOfMob {
                     int before = out.size();
                     addPolygon(polygon, id, v, polygon.normal().x(), polygon.normal().y(), polygon.normal().z(),
                             last.pose(), last.normal(), null, camera, out);
-                    if (shaped && out.size() > before) out.get(before).shape = shapeOf(part, v);
+                    if (shaped && out.size() > before) {
+                        out.get(before).shape = shapeOf(part, v);
+                        out.get(before).form = formOf(v);
+                        out.get(before).texForm = texFormOf(v);
+                    }
                 }
             }
         }
@@ -375,7 +391,11 @@ public final class ModelFacesOfMob {
                 Vector3f normal = (Vector3f) fNormal.get(polygon);
                 int before = out.size();
                 addPolygon(polygon, id, v, normal.x, normal.y, normal.z, m, n, toWorld, camera, out);
-                if (shaped && part != null && out.size() > before) out.get(before).shape = shapeOf(part, v);
+                if (shaped && part != null && out.size() > before) {
+                    out.get(before).shape = shapeOf(part, v);
+                    out.get(before).form = formOf(v);
+                    out.get(before).texForm = texFormOf(v);
+                }
             }
             return true;
         } catch (Throwable t) {
