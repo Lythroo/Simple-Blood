@@ -8,6 +8,17 @@ public final class Presets {
 
     public record Preset(String name, String description, java.util.function.Consumer<SimpleBloodConfig> apply) {}
 
+    public static void applyLive(Preset p, SimpleBloodConfig cfg, Runnable applied) {
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        SimpleBloodConfig after = gson.fromJson(gson.toJson(cfg), SimpleBloodConfig.class);
+        p.apply().accept(after);
+        TileShapeChange.confirm(TileShapeChange.reshapes(cfg, after), () -> {
+            p.apply().accept(cfg);
+            com.simpleblood.surface.BloodSurfaces.unloadAll();
+            applied.run();
+        });
+    }
+
     public static final Preset[] ALL = {
             new Preset("simpleblood.preset.vanilla", "simpleblood.preset.the_defaults_restrained_blood_that", c -> {
                 defaults(c);

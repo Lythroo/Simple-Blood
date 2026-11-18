@@ -19,7 +19,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
-final class SettingsBackup {
+public final class SettingsBackup {
 
     private SettingsBackup() {}
 
@@ -59,19 +59,19 @@ final class SettingsBackup {
                 say.accept(Lang.t("simpleblood.backup.nothing_loaded"));
                 return;
             }
-            if (read(picked)) {
+            if (!read(picked, () -> {
                 say.accept(Lang.t("simpleblood.backup.loaded", picked.getFileName()));
                 loaded.run();
-            } else {
+            })) {
                 say.accept(Lang.t("simpleblood.backup.holds_no_settings", picked.getFileName()));
             }
         });
         if (shown) return;
         Path newest = newest();
-        if (newest != null && read(newest)) {
+        if (newest == null || !read(newest, () -> {
             say.accept(Lang.t("simpleblood.backup.loaded", newest.getFileName()));
             loaded.run();
-        } else {
+        })) {
             say.accept(Lang.t("simpleblood.backup.no_saved_settings_found"));
         }
     }
@@ -81,8 +81,13 @@ final class SettingsBackup {
         return Lang.t("simpleblood.backup.settings_copied_as_text");
     }
 
-    static String paste() {
-        return apply(Minecraft.getInstance().keyboardHandler.getClipboard()) ? Lang.t("simpleblood.backup.copied_settings_loaded") : Lang.t("simpleblood.backup.no_settings_copied");
+    public static void paste(Consumer<String> say, Runnable loaded) {
+        if (!apply(Minecraft.getInstance().keyboardHandler.getClipboard(), () -> {
+            say.accept(Lang.t("simpleblood.backup.copied_settings_loaded"));
+            loaded.run();
+        })) {
+            say.accept(Lang.t("simpleblood.backup.no_settings_copied"));
+        }
     }
 
     private static boolean write(Path file) {
@@ -96,9 +101,9 @@ final class SettingsBackup {
         }
     }
 
-    private static boolean read(Path file) {
+    private static boolean read(Path file, Runnable applied) {
         try {
-            return apply(Files.readString(file));
+            return apply(Files.readString(file), applied);
         } catch (IOException | RuntimeException e) {
             SimpleBlood.LOGGER.warn("Could not read {}", file, e);
             return false;
@@ -113,19 +118,23 @@ final class SettingsBackup {
         SkinColours.openFolder(folder());
     }
 
-    private static boolean apply(String json) {
+    private static boolean apply(String json, Runnable applied) {
         if (json == null || json.isBlank() || !json.trim().startsWith("{")) return false;
+        SimpleBloodConfig cfg;
         try {
-            SimpleBloodConfig cfg = GSON.fromJson(json, SimpleBloodConfig.class);
+            cfg = GSON.fromJson(json, SimpleBloodConfig.class);
             if (cfg == null || cfg.general == null) return false;
             cfg.fillGaps();
             cfg.vanillaEntities.ensureDefaults();
-            SimpleBloodClient.setConfig(cfg);
-            BloodSurfaces.unloadAll();
-            return true;
         } catch (RuntimeException e) {
             return false;
         }
+        TileShapeChange.confirm(TileShapeChange.reshapes(SimpleBloodClient.getConfig(), cfg), () -> {
+            SimpleBloodClient.setConfig(cfg);
+            BloodSurfaces.unloadAll();
+            applied.run();
+        });
+        return true;
     }
 
     private static Path newest() {

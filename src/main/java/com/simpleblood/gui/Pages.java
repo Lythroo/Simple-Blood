@@ -926,18 +926,18 @@ public final class Pages {
         b.action(Lang.t("simpleblood.gui.backup.save_to_file"), Lang.t("simpleblood.gui.backup.pick_where_to_save_your"), Lang.t("simpleblood.gui.backup.save"), () -> SettingsBackup.saveToFile(b.host::toast));
         b.action(Lang.t("simpleblood.gui.backup.load_from_file"), Lang.t("simpleblood.gui.backup.pick_a_settings_file_to"), Lang.t("simpleblood.gui.backup.load"), () -> SettingsBackup.loadFromFile(b.host::toast, b.host::rebuildPage));
         b.action(Lang.t("simpleblood.gui.backup.copy_as_text"), Lang.t("simpleblood.gui.backup.to_paste_anywhere_like_a"), Lang.t("simpleblood.gui.backup.copy"), () -> b.host.toast(SettingsBackup.copy()));
-        b.action(Lang.t("simpleblood.gui.backup.paste_from_text"), Lang.t("simpleblood.gui.backup.load_settings_someone_copied"), Lang.t("simpleblood.gui.backup.paste"), () -> {
-            b.host.toast(SettingsBackup.paste());
-            b.host.rebuildPage();
-        });
+        b.action(Lang.t("simpleblood.gui.backup.paste_from_text"), Lang.t("simpleblood.gui.backup.load_settings_someone_copied"), Lang.t("simpleblood.gui.backup.paste"),
+                () -> SettingsBackup.paste(b.host::toast, b.host::rebuildPage));
         b.action(Lang.t("simpleblood.gui.backup.open_folder"), Lang.t("simpleblood.gui.backup.where_saved_settings_go_first"), Lang.t("simpleblood.gui.backup.open"), SettingsBackup::openFolder);
         b.action(Lang.t("simpleblood.gui.backup.reset_everything"), Lang.t("simpleblood.gui.backup.everything_back_to_default_cancel"), Lang.t("simpleblood.gui.backup.reset"), () -> {
             SimpleBloodConfig fresh = new SimpleBloodConfig();
             fresh.vanillaEntities.initializeDefaults();
-            com.simpleblood.SimpleBloodClient.setConfig(fresh);
-            BloodSurfaces.unloadAll();
-            b.host.toast(Lang.t("simpleblood.gui.backup.back_to_defaults"));
-            b.host.rebuildPage();
+            TileShapeChange.confirm(TileShapeChange.reshapes(b.cfg, fresh), () -> {
+                com.simpleblood.SimpleBloodClient.setConfig(fresh);
+                BloodSurfaces.unloadAll();
+                b.host.toast(Lang.t("simpleblood.gui.backup.back_to_defaults"));
+                b.host.rebuildPage();
+            });
         });
     }
 
@@ -1433,12 +1433,10 @@ public final class Pages {
             SimpleBloodConfig look = gson.fromJson(current, SimpleBloodConfig.class);
             p.apply().accept(look);
             b.previewWith(look);
-            b.action(Lang.t(p.name()), Lang.t(p.description()), Lang.t("simpleblood.gui.presets.apply"), () -> {
-                p.apply().accept(b.cfg);
-                BloodSurfaces.unloadAll();
+            b.action(Lang.t(p.name()), Lang.t(p.description()), Lang.t("simpleblood.gui.presets.apply"), () -> Presets.applyLive(p, b.cfg, () -> {
                 b.host.toast(Lang.t("simpleblood.gui.presets.applied", Lang.t(p.name())));
                 b.host.rebuildPage();
-            });
+            }));
             if (b.lastRow != null && b.lastRow.control instanceof Widgets.Button apply) {
                 apply.done = () -> match.applied(p);
                 apply.doneText = Lang.t("simpleblood.gui.presets.applied_2");
