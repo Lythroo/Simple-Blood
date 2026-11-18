@@ -275,8 +275,11 @@ public final class SimpleBlood {
         if (glowCfg != null && !glowCfg.kinds.glow) return false;
         if (glowCfg != null && entity instanceof net.minecraft.world.entity.player.Player) {
             net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-            if (mc.player != null && entity.getUUID().equals(mc.player.getUUID())) return glowCfg.player.clientPlayerBloodGlows;
-            if (glowCfg.player.colourFromSkins && SkinColours.kindOf(entity) != null) return SkinColours.glowsOf(entity);
+            if (mc.player != null && entity.getUUID().equals(mc.player.getUUID())) {
+                if (glowCfg.player.clientPlayerBloodGlows) return true;
+            } else if (glowCfg.player.colourFromSkins && SkinColours.kindOf(entity) != null && SkinColours.glowsOf(entity)) {
+                return true;
+            }
         }
         Identifier id = idOf(entity);
         SimpleBloodAPI.BloodSettings api = apiSettings(id);

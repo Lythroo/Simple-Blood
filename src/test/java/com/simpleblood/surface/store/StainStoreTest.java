@@ -9,7 +9,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -67,6 +69,43 @@ class StainStoreTest {
         assertTrue(Files.exists(aside));
         assertEquals(List.of(5L), List.copyOf(store.read(file).keySet()));
         assertNull(store.update(file, Map.of(), Map.of()));
+    }
+
+    @Test
+    void aNewerFormatFileIsNeverTouched() throws IOException {
+        StainStore store = new StainStore(dir);
+        Path file = store.regionFile("world-a", "overworld", 0, 0);
+        Files.createDirectories(file.getParent());
+        byte[] newer = {'S', 'B', 'S', 'T', 0, 0, 0, (byte) (StainCodec.VERSION + 1), 1, 2, 3, 4};
+        Files.write(file, newer);
+        Map<Long, List<SavedTile>> some = Map.of(5L, List.of(StainCodecTest.tile(1L, 1, 2, false)));
+        assertThrows(StainCodec.UnsupportedStainVersionException.class, () -> store.update(file, some, Map.of()));
+        assertThrows(StainCodec.UnsupportedStainVersionException.class, () -> store.update(file, Map.of(), some));
+        assertThrows(StainCodec.UnsupportedStainVersionException.class, () -> store.update(file, Map.of(5L, List.of()), Map.of()));
+        assertArrayEquals(newer, Files.readAllBytes(file));
+        try (var files = Files.list(file.getParent())) {
+            assertEquals(List.of("r.0.0.bin"), files.map(p -> p.getFileName().toString()).toList());
+        }
+    }
+
+    @Test
+    void keptFacesOutliveAReplace() throws IOException {
+        StainStore store = new StainStore(dir);
+        Path file = store.regionFile("world-a", "overworld", 0, 0);
+        SavedTile away = StainCodecTest.tile(10L, 1, 4, false), gone = StainCodecTest.tile(11L, 1, 4, false);
+        store.update(file, Map.of(1L, List.of(away, gone)), Map.of());
+        String awayKey = StainStore.faceKey(away.where().pos(), away.where().face(), away.where().box());
+
+        SavedTile live = StainCodecTest.tile(12L, 1, 3, false);
+        store.update(file, Map.of(1L, List.of(live)), Map.of(), Map.of(1L, java.util.Set.of(awayKey)));
+        List<Long> faces = store.read(file).get(1L).stream().map(t -> t.where().pos()).sorted().toList();
+        assertEquals(List.of(10L, 12L), faces);
+
+        SavedTile newer = StainCodecTest.tile(10L, 1, 7, false);
+        store.update(file, Map.of(1L, List.of(newer)), Map.of(), Map.of(1L, java.util.Set.of(awayKey)));
+        List<SavedTile> now = store.read(file).get(1L);
+        assertEquals(1, now.size());
+        assertEquals(7, now.get(0).pixels().count());
     }
 
     @Test

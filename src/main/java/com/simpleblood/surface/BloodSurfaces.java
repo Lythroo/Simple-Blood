@@ -1401,7 +1401,7 @@ public final class BloodSurfaces {
         int h = HEAT.computeIfAbsent(tile.pos.asLong(), k -> heatAt(level, tile.pos));
         if (h == 0) return;
         com.simpleblood.Tally.count("heat.dry");
-        tile.accelerateAging(16 * (h == 2 ? 11 : 2));
+        tile.accelerateAging(16 * (h == 2 ? 11 : 2), now, false);
         if (!tile.sizzled || RNG.nextInt(h == 2 ? 2 : 5) == 0) {
             tile.sizzled = true;
             Vec3 c = tile.center();
@@ -2830,7 +2830,7 @@ public final class BloodSurfaces {
             if (newlyOpen != 0) runOffNewEdges(level, tile, newlyOpen);
         }
         if (timed && !riding && s.rainWashes && level.isRainingAt(tile.pos.relative(tile.face))) {
-            tile.accelerateAging(16 * 6);
+            tile.accelerateAging(16 * 6, now, true);
         }
         if (timed && s.heatDries) heat(level, tile);
         return true;
@@ -2879,10 +2879,18 @@ public final class BloodSurfaces {
     public static void washAround(ClientLevel level, Vec3 at, double radius, int ticks) {
         if (TILES.isEmpty()) return;
         com.simpleblood.Tally.count("surface.washed");
+        ageAround(at, radius, ticks, true);
+    }
+
+    public static void dryAroundForTests(Vec3 at, double radius, int ticks) {
+        ageAround(at, radius, ticks, false);
+    }
+
+    private static void ageAround(Vec3 at, double radius, int ticks, boolean water) {
         double r2 = radius * radius;
         for (CanvasTile tile : TILES.values()) {
             double dx = tile.pos.getX() + 0.5 - at.x, dy = tile.pos.getY() + 0.5 - at.y, dz = tile.pos.getZ() + 0.5 - at.z;
-            if (dx * dx + dy * dy + dz * dz <= r2) tile.accelerateAging(ticks);
+            if (dx * dx + dy * dy + dz * dz <= r2) tile.accelerateAging(ticks, now, water);
         }
     }
 
@@ -2896,7 +2904,7 @@ public final class BloodSurfaces {
 
     enum Restored {
         RESTORED,
-        KEPT_LIVE,
+        MERGED,
         DROPPED
     }
 
@@ -2935,20 +2943,20 @@ public final class BloodSurfaces {
         Direction[] dirs = Direction.values();
         CanvasTile.Key key = new CanvasTile.Key(w.pos(), dirs[w.face()], w.box());
         CanvasTile there = TILES.get(key);
-        if (there != null && !there.isEmpty()) return Restored.KEPT_LIVE;
-        CanvasTile t = tileAt(level, pos, dirs[w.hitFace()], new Vec3(w.cx(), w.cy(), w.cz()), true);
+        CanvasTile t = there != null && !there.isEmpty() ? there
+                : tileAt(level, pos, dirs[w.hitFace()], new Vec3(w.cx(), w.cy(), w.cz()), true);
         if (t == null || !t.key.equals(key) || t.pw != w.pw() || t.ph != w.ph()
                 || !sameCoordinate(t.ox, w.ox()) || !sameCoordinate(t.oy, w.oy()) || !sameCoordinate(t.oz, w.oz())
                 || !sameCoordinate(t.w, w.w()) || !sameCoordinate(t.h, w.h())) {
             return Restored.DROPPED;
         }
-        if (!t.isEmpty()) return Restored.KEPT_LIVE;
+        boolean live = !t.isEmpty();
         t.loadPixels(saved.pixels(), now);
         if (t.isEmpty()) {
             remove(t);
             return Restored.DROPPED;
         }
-        return Restored.RESTORED;
+        return live ? Restored.MERGED : Restored.RESTORED;
     }
 
     static List<CanvasTile> tilesAt(BlockPos pos) {

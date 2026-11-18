@@ -48,6 +48,7 @@ public final class CanvasTile {
     private static final int FOREVER_CURVE_TICKS = com.simpleblood.SimpleBloodConfig.SurfaceSettings.LIFETIME_MAX_SECONDS * 20;
     private static final float FOREVER_HOLD = 0.72f;
     private static final int HOLD_REDRAW_TICKS = 40;
+    private static final int WASHED_FOREVER_LIFE_TICKS = 60 * 20;
 
     final Key key;
     final BlockPos pos;
@@ -1086,9 +1087,16 @@ public final class CanvasTile {
 
     private static int gcd(int a, int b) { return b == 0 ? a : gcd(b, a % b); }
 
-    void accelerateAging(int ticks) {
+    void accelerateAging(int ticks, int now, boolean water) {
         for (int i = 0; i < born.length; i++) {
-            if (tone[i] != EMPTY) born[i] -= ticks;
+            if (tone[i] == EMPTY) continue;
+            if (water && forever(i)) {
+                int span = span(i);
+                float share = (now - born[i]) / (float) Math.max(1, span);
+                life[i] = Math.max(1, Math.round(WASHED_FOREVER_LIFE_TICKS * (span / (float) FOREVER_CURVE_TICKS)));
+                born[i] = now - Math.round(share * life[i]);
+            }
+            born[i] -= ticks;
         }
         dirty = true;
     }
@@ -1382,11 +1390,14 @@ public final class CanvasTile {
         return tone[i] != EMPTY && (forever(i) || now - born[i] < span(i));
     }
 
-    void loadPixels(SavedTile.Pixels p, int now) {
+    int loadPixels(SavedTile.Pixels p, int now) {
+        boolean live = count > 0;
+        int loaded = 0;
         for (int k = 0; k < p.count(); k++) {
             int i = p.index()[k];
-            if (i < 0 || i >= tone.length || (mask != null && !mask[i])) continue;
-            if (tone[i] == EMPTY) count++;
+            if (i < 0 || i >= tone.length || (mask != null && !mask[i]) || tone[i] != EMPTY) continue;
+            count++;
+            loaded++;
             tone[i] = p.tone()[k];
             depth[i] = (byte) Math.min(MAX_DEPTH, p.depth()[k]);
             thin[i] = p.thin()[k];
@@ -1396,8 +1407,9 @@ public final class CanvasTile {
             life[i] = p.life()[k];
         }
         dirty = true;
-        active = false;
-        lastTouched = now;
+        if (!live) active = false;
+        lastTouched = Math.max(lastTouched, now);
+        return loaded;
     }
 
     void dispose(BloodCanvasAtlas atlas) {

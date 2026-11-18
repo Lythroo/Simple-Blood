@@ -659,7 +659,7 @@ public final class Pages {
         b.preview(PreviewScene.Kind.PUDDLE, mobColour(c));
         b.bool(Lang.t("simpleblood.gui.puddles.puddles"), Lang.t("simpleblood.gui.puddles.blood_stays_where_drops_land"), () -> c.surfaces.enabled, v -> { c.surfaces.enabled = v; if (!v) BloodSurfaces.unloadAll(); }, d.surfaces.enabled);
         b.choice(Lang.t("simpleblood.gui.puddles.pixel_size"), Lang.t("simpleblood.gui.puddles.block_sized_pixels_or_double"), new String[]{"16", "8"}, new String[]{Lang.t("simpleblood.gui.puddles.normal"), Lang.t("simpleblood.gui.puddles.chunky")},
-                () -> Integer.toString(c.surfaces.resolution), v -> { c.surfaces.resolution = Integer.parseInt(v); BloodSurfaces.unloadAll(); }, Integer.toString(d.surfaces.resolution));
+                () -> Integer.toString(c.surfaces.resolution), v -> { if (Integer.parseInt(v) != c.surfaces.resolution) TileShapeChange.request(() -> c.surfaces.resolution = Integer.parseInt(v)); }, Integer.toString(d.surfaces.resolution));
         b.choice(Lang.t("simpleblood.gui.puddles.shading"), Lang.t("simpleblood.gui.puddles.follow_the_block_or_a"), new String[]{"block", "pattern"}, new String[]{Lang.t("simpleblood.gui.puddles.follow_block"), Lang.t("simpleblood.gui.puddles.pattern")},
                 () -> c.surfaces.highlightMode, v -> c.surfaces.highlightMode = v, d.surfaces.highlightMode);
         b.slider(Lang.t("simpleblood.gui.puddles.amount"), Lang.t("simpleblood.gui.puddles.how_much_each_drop_paints"), 25, 300, 5, "%", () -> c.surfaces.amount, v -> c.surfaces.amount = v, d.surfaces.amount);
@@ -667,7 +667,7 @@ public final class Pages {
         b.bool(Lang.t("simpleblood.gui.puddles.walls_and_ceilings"), Lang.t("simpleblood.gui.puddles.blood_on_walls_and_ceilings"), () -> c.surfaces.wallsAndCeilings, v -> c.surfaces.wallsAndCeilings = v, d.surfaces.wallsAndCeilings);
         b.preview(null, null);
         b.bool(Lang.t("simpleblood.gui.puddles.detailed_shapes"), Lang.t("simpleblood.gui.puddles.blood_follows_the_real_shape"),
-                () -> c.surfaces.detailedShapes, v -> { c.surfaces.detailedShapes = v; BloodSurfaces.unloadAll(); }, d.surfaces.detailedShapes);
+                () -> c.surfaces.detailedShapes, v -> { if (v != c.surfaces.detailedShapes) TileShapeChange.request(() -> c.surfaces.detailedShapes = v); }, d.surfaces.detailedShapes);
         b.heading(Lang.t("simpleblood.gui.puddles.drying"));
         b.preview(PreviewScene.Kind.DRYING, mobColour(c));
         b.slider(Lang.t("simpleblood.gui.puddles.opacity"), Lang.t("simpleblood.gui.puddles.how_see_through_the_blood"), 20, 100, 2, "%", () -> c.surfaces.opacity, v -> c.surfaces.opacity = v, d.surfaces.opacity);

@@ -63,18 +63,26 @@ public final class StainStore {
     }
 
     public Path update(Path file, Map<Long, List<SavedTile>> replace, Map<Long, List<SavedTile>> merge) throws IOException {
+        return update(file, replace, merge, Map.of());
+    }
+
+    public Path update(Path file, Map<Long, List<SavedTile>> replace, Map<Long, List<SavedTile>> merge,
+                       Map<Long, ? extends java.util.Set<String>> keep) throws IOException {
         Map<Long, List<SavedTile>> chunks;
         Path movedAside = null;
         try {
             chunks = new LinkedHashMap<>(read(file));
+        } catch (StainCodec.UnsupportedStainVersionException e) {
+            throw e;
         } catch (StainCodec.CorruptStainFileException e) {
             movedAside = file.resolveSibling(file.getFileName() + ".bad");
             Files.move(file, movedAside, StandardCopyOption.REPLACE_EXISTING);
             chunks = new LinkedHashMap<>();
         }
         for (Map.Entry<Long, List<SavedTile>> e : replace.entrySet()) {
-            if (e.getValue().isEmpty()) chunks.remove(e.getKey());
-            else chunks.put(e.getKey(), e.getValue());
+            List<SavedTile> tiles = withKept(chunks.get(e.getKey()), e.getValue(), keep.get(e.getKey()));
+            if (tiles.isEmpty()) chunks.remove(e.getKey());
+            else chunks.put(e.getKey(), tiles);
         }
         for (Map.Entry<Long, List<SavedTile>> e : merge.entrySet()) {
             if (e.getValue().isEmpty()) continue;
@@ -91,9 +99,21 @@ public final class StainStore {
         return movedAside;
     }
 
+    private static List<SavedTile> withKept(List<SavedTile> old, List<SavedTile> tiles, java.util.Set<String> keep) {
+        if (old == null || keep == null || keep.isEmpty()) return tiles;
+        Map<String, SavedTile> byFace = new LinkedHashMap<>();
+        for (SavedTile t : old) if (keep.contains(faceKey(t))) byFace.put(faceKey(t), t);
+        for (SavedTile t : tiles) byFace.put(faceKey(t), t);
+        return byFace.size() == tiles.size() ? tiles : List.copyOf(byFace.values());
+    }
+
     private static String faceKey(SavedTile t) {
         SavedTile.Where w = t.where();
-        return w.pos() + "/" + w.face() + "/" + w.box();
+        return faceKey(w.pos(), w.face(), w.box());
+    }
+
+    public static String faceKey(long pos, int face, int box) {
+        return pos + "/" + face + "/" + box;
     }
 
     public static void writeAtomically(Path file, byte[] bytes) throws IOException {

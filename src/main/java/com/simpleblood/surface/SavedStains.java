@@ -42,6 +42,8 @@ public final class SavedStains {
     private static final int RESTORES_PER_TICK = 48;
     private static final int SWAPS_PER_POLL = 32;
     private static final double SWAP_MARGIN = 8.0;
+    private static final int MAX_PARKED = 2048;
+    private static final int FLUSH_CHUNKS_PER_TICK = 8;
 
     private record Parked(SavedTile tile, int at) {}
 
@@ -58,6 +60,9 @@ public final class SavedStains {
     private static final LongOpenHashSet ARRIVED = new LongOpenHashSet();
     private static final LongOpenHashSet UNSAVED = new LongOpenHashSet();
     private static final Long2ObjectOpenHashMap<Map<CanvasTile.Key, Parked>> PARKED = new Long2ObjectOpenHashMap<>();
+    private static final Long2ObjectOpenHashMap<Set<String>> AWAY = new Long2ObjectOpenHashMap<>();
+    private static long[] flushing = new long[0];
+    private static int flushed;
     private static final ArrayDeque<Pending> TO_RESTORE = new ArrayDeque<>();
     private static final Long2IntOpenHashMap PENDING = new Long2IntOpenHashMap();
     private static final ConcurrentLinkedQueue<Runnable> RESULTS = new ConcurrentLinkedQueue<>();
@@ -211,8 +216,11 @@ public final class SavedStains {
         ARRIVED.clear();
         UNSAVED.clear();
         PARKED.clear();
+        AWAY.clear();
         TO_RESTORE.clear();
         PENDING.clear();
+        flushing = new long[0];
+        flushed = 0;
     }
 
     static void tick(Minecraft mc, ClientLevel level, SimpleBloodConfig.SurfaceSettings s, int now) {
@@ -231,12 +239,25 @@ public final class SavedStains {
             dropGoneChunks(level, now);
             claimLoadedChunks(mc, level);
             swap(mc, level, s, now);
+            capParked(mc, now);
         }
-        if (clock % FLUSH_TICKS == 0 && !UNSAVED.isEmpty()) {
-            LongOpenHashSet changed = new LongOpenHashSet(UNSAVED);
-            write(changed, now);
+        if (clock % FLUSH_TICKS == 0 && flushed >= flushing.length && !UNSAVED.isEmpty()) {
+            flushing = UNSAVED.toLongArray();
+            flushed = 0;
+            it.unimi.dsi.fastutil.longs.LongArrays.quickSort(flushing, (a, b) -> Long.compare(regionOf(a), regionOf(b)));
             com.simpleblood.Tally.count("stains.flush");
         }
+        flushSome(now);
+    }
+
+    private static void flushSome(int now) {
+        if (flushed >= flushing.length) return;
+        LongOpenHashSet slice = new LongOpenHashSet(FLUSH_CHUNKS_PER_TICK);
+        while (flushed < flushing.length && slice.size() < FLUSH_CHUNKS_PER_TICK) {
+            long c = flushing[flushed++];
+            if (UNSAVED.contains(c)) slice.add(c);
+        }
+        write(slice, now);
     }
 
     static void changed(BlockPos pos) {
@@ -285,6 +306,7 @@ public final class SavedStains {
             READING.remove(c);
             UNSAVED.remove(c);
             PARKED.remove(c);
+            AWAY.remove(c);
             if (PENDING.remove(c) != 0) TO_RESTORE.removeIf(p -> p.chunk() == c);
         }
     }
@@ -404,14 +426,7 @@ public final class SavedStains {
         Entity camera = mc.getCameraEntity();
         if (camera == null) return;
         Vec3 eye = camera.position();
-        List<Near> parked = new ArrayList<>();
-        for (Long2ObjectOpenHashMap.Entry<Map<CanvasTile.Key, Parked>> e : PARKED.long2ObjectEntrySet()) {
-            for (Parked p : e.getValue().values()) {
-                SavedTile.Where w = p.tile().where();
-                parked.add(new Near(e.getLongKey(), p, null, Math.sqrt(distanceSqr(eye, w.cx(), w.cy(), w.cz()))));
-            }
-        }
-        parked.sort(java.util.Comparator.comparingDouble(Near::distance));
+        List<Near> parked = parkedByDistance(eye);
         List<Near> drawn = null;
         int far = 0;
         for (int n = 0; n < SWAPS_PER_POLL && n < parked.size(); n++) {
@@ -436,6 +451,42 @@ public final class SavedStains {
             bringBack(level, next.chunk(), aged(next.parked(), now), now);
             com.simpleblood.Tally.count("stains.swapped");
         }
+    }
+
+    private static List<Near> parkedByDistance(Vec3 eye) {
+        List<Near> parked = new ArrayList<>();
+        for (Long2ObjectOpenHashMap.Entry<Map<CanvasTile.Key, Parked>> e : PARKED.long2ObjectEntrySet()) {
+            for (Parked p : e.getValue().values()) {
+                SavedTile.Where w = p.tile().where();
+                parked.add(new Near(e.getLongKey(), p, null, Math.sqrt(distanceSqr(eye, w.cx(), w.cy(), w.cz()))));
+            }
+        }
+        parked.sort(java.util.Comparator.comparingDouble(Near::distance));
+        return parked;
+    }
+
+    private static void capParked(Minecraft mc, int now) {
+        int over = parkedCount() - MAX_PARKED;
+        if (over <= 0) return;
+        Entity camera = mc.getCameraEntity();
+        if (camera == null) return;
+        List<Near> parked = parkedByDistance(camera.position());
+        List<Near> farthest = parked.subList(parked.size() - over, parked.size());
+        LongOpenHashSet chunks = new LongOpenHashSet();
+        for (Near n : farthest) chunks.add(n.chunk());
+        write(chunks, now);
+        for (Near n : farthest) {
+            Map<CanvasTile.Key, Parked> inChunk = PARKED.get(n.chunk());
+            inChunk.remove(keyOf(n.parked().tile()));
+            if (inChunk.isEmpty()) PARKED.remove(n.chunk());
+            AWAY.computeIfAbsent(n.chunk(), k -> new HashSet<>()).add(faceKeyOf(n.parked().tile()));
+        }
+        com.simpleblood.Tally.add("stains.parked.away", over);
+    }
+
+    private static String faceKeyOf(SavedTile t) {
+        SavedTile.Where w = t.where();
+        return StainStore.faceKey(w.pos(), w.face(), w.box());
     }
 
     private record Near(long chunk, Parked parked, CanvasTile tile, double distance) {}
@@ -465,6 +516,7 @@ public final class SavedStains {
             if (saved != null) live.computeIfAbsent(c, k -> new ArrayList<>()).add(saved);
         }
         Map<Long, Map<Long, List<SavedTile>>> replace = new HashMap<>(), merge = new HashMap<>();
+        Map<Long, Map<Long, Set<String>>> keep = new HashMap<>();
         for (LongIterator it = chunks.iterator(); it.hasNext(); ) {
             long c = it.nextLong();
             List<SavedTile> tiles = live.getOrDefault(c, new ArrayList<>());
@@ -472,6 +524,15 @@ public final class SavedStains {
             if (parked != null) for (Parked p : parked.values()) tiles.add(aged(p, now));
             boolean known = KNOWN.contains(c);
             UNSAVED.remove(c);
+            Set<String> away = AWAY.get(c);
+            if (away != null) {
+                for (SavedTile t : tiles) away.remove(faceKeyOf(t));
+                if (away.isEmpty()) {
+                    AWAY.remove(c);
+                } else if (known) {
+                    keep.computeIfAbsent(regionOf(c), k -> new HashMap<>()).put(c, Set.copyOf(away));
+                }
+            }
             if (tiles.isEmpty() && (!known || !REGIONS.contains(regionOf(c)))) continue;
             (known ? replace : merge).computeIfAbsent(regionOf(c), k -> new HashMap<>()).put(c, List.copyOf(tiles));
             if (!tiles.isEmpty()) REGIONS.add(regionOf(c));
@@ -481,9 +542,10 @@ public final class SavedStains {
         for (long region : regions) {
             Path file = store().regionFile(worldKey, dimension, chunkX(region), chunkZ(region));
             Map<Long, List<SavedTile>> r = replace.getOrDefault(region, Map.of()), m = merge.getOrDefault(region, Map.of());
+            Map<Long, Set<String>> k = keep.getOrDefault(region, Map.of());
             submit(st -> {
                 try {
-                    Path aside = st.update(file, r, m);
+                    Path aside = st.update(file, r, m, k);
                     if (aside != null) {
                         RESULTS.add(() -> reportOnce(file, "kept aside as " + aside.getFileName(), null));
                     }
@@ -496,8 +558,12 @@ public final class SavedStains {
     }
 
     private static void reportOnce(Path file, String what, Exception e) {
+        if (e instanceof StainCodec.UnsupportedStainVersionException) com.simpleblood.Tally.count("stains.file.newer");
         if (!REPORTED.add(file + what)) return;
-        if (e instanceof StainCodec.CorruptStainFileException) {
+        if (e instanceof StainCodec.UnsupportedStainVersionException) {
+            SimpleBlood.LOGGER.warn("Simple Blood: saved blood in {} is {}; left as it is, and the blood there is not saved this time",
+                    file, e.getMessage());
+        } else if (e instanceof StainCodec.CorruptStainFileException) {
             SimpleBlood.LOGGER.warn("Simple Blood: saved blood in {} could not be read ({}); skipped", file, e.getMessage());
         } else if (e == null) {
             SimpleBlood.LOGGER.warn("Simple Blood: saved blood in {} could not be read; {}", file, what);
@@ -516,6 +582,26 @@ public final class SavedStains {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
+        }
+    }
+
+    public static Path regionFileForTests(BlockPos pos) {
+        if (worldKey == null) return null;
+        long region = regionOf(chunkOf(pos));
+        return store().regionFile(worldKey, dimension, chunkX(region), chunkZ(region));
+    }
+
+    public static boolean worldHasBlood() {
+        if (BloodSurfaces.tileCount() > 0 || !PARKED.isEmpty()) return true;
+        Minecraft mc = Minecraft.getInstance();
+        String w = worldKey != null ? worldKey : mc.level != null ? worldKeyOf(mc) : null;
+        if (w == null) return false;
+        Path dir = store().worldDir(w);
+        if (!java.nio.file.Files.isDirectory(dir)) return false;
+        try (java.util.stream.Stream<Path> walk = java.nio.file.Files.walk(dir, 2)) {
+            return walk.anyMatch(p -> p.getFileName().toString().endsWith(".bin"));
+        } catch (IOException | java.io.UncheckedIOException e) {
+            return true;
         }
     }
 
