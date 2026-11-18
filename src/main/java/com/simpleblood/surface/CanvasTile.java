@@ -31,10 +31,18 @@ public final class CanvasTile {
 
     interface NeighbourLookup {
         boolean filledAcross(CanvasTile tile, int px, int py);
+
+        default CanvasTile beside(CanvasTile tile, int px, int py, int[] xy) {
+            return null;
+        }
     }
 
     interface FlowContext extends NeighbourLookup {
         CanvasTile across(CanvasTile tile, int px, int py, int[] xy, boolean create);
+
+        default boolean continues(CanvasTile tile, int px, int py) {
+            return false;
+        }
 
         boolean canDrain(CanvasTile tile, int px, int py);
 
@@ -90,7 +98,9 @@ public final class CanvasTile {
 
     private NativeImage image;
     private NativeImage spec;
-    private int[] edgeDistance;
+    FlowContext flow;
+    boolean reshade;
+    private int seamSignature;
     int slot = -1;
     boolean dirty;
     int lastTouched;
@@ -208,6 +218,7 @@ public final class CanvasTile {
         this.exposedMask = src.exposedMask;
         this.light = src.light;
         this.glow = src.glow;
+        this.flow = src.flow;
         this.dirty = true;
     }
 
@@ -255,6 +266,19 @@ public final class CanvasTile {
             share += 1000L * (now - born[i]) / Math.max(1, span(i));
         }
         return new long[] {ticks, share};
+    }
+
+    public int pixelsWide() { return pw; }
+
+    public int pixelsHigh() { return ph; }
+
+    public int bloodAt(int px, int py) {
+        return filled(px, py) ? rgb[py * pw + px] & 0xFFFFFF : 0;
+    }
+
+    public int drawnAt(int px, int py) {
+        if (image == null || !inside(px, py)) return 0;
+        return Pixels.alpha(image, px, py) << 24 | (Pixels.rgb(image, px, py) & 0xFFFFFF);
     }
 
     public int wetCount(int now) {
@@ -474,7 +498,7 @@ public final class CanvasTile {
             powder[i] = l.powder();
         } else {
             rgb[i] = com.simpleblood.BloodMix.join(rgb[i], depth[i], l.rgb(), l.depth(),
-                    com.simpleblood.BloodMix.wetness(now, born[i], span(i)), spot(px, py), spot(py, px));
+                    com.simpleblood.BloodMix.wetness(now, born[i], span(i)), spot(px, py, 0), spot(px, py, 1));
             int total = depth[i] + l.depth();
             depth[i] = (byte) Math.min(MAX_DEPTH, total);
             born[i] = Math.max(born[i], l.born());
@@ -518,6 +542,57 @@ public final class CanvasTile {
         return -1;
     }
 
+    private CanvasTile roomAcross(int start, int[] out) {
+        CanvasTile[] tiles = new CanvasTile[OVERFLOW_REACH];
+        int[] cells = new int[OVERFLOW_REACH];
+        int head = 0, tail = 0;
+        tiles[tail] = this;
+        cells[tail++] = start;
+        int[] xy = new int[2];
+        while (head < tail) {
+            CanvasTile at = tiles[head];
+            int ai = cells[head++];
+            int x = ai % at.pw, y = ai / at.pw;
+            for (int d = 0; d < 4; d++) {
+                int nx = x + (d == 0 ? 1 : d == 1 ? -1 : 0);
+                int ny = y + (d == 2 ? 1 : d == 3 ? -1 : 0);
+                CanvasTile t = at;
+                int tx = nx, ty = ny;
+                if (!at.inside(nx, ny)) {
+                    t = at.flow == null ? null : at.flow.across(at, nx, ny, xy, false);
+                    if (t == null) {
+                        t = at.flow == null ? null : at.flow.across(at, nx, ny, xy, true);
+                        if (t == null || !t.paintable(xy[0], xy[1]) || t.tone[xy[1] * t.pw + xy[0]] != EMPTY) continue;
+                        out[0] = xy[0];
+                        out[1] = xy[1];
+                        return t;
+                    }
+                    tx = xy[0];
+                    ty = xy[1];
+                }
+                if (!t.paintable(tx, ty)) continue;
+                int j = ty * t.pw + tx;
+                if (queuedIn(tiles, cells, tail, t, j)) continue;
+                if (t.tone[j] == EMPTY || (!t.powder[j] && t.depth[j] < MAX_DEPTH)) {
+                    out[0] = tx;
+                    out[1] = ty;
+                    return t;
+                }
+                if (t.powder[j]) continue;
+                if (tail < tiles.length) {
+                    tiles[tail] = t;
+                    cells[tail++] = j;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean queuedIn(CanvasTile[] tiles, int[] cells, int size, CanvasTile t, int j) {
+        for (int k = 0; k < size; k++) if (tiles[k] == t && cells[k] == j) return true;
+        return false;
+    }
+
     private static boolean queued(int[] queue, int size, int j) {
         for (int k = 0; k < size; k++) if (queue[k] == j) return true;
         return false;
@@ -537,7 +612,7 @@ public final class CanvasTile {
         }
         int x = to % pw, y = to / pw;
         rgb[to] = com.simpleblood.BloodMix.join(rgb[to], depth[to], rgb[from], 1,
-                com.simpleblood.BloodMix.wetness(now, born[to], span(to)), spot(x, y), spot(y, x));
+                com.simpleblood.BloodMix.wetness(now, born[to], span(to)), spot(x, y, 0), spot(x, y, 1));
         depth[to]++;
         born[to] = Math.max(born[to], born[from]);
     }
@@ -574,6 +649,7 @@ public final class CanvasTile {
         for (int i = 0; i < tone.length; i++) {
             if (tone[i] != EMPTY) blob.add(pack(i % pw, i / pw));
         }
+        if (flow != null && !custom && face == Direction.UP) addBlobBeside(blob);
         List<int[]> chosen = new ArrayList<>(n);
         boolean vertical = custom || face.getAxis().isHorizontal();
 
@@ -590,6 +666,7 @@ public final class CanvasTile {
         if (bias > 1.0e-6) { bu /= bias; bv /= bias; }
         bias = Math.min(1.0, bias);
         Map<Long, Integer> cand = new HashMap<>();
+        int[] goesOn = new int[9];
         int guard = 0;
         while (chosen.size() < n && guard++ < n * 8) {
             cand.clear();
@@ -614,7 +691,7 @@ public final class CanvasTile {
                 }
                 double wgt = e.getValue() * e.getValue() * Math.exp(-dist2 / (R * R) * 0.8);
                 if (vertical) wgt *= dy > 0 ? 1.8 : (dy < 0 ? 0.45 : 1.0);
-                if (!inside(cx, cy)) wgt *= 0.6;
+                if (!inside(cx, cy) && !surfaceGoesOn(cx, cy, goesOn)) wgt *= 0.6;
                 keys[k] = e.getKey();
                 weights[k] = wgt;
                 total += wgt;
@@ -644,6 +721,29 @@ public final class CanvasTile {
             lastTouched = now;
         }
         return painted;
+    }
+
+    private void addBlobBeside(Set<Long> blob) {
+        int[] xy = new int[2];
+        for (int sy = -1; sy <= 1; sy++) {
+            for (int sx = -1; sx <= 1; sx++) {
+                if (sx == 0 && sy == 0) continue;
+                int rx = sx < 0 ? -1 : sx == 0 ? pw / 2 : pw, ry = sy < 0 ? -1 : sy == 0 ? ph / 2 : ph;
+                CanvasTile n = flow.beside(this, rx, ry, xy);
+                if (n == null || n.res != res || n.count == 0) continue;
+                int dx = xy[0] - rx, dy = xy[1] - ry;
+                for (int j = 0; j < n.tone.length; j++) {
+                    if (n.tone[j] != EMPTY) blob.add(pack(j % n.pw - dx, j / n.pw - dy));
+                }
+            }
+        }
+    }
+
+    private boolean surfaceGoesOn(int x, int y, int[] asked) {
+        if (flow == null || custom || face != Direction.UP) return false;
+        int side = (y < 0 ? 0 : y >= ph ? 2 : 1) * 3 + (x < 0 ? 0 : x >= pw ? 2 : 1);
+        if (asked[side] == 0) asked[side] = flow.continues(this, x, y) ? 1 : 2;
+        return asked[side] == 1;
     }
 
     private void addCandidates(int x, int y, Set<Long> blob, Map<Long, Integer> cand) {
@@ -693,6 +793,14 @@ public final class CanvasTile {
             }
         }
         if (mask != null && !mask[i]) return;
+        if (flow != null && !custom && face == Direction.UP && tone[i] != EMPTY && !powder[i] && depth[i] >= MAX_DEPTH) {
+            int[] xy = new int[2];
+            CanvasTile there = roomAcross(i, xy);
+            if (there != null && there != this) {
+                there.paintThin(xy[0], xy[1], colour, now, lifetime, rng, pattern, thinLevel);
+                return;
+            }
+        }
         int room = roomFor(i);
         if (room >= 0 && room != i) {
             i = room;
@@ -707,7 +815,7 @@ public final class CanvasTile {
             life[i] = lifeFor(lifetime, rng);
         } else {
             mixed = com.simpleblood.BloodMix.join(rgb[i], depth[i], colour, 1,
-                    com.simpleblood.BloodMix.wetness(now, born[i], span(i)), spot(px, py), rng.nextFloat());
+                    com.simpleblood.BloodMix.wetness(now, born[i], span(i)), spot(px, py, 0), rng.nextFloat());
             depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + 1);
             if (lifetime == FOREVER && !forever(i)) life[i] = lifeFor(FOREVER, rng);
             born[i] = Math.max(born[i], now - span(i) / 4);
@@ -726,8 +834,13 @@ public final class CanvasTile {
         lastTouched = now;
     }
 
-    private float spot(int px, int py) {
-        return com.simpleblood.BloodMix.spot(px, py, pos.hashCode() * 31 + face.ordinal());
+    private float spot(int px, int py, int which) {
+        double fu = (px + 0.5) * w / pw, fv = (py + 0.5) * h / ph;
+        int u = (int) Math.floor(((ox * ux + oy * uy + oz * uz) + fu) * res);
+        int v = (int) Math.floor(((ox * vx + oy * vy + oz * vz) + fv) * res);
+        int plane = (int) Math.round((ox * nx + oy * ny + oz * nz) * res);
+        int salt = (plane * 31 + face.ordinal()) * 2 + which;
+        return com.simpleblood.BloodMix.spot(u, v, salt);
     }
 
     void paintPowder(int px, int py, int colour, int now, int lifetime, RandomSource rng) {
@@ -1153,88 +1266,151 @@ public final class CanvasTile {
                 || tone[i - pw] == EMPTY || tone[i + pw] == EMPTY;
     }
 
-    private byte[] edgeClasses(NeighbourLookup lookup) {
-        byte[] cls = new byte[tone.length];
-        for (int i = 0; i < tone.length; i++) {
-            if (tone[i] == EMPTY) continue;
-            int x = i % pw, y = i / pw;
-            int open = 0;
-            if (!filledOrAcross(x + 1, y, lookup)) open++;
-            if (!filledOrAcross(x - 1, y, lookup)) open++;
-            if (!filledOrAcross(x, y + 1, lookup)) open++;
-            if (!filledOrAcross(x, y - 1, lookup)) open++;
-            cls[i] = open == 0 ? (byte) 3 : (open == 1 ? (byte) 1 : (byte) 4);
+    private static final int HALO = 6;
+
+    private final class View {
+        final int w = pw + 2 * HALO, h = ph + 2 * HALO;
+        final boolean[] filled = new boolean[w * h];
+        final byte[] depth = new byte[w * h];
+        final float[] age = new float[w * h];
+        int filledCount;
+
+        int at(int x, int y) {
+            return (y + HALO) * w + x + HALO;
         }
+    }
+
+    private View view(NeighbourLookup lookup, int now) {
+        View v = new View();
+        java.util.Arrays.fill(v.age, -1f);
         for (int i = 0; i < tone.length; i++) {
-            if (cls[i] != 3) continue;
-            int x = i % pw, y = i / pw;
-            if (isRim(cls, x + 1, y) || isRim(cls, x - 1, y) || isRim(cls, x, y + 1) || isRim(cls, x, y - 1)) {
-                cls[i] = 2;
+            if (tone[i] != EMPTY) take(v, v.at(i % pw, i / pw), this, i, now);
+        }
+        if (lookup == null) return v;
+        int[] xy = new int[2];
+        for (int sy = -1; sy <= 1; sy++) {
+            for (int sx = -1; sx <= 1; sx++) {
+                if (sx == 0 && sy == 0) continue;
+                int x0 = sx < 0 ? -HALO : sx == 0 ? 0 : pw, x1 = sx < 0 ? 0 : sx == 0 ? pw : pw + HALO;
+                int y0 = sy < 0 ? -HALO : sy == 0 ? 0 : ph, y1 = sy < 0 ? 0 : sy == 0 ? ph : ph + HALO;
+                int rx = sx < 0 ? -1 : sx == 0 ? pw / 2 : pw, ry = sy < 0 ? -1 : sy == 0 ? ph / 2 : ph;
+                CanvasTile n = lookup.beside(this, rx, ry, xy);
+                if (n != null && n.res == res && n.face == face) {
+                    int dx = xy[0] - rx, dy = xy[1] - ry;
+                    for (int y = y0; y < y1; y++) {
+                        for (int x = x0; x < x1; x++) {
+                            int nx = x + dx, ny = y + dy;
+                            if (!n.inside(nx, ny)) continue;
+                            int j = ny * n.pw + nx;
+                            if (n.tone[j] != EMPTY) take(v, v.at(x, y), n, j, now);
+                        }
+                    }
+                } else {
+                    for (int y = Math.max(y0, -1); y < Math.min(y1, ph + 1); y++) {
+                        for (int x = Math.max(x0, -1); x < Math.min(x1, pw + 1); x++) {
+                            int c = v.at(x, y);
+                            if (!v.filled[c] && lookup.filledAcross(this, x, y)) {
+                                v.filled[c] = true;
+                                v.filledCount++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return v;
+    }
+
+    private static void take(View v, int c, CanvasTile t, int j, int now) {
+        v.filled[c] = true;
+        v.filledCount++;
+        if (!t.powder[j]) {
+            v.depth[c] = t.depth[j];
+            v.age[c] = (now - t.born[j]) / (float) Math.max(1, t.span(j));
+        }
+    }
+
+    private byte[] edgeClasses(View v) {
+        byte[] cls = new byte[v.w * v.h];
+        int m = HALO - 1;
+        for (int y = -m; y < ph + m; y++) {
+            for (int x = -m; x < pw + m; x++) {
+                int c = v.at(x, y);
+                if (!v.filled[c]) continue;
+                int open = 0;
+                if (!v.filled[c + 1]) open++;
+                if (!v.filled[c - 1]) open++;
+                if (!v.filled[c + v.w]) open++;
+                if (!v.filled[c - v.w]) open++;
+                cls[c] = open == 0 ? (byte) 3 : (open == 1 ? (byte) 1 : (byte) 4);
+            }
+        }
+        for (int y = -m; y < ph + m; y++) {
+            for (int x = -m; x < pw + m; x++) {
+                int c = v.at(x, y);
+                if (cls[c] == 3 && (isRim(cls[c + 1]) || isRim(cls[c - 1]) || isRim(cls[c + v.w]) || isRim(cls[c - v.w]))) {
+                    cls[c] = 2;
+                }
             }
         }
         return cls;
     }
 
-    private boolean isRim(byte[] cls, int x, int y) {
-        if (!inside(x, y)) return false;
-        byte c = cls[y * pw + x];
+    private static boolean isRim(byte c) {
         return c == 1 || c == 4;
     }
 
-    private boolean filledOrAcross(int x, int y, NeighbourLookup lookup) {
-        if (inside(x, y)) return tone[y * pw + x] != EMPTY;
-        return lookup != null && lookup.filledAcross(this, x, y);
+    private int[] edgeDistances(View v, byte[] cls) {
+        int[] dist = new int[v.w * v.h];
+        for (int c = 0; c < dist.length; c++) {
+            dist[c] = !v.filled[c] ? 0 : isRim(cls[c]) ? PoolShading.STEP : PoolShading.UNSET;
+        }
+        PoolShading.edgeDistances(dist, v.w, v.h);
+        return dist;
     }
 
-    private float smoothDepth(int x, int y) {
+    private float smoothDepth(View v, int x, int y) {
         float sum = 0, weight = 0;
         for (int dy = -2; dy <= 2; dy++) {
-            int ny = y + dy;
-            if (ny < 0 || ny >= ph) continue;
             for (int dx = -2; dx <= 2; dx++) {
-                int nx = x + dx;
-                if (nx < 0 || nx >= pw) continue;
-                int j = ny * pw + nx;
-                if (tone[j] == EMPTY || powder[j]) continue;
+                int d = v.depth[v.at(x + dx, y + dy)];
+                if (d == 0) continue;
                 float w = 1f / (1 + dx * dx + dy * dy);
-                sum += depth[j] * w;
+                sum += d * w;
                 weight += w;
             }
         }
         return weight == 0 ? depth[y * pw + x] : sum / weight;
     }
 
-    private float smoothAge(float[] ages, int x, int y) {
+    private float smoothAge(View v, int x, int y) {
         float sum = 0, weight = 0;
         for (int dy = -1; dy <= 1; dy++) {
-            int ny = y + dy;
-            if (ny < 0 || ny >= ph) continue;
             for (int dx = -1; dx <= 1; dx++) {
-                int nx = x + dx;
-                if (nx < 0 || nx >= pw) continue;
-                float a = ages[ny * pw + nx];
+                float a = v.age[v.at(x + dx, y + dy)];
                 if (a < 0) continue;
                 float w = dx == 0 && dy == 0 ? 2f : 1f;
                 sum += a * w;
                 weight += w;
             }
         }
-        return weight == 0 ? Math.max(0f, ages[y * pw + x]) : sum / weight;
+        return weight == 0 ? Math.max(0f, v.age[v.at(x, y)]) : sum / weight;
     }
 
-    private void measureEdgeDistances(byte[] cls) {
-        if (edgeDistance == null) edgeDistance = new int[tone.length];
+    private int seamSignature() {
+        int band = HALO + 1, hash = 1;
         for (int i = 0; i < tone.length; i++) {
-            byte k = cls[i];
-            edgeDistance[i] = k == 0 ? 0 : (k == 1 || k == 4 ? PoolShading.STEP : PoolShading.UNSET);
+            int x = i % pw, y = i / pw;
+            if (x >= band && y >= band && x < pw - band && y < ph - band) continue;
+            hash = hash * 31 + (tone[i] == EMPTY ? 0 : powder[i] ? 7 : depth[i]);
         }
-        PoolShading.edgeDistances(edgeDistance, pw, ph);
+        return hash;
     }
 
-    void refresh(BloodCanvasAtlas atlas, int now, float opacity, NeighbourLookup lookup) {
+    boolean refresh(BloodCanvasAtlas atlas, int now, float opacity, NeighbourLookup lookup) {
         if (slot < 0) {
             slot = atlas.acquireSlot();
-            if (slot < 0) return;
+            if (slot < 0) return false;
         }
         if (image == null) {
             image = new NativeImage(pw, ph, true);
@@ -1242,15 +1418,11 @@ public final class CanvasTile {
         if (spec == null && atlas.wantsSpecular()) {
             spec = new NativeImage(pw, ph, true);
         }
-        boolean puddle = !custom && face == Direction.UP && count > 2;
-        byte[] cls = puddle ? edgeClasses(lookup) : null;
-        if (puddle) measureEdgeDistances(cls);
+        View view = view(custom ? null : lookup, now);
+        boolean puddle = !custom && face == Direction.UP && view.filledCount > 2;
+        byte[] cls = puddle ? edgeClasses(view) : null;
+        int[] edgeDistance = puddle ? edgeDistances(view, cls) : null;
         ripples.removeIf(r -> now - r[2] >= RIPPLE_TICKS);
-
-        float[] ages = new float[tone.length];
-        for (int i = 0; i < tone.length; i++) {
-            ages[i] = tone[i] == EMPTY || powder[i] ? -1 : (now - born[i]) / (float) Math.max(1, span(i));
-        }
 
         float glowSum = 0f;
         boolean snow = state != null && BloodSurfaces.isSnow(state);
@@ -1271,17 +1443,18 @@ public final class CanvasTile {
                 continue;
             }
             int t = tone[i];
-            float shade = smoothAge(ages, x, y);
+            float shade = smoothAge(view, x, y);
             float dry = Math.max(0f, Math.min(1f, (shade - 0.35f) / 0.35f));
             if ((rgb[i] & BloodColor.GLOW_BIT) != 0) glowSum += 1f - dry;
-            float sd = smoothDepth(x, y);
+            float sd = smoothDepth(view, x, y);
             float deep = Math.min(1.0f, (sd - 1) / 3.0f);
             float f;
-            float edge = puddle ? PoolShading.pixels(edgeDistance[i]) : 0f;
-            if (puddle && cls[i] != 3) {
+            int vc = view.at(x, y);
+            float edge = puddle ? PoolShading.pixels(edgeDistance[vc]) : 0f;
+            if (puddle && cls[vc] != 3) {
                 float k = deep * (1.0f - 0.5f * dry);
-                if (cls[i] == 1) f = 1.0f - 0.22f * k;
-                else if (cls[i] == 2) f = 1.0f + 0.30f * k;
+                if (cls[vc] == 1) f = 1.0f - 0.22f * k;
+                else if (cls[vc] == 2) f = 1.0f + 0.30f * k;
                 else f = 1.0f;
             } else {
                 f = TONE_FACTOR[t];
@@ -1330,6 +1503,11 @@ public final class CanvasTile {
         glow = count == 0 ? 0 : Math.round(15f * Math.min(1f, glowSum / count));
         atlas.upload(slot, image, spec);
         dirty = false;
+        reshade = false;
+        int seams = seamSignature();
+        boolean seamsChanged = seams != seamSignature;
+        seamSignature = seams;
+        return seamsChanged;
     }
 
     int settleExcess(int now, int[] low) {

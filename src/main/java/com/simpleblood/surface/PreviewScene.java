@@ -1685,6 +1685,7 @@ public final class PreviewScene {
             SimpleBloodConfig.SurfaceSettings s = cfg().surfaces;
             t = new CanvasTile(key, b.pos(), face, b.state(), new AABB(0, 0, 0, 1, 1, 1), s.resolution == 16 ? 16 : 8, now);
             if ("block".equals(s.highlightMode)) t.setBaseTones(BlockToneSampler.sample(t, rng));
+            t.flow = flow;
             tiles.put(key, t);
         }
         return t;

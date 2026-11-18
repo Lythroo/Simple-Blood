@@ -2561,6 +2561,44 @@ public final class BloodSurfaces {
         }
 
         @Override
+        public boolean continues(CanvasTile tile, int px, int py) {
+            ClientLevel level = trackedLevel;
+            if (level == null || tile.custom || tile.face != Direction.UP) return false;
+            Vec3 p = tile.pixelCenter(px, py);
+            BlockPos npos = BlockPos.containing(p.x, p.y - 0.02, p.z);
+            if (npos.equals(tile.pos)) return false;
+            if (tileAt(level, npos, Direction.UP, p, false) != null) return true;
+            BlockState state = blockState(level, npos);
+            if (sways(state)) return false;
+            VoxelShape shape = state.getShape(level, npos);
+            if (shape.isEmpty()) return false;
+            double lx = p.x - npos.getX(), lz = p.z - npos.getZ(), top = tile.oy - npos.getY();
+            for (AABB box : shape.toAabbs()) {
+                if (Math.abs(box.maxY - top) < 1.0e-3 && lx >= box.minX && lx <= box.maxX && lz >= box.minZ && lz <= box.maxZ) return true;
+            }
+            return false;
+        }
+
+        @Override
+        public CanvasTile beside(CanvasTile tile, int px, int py, int[] xy) {
+            Vec3 p = tile.pixelCenter(px, py);
+            Direction face = tile.face;
+            BlockPos npos = BlockPos.containing(p.x - face.getStepX() * 0.02, p.y - face.getStepY() * 0.02, p.z - face.getStepZ() * 0.02);
+            if (npos.equals(tile.pos)) return null;
+            List<CanvasTile> there = BY_POS.get(npos.asLong());
+            if (there == null) return null;
+            for (CanvasTile n : there) {
+                if (n.custom || n.face != face || Math.abs(planeCoord(n, face) - planeCoord(tile, face)) > 1.0e-3) continue;
+                int nx = n.pixelX(p), ny = n.pixelY(p);
+                if (!n.inside(nx, ny)) continue;
+                xy[0] = nx;
+                xy[1] = ny;
+                return n;
+            }
+            return null;
+        }
+
+        @Override
         public CanvasTile across(CanvasTile tile, int px, int py, int[] xy, boolean create) {
             ClientLevel level = trackedLevel;
             if (level == null) return null;
@@ -2959,6 +2997,24 @@ public final class BloodSurfaces {
         return live ? Restored.MERGED : Restored.RESTORED;
     }
 
+    private static void reshadeAround(CanvasTile t) {
+        if (t.custom) return;
+        Direction.Axis normal = t.face.getAxis();
+        for (int a = -1; a <= 1; a++) {
+            for (int b = -1; b <= 1; b++) {
+                if (a == 0 && b == 0) continue;
+                BlockPos at = switch (normal) {
+                    case Y -> t.pos.offset(a, 0, b);
+                    case X -> t.pos.offset(0, a, b);
+                    case Z -> t.pos.offset(a, b, 0);
+                };
+                List<CanvasTile> there = BY_POS.get(at.asLong());
+                if (there == null) continue;
+                for (CanvasTile n : there) if (n.face == t.face && !n.custom && !n.isEmpty()) n.reshade = true;
+            }
+        }
+    }
+
     static List<CanvasTile> tilesAt(BlockPos pos) {
         return BY_POS.get(pos.asLong());
     }
@@ -2990,6 +3046,7 @@ public final class BloodSurfaces {
     }
 
     private static void putTile(CanvasTile.Key key, CanvasTile tile) {
+        tile.flow = FLOW;
         CanvasTile old = TILES.put(key, tile);
         if (old != null && old != tile) unindex(old);
         BY_POS.computeIfAbsent(tile.pos.asLong(), k -> new ArrayList<>(2)).add(tile);
@@ -3056,7 +3113,7 @@ public final class BloodSurfaces {
     private static void flushUploads() {
         if (TILES.isEmpty()) return;
         for (CanvasTile t : TILES.values()) {
-            if (t.dirty || t.slot < 0) UPLOADS.add(t);
+            if (t.dirty || t.reshade || t.slot < 0) UPLOADS.add(t);
         }
         if (UPLOADS.isEmpty()) return;
         BloodCanvasAtlas atlas = BloodCanvasAtlas.get();
@@ -3064,7 +3121,8 @@ public final class BloodSurfaces {
         try {
             for (CanvasTile t : UPLOADS) {
                 if (TILES.get(t.key) != t) continue;
-                t.refresh(atlas, now, opacity, FLOW);
+                boolean contentChanged = t.dirty;
+                if (t.refresh(atlas, now, opacity, FLOW) && contentChanged) reshadeAround(t);
                 SavedStains.changed(t.pos);
             }
         } finally {
