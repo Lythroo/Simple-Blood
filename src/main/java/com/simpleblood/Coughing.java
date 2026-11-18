@@ -53,10 +53,13 @@ public final class Coughing {
     private static void step(ClientLevel level, AbstractClientPlayer player, SimpleBloodConfig.CoughSettings s) {
         float severity = CoughTiming.severity(player.getHealth(), player.getMaxHealth(), s.threshold / 100f);
         Fit fit = FITS.get(player.getId());
-        if (severity < 0f) Tally.count("cough.skip.healthy");
-        else if (!canCough(player)) Tally.count("cough.skip.cannot");
-        if (severity < 0f || !canCough(player)) {
-            if (fit != null) fit.nextAt = -1;
+        boolean able = severity >= 0f && canCough(player);
+        if (!able) {
+            Tally.count(severity < 0f ? "cough.skip.healthy" : "cough.skip.cannot");
+            if (fit != null) {
+                fit.nextAt = -1;
+                fit.coughsLeft = 0;
+            }
             return;
         }
         if (fit == null) {

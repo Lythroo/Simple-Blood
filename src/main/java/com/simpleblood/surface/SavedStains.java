@@ -156,14 +156,13 @@ public final class SavedStains {
         listed = false;
         String w = worldKey, d = dimension;
         submit(st -> {
-            List<int[]> regions;
+            List<int[]> found;
             try {
-                regions = st.regions(w, d);
-            } catch (IOException e) {
+                found = st.regions(w, d);
+            } catch (IOException | RuntimeException e) {
                 SimpleBlood.LOGGER.warn("Simple Blood: could not list the saved blood in {}/{}: {}", w, d, e.toString());
-                regions = List.of();
+                return;
             }
-            List<int[]> found = regions;
             RESULTS.add(() -> {
                 if (gen != generation) return;
                 for (int[] r : found) REGIONS.add(chunkKey(r[0], r[1]));
@@ -322,14 +321,13 @@ public final class SavedStains {
         int gen = generation;
         Path file = store().regionFile(worldKey, dimension, chunkX(region), chunkZ(region));
         submit(st -> {
-            Map<Long, List<SavedTile>> chunks;
+            Map<Long, List<SavedTile>> found;
             try {
-                chunks = st.read(file);
-            } catch (IOException e) {
+                found = st.read(file);
+            } catch (IOException | RuntimeException e) {
                 RESULTS.add(() -> reportOnce(file, "read", e));
-                chunks = Map.of();
+                return;
             }
-            Map<Long, List<SavedTile>> found = chunks;
             RESULTS.add(() -> {
                 if (gen == generation) arrived(region, found, gen);
             });
@@ -359,6 +357,10 @@ public final class SavedStains {
         for (int n = 0; n < RESTORES_PER_TICK && !TO_RESTORE.isEmpty(); n++) {
             Pending p = TO_RESTORE.poll();
             if (p.generation() != generation || !PENDING.containsKey(p.chunk())) continue;
+            if (!loaded(level, chunkX(p.chunk()), chunkZ(p.chunk()))) {
+                chunkGone(p.chunk(), now);
+                continue;
+            }
             if (BloodSurfaces.tileCount() >= s.maxTiles) {
                 park(p.chunk(), p.tile(), now);
             } else {

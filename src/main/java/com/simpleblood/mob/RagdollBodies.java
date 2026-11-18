@@ -94,7 +94,7 @@ public final class RagdollBodies {
             boolean seen = body.mobId() >= 0 && RagdollSurfaces.drawn(body.mobId());
             double t = seen ? RagdollSurfaces.firstHit(body.mobId(), ax, ay, az, bx, by, bz, out) : -1;
             if (t < 0) {
-                if (entersPart(body, ax, ay, az, bx, by, bz)) {
+                if (com.simpleblood.Tally.ON && entersPart(body, ax, ay, az, bx, by, bz)) {
                     com.simpleblood.Tally.count(seen ? "ragdoll.drop.through" : "ragdoll.drop.unseen");
                 }
                 continue;

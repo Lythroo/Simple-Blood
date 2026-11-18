@@ -28,7 +28,8 @@ public final class RagdollSurfaces {
                 at = i;
             }
         }
-        Piece piece = new Piece(key, surfaceOf(faces, fade), System.nanoTime(), tick);
+        long nanos = System.nanoTime();
+        Piece piece = new Piece(key, surfaceOf(faces, fade), nanos, tick);
         Piece[] next;
         if (old == null) {
             next = new Piece[]{piece};
@@ -36,8 +37,12 @@ public final class RagdollSurfaces {
             next = old.clone();
             next[at] = piece;
         } else {
-            next = java.util.Arrays.copyOf(old, old.length + 1);
-            next[old.length] = piece;
+            int fresh = 0;
+            for (Piece p : old) if (nanos - p.nanos() <= STALE_NANOS) fresh++;
+            next = new Piece[fresh + 1];
+            int k = 0;
+            for (Piece p : old) if (nanos - p.nanos() <= STALE_NANOS) next[k++] = p;
+            next[k] = piece;
         }
         BY_MOB.put(mobId, next);
     }

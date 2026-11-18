@@ -108,7 +108,7 @@ public final class MobBlood {
     static void drawPosed(MobCoat coat, List<ModelFacesOfMob.Face> posed, float[] fade, PoseStack.Pose pose, VertexConsumer vc, Vec3 camera, int light) {
         coat.onRagdoll = now;
         com.simpleblood.Tally.count("coat.ragdoll");
-        coat.ragdollPieces.put(posed.get(0).key, shown(posed, fade));
+        if (com.simpleblood.Tally.ON) coat.ragdollPieces.put(posed.get(0).key, shown(posed, fade));
         RagdollSurfaces.publish(coat.entityId, posed, fade, now);
         List<Quad> quads = prepare(coat, posed, fade, camera, light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
@@ -602,7 +602,7 @@ public final class MobBlood {
         if (posed.isEmpty()) return;
         com.simpleblood.Tally.count("coat.ragdoll");
         coat.onRagdoll = now;
-        coat.ragdollPieces.put(posed.get(0).key, posed);
+        if (com.simpleblood.Tally.ON) coat.ragdollPieces.put(posed.get(0).key, posed);
         RagdollSurfaces.publish(entityId, posed, null, now);
         List<Quad> quads = prepare(coat, posed, SurfaceRenderer.cameraPos(), light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
@@ -661,7 +661,7 @@ public final class MobBlood {
         if (posed.isEmpty()) return;
         com.simpleblood.Tally.count("coat.ragdoll");
         coat.onRagdoll = now;
-        coat.ragdollPieces.put(posed.get(0).key, posed);
+        if (com.simpleblood.Tally.ON) coat.ragdollPieces.put(posed.get(0).key, posed);
         RagdollSurfaces.publish(entityId, posed, null, now);
         List<Quad> quads = prepare(coat, posed, SurfaceRenderer.cameraPos(), light);
         if (!quads.isEmpty()) draw(quads, pose, vc);

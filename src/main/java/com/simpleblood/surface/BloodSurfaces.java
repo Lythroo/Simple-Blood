@@ -2924,6 +2924,10 @@ public final class BloodSurfaces {
 
     private static final double SAME_FACE = 1.0e-3;
 
+    private static boolean sameCoordinate(double now, float saved) {
+        return Math.abs((float) now - saved) <= Math.max(SAME_FACE, Math.ulp(saved));
+    }
+
     static Restored restore(ClientLevel level, com.simpleblood.surface.store.SavedTile saved, int now) {
         com.simpleblood.surface.store.SavedTile.Where w = saved.where();
         BlockPos pos = BlockPos.of(w.pos());
@@ -2934,8 +2938,8 @@ public final class BloodSurfaces {
         if (there != null && !there.isEmpty()) return Restored.KEPT_LIVE;
         CanvasTile t = tileAt(level, pos, dirs[w.hitFace()], new Vec3(w.cx(), w.cy(), w.cz()), true);
         if (t == null || !t.key.equals(key) || t.pw != w.pw() || t.ph != w.ph()
-                || Math.abs(t.ox - w.ox()) > SAME_FACE || Math.abs(t.oy - w.oy()) > SAME_FACE || Math.abs(t.oz - w.oz()) > SAME_FACE
-                || Math.abs(t.w - w.w()) > SAME_FACE || Math.abs(t.h - w.h()) > SAME_FACE) {
+                || !sameCoordinate(t.ox, w.ox()) || !sameCoordinate(t.oy, w.oy()) || !sameCoordinate(t.oz, w.oz())
+                || !sameCoordinate(t.w, w.w()) || !sameCoordinate(t.h, w.h())) {
             return Restored.DROPPED;
         }
         if (!t.isEmpty()) return Restored.KEPT_LIVE;

@@ -61,7 +61,7 @@ public final class MobTextures {
     static void drawnWith(Object polygon, Alpha alpha) {
         if (polygon == null) return;
         if (alpha == null) BY_POLYGON.remove(polygon);
-        else BY_POLYGON.put(polygon, alpha);
+        else if (BY_POLYGON.get(polygon) != alpha) BY_POLYGON.put(polygon, alpha);
     }
 
     static Alpha ofPolygon(Object polygon) {
