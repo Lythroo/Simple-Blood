@@ -56,6 +56,7 @@ public class ClientBloodBurstTask {
 
         int ticks = Math.max(1, (int)(calculatedTicks * config.burstDurationMultiplier()));
         if (ctx.weapon == HitContext.Weapon.EXPLOSION) ticks = Math.min(ticks, BLAST_BURST_TICKS);
+        if (SimpleBlood.bloodKindOf(entity).isSolid()) ticks = 1;
         this.durationTicks = ticks;
         this.ticksRemaining = durationTicks;
         this.soundPlayed = false;

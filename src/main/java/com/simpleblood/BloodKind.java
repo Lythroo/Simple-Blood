@@ -30,6 +30,10 @@ public enum BloodKind {
         return this == EMBER || this == BONE || this == METAL || this == WOOD || this == SPIRIT || this == WIND;
     }
 
+    public boolean isSolid() {
+        return this == DEBRIS || this == BONE || this == METAL || this == WOOD;
+    }
+
     public boolean flows() {
         return this == LIQUID;
     }
