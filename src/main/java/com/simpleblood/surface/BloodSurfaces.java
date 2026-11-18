@@ -66,6 +66,14 @@ public final class BloodSurfaces {
         return cfg == null ? new SimpleBloodConfig.SurfaceSettings() : cfg.surfaces;
     }
 
+    static int lifetimeTicks(SimpleBloodConfig.SurfaceSettings s) {
+        return lifetimeTicks(s, 0);
+    }
+
+    static int lifetimeTicks(SimpleBloodConfig.SurfaceSettings s, int min) {
+        return s.lastsForever() ? CanvasTile.FOREVER : Math.max(min, s.lifetimeSeconds * 20);
+    }
+
     private static boolean detailed() {
         return settings().detailedShapes;
     }
@@ -458,7 +466,7 @@ public final class BloodSurfaces {
             int px = clampPixel(tile.pixelX(hit.onPaint()), tile.pw);
             int py = clampPixel(tile.pixelY(hit.onPaint()), tile.ph);
             List<int[]> spill = new ArrayList<>();
-            tile.stampPowder(px, py, pixels, colour, now, s.lifetimeSeconds * 20, RNG, spill);
+            tile.stampPowder(px, py, pixels, colour, now, lifetimeTicks(s), RNG, spill);
             for (int[] cell : spill) {
                 Vec3 p = tile.pixelCenter(cell[0], cell[1]);
                 Direction face = tile.face;
@@ -466,7 +474,7 @@ public final class BloodSurfaces {
                 if (npos.equals(tile.pos)) continue;
                 CanvasTile n = tileAt(level, npos, face, p);
                 if (n != null && Math.abs(planeCoord(n, face) - planeCoord(tile, face)) < 1.0e-3) {
-                    n.paintPowder(clampPixel(n.pixelX(p), n.pw), clampPixel(n.pixelY(p), n.ph), colour, now, s.lifetimeSeconds * 20, RNG);
+                    n.paintPowder(clampPixel(n.pixelX(p), n.pw), clampPixel(n.pixelY(p), n.ph), colour, now, lifetimeTicks(s), RNG);
                 }
             }
             return result;
@@ -517,7 +525,7 @@ public final class BloodSurfaces {
         int px = clampPixel(tile.pixelX(point), tile.pw);
         int py = clampPixel(tile.pixelY(point), tile.ph);
         if (tile.custom && (tile.ny < 0.99 || isPartTile(tile))) {
-            int painted = tile.stamp(px, py, pixels, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), null);
+            int painted = tile.stamp(px, py, pixels, colour, now, lifetimeTicks(s), RNG, !"block".equals(s.highlightMode), null);
             if (painted > 0 && depth == 0 && isHandDrawn(tile.state) && Math.abs(tile.ny) < 0.3 && tile.vy < -0.7) {
                 runDownBoard(tile, px, py, colour, pixels);
             }
@@ -530,7 +538,7 @@ public final class BloodSurfaces {
             bu = t.x * tile.ux + t.y * tile.uy + t.z * tile.uz;
             bv = t.x * tile.vx + t.y * tile.vy + t.z * tile.vz;
         }
-        tile.stamp(px, py, pixels, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), spill, bu, bv);
+        tile.stamp(px, py, pixels, colour, now, lifetimeTicks(s), RNG, !"block".equals(s.highlightMode), spill, bu, bv);
 
         boolean[] droppedOff = {false};
         for (int[] cell : spill) {
@@ -576,7 +584,7 @@ public final class BloodSurfaces {
                                      SimpleBloodConfig.SurfaceSettings s, boolean[] droppedOff, int depth) {
         Vec3 p = tile.pixelCenter(cx, cy);
         Direction face = tile.face;
-        int lifetime = s.lifetimeSeconds * 20;
+        int lifetime = lifetimeTicks(s);
         boolean pattern = !"block".equals(s.highlightMode);
 
         if (isQuadTile(tile) && hiddenInBlock(tile, p)) return false;
@@ -765,7 +773,7 @@ public final class BloodSurfaces {
         RUN_COOLDOWN.put(key, now + 80);
 
         SimpleBloodConfig.SurfaceSettings s = settings();
-        side.paintThin(column, startRow, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), 1);
+        side.paintThin(column, startRow, colour, now, lifetimeTicks(s), RNG, !"block".equals(s.highlightMode), 1);
         if (budget > 1) {
             Run run = new Run(side, column, startRow + 1, budget - 1, volume, colour, depth, source, sourceX, sourceY);
             run.floor = floorAhead(side, column, startRow);
@@ -789,7 +797,7 @@ public final class BloodSurfaces {
     private static void advanceRuns(ClientLevel level) {
         if (RUNS.isEmpty()) return;
         SimpleBloodConfig.SurfaceSettings s = settings();
-        int lifetime = s.lifetimeSeconds * 20;
+        int lifetime = lifetimeTicks(s);
         boolean pattern = !"block".equals(s.highlightMode);
         List<Run> snapshot = new ArrayList<>(RUNS);
         for (Run run : snapshot) {
@@ -878,7 +886,7 @@ public final class BloodSurfaces {
         run.dirU = Math.abs(du) > 0.5 ? Math.signum(du) : 0;
         run.dirV = Math.abs(dv) > 0.5 ? Math.signum(dv) : 0;
         SimpleBloodConfig.SurfaceSettings s = settings();
-        floor.paintThin((int) run.x, (int) run.y, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), 1);
+        floor.paintThin((int) run.x, (int) run.y, colour, now, lifetimeTicks(s), RNG, !"block".equals(s.highlightMode), 1);
         run.x += run.dirU;
         run.y += run.dirV;
         RUN_SIM.add(run);
@@ -1141,7 +1149,7 @@ public final class BloodSurfaces {
                 for (int i = 0; i < 2; i++) {
                     Vec3 p = bottom.subtract(face.getStepX() * step * (i + 0.5), 0, face.getStepZ() * step * (i + 0.5));
                     under.paint(clampPixel(under.pixelX(p), under.pw), clampPixel(under.pixelY(p), under.ph),
-                            colour, now, s.lifetimeSeconds * 20, RNG, pattern);
+                            colour, now, lifetimeTicks(s), RNG, pattern);
                 }
                 bottom = bottom.subtract(face.getStepX() * step, 0, face.getStepZ() * step);
             }
@@ -1214,7 +1222,7 @@ public final class BloodSurfaces {
         Slope slope = tile.slope != null ? tile.slope : slopeNow(trackedLevel, tile);
         if (tile.inside(px, py) && tile.paintable(px, py)) {
             SimpleBloodConfig.SurfaceSettings s = settings();
-            tile.paintThin(px, py, colour, now, s.lifetimeSeconds * 20, RNG, !"block".equals(s.highlightMode), 1);
+            tile.paintThin(px, py, colour, now, lifetimeTicks(s), RNG, !"block".equals(s.highlightMode), 1);
             if (slope != null) {
                 x += slope.stepU();
                 y += slope.stepV();
@@ -1801,7 +1809,7 @@ public final class BloodSurfaces {
         }
         syncLevel(level);
         int res = s.resolution == 16 ? 16 : 8;
-        int lifetime = s.lifetimeSeconds * 20;
+        int lifetime = lifetimeTicks(s);
         boolean pattern = !"block".equals(s.highlightMode);
         for (CanvasTile tile : crossTiles(level, pos, state)) {
             if (tile.twin != null && tile.twin.hashCode() < tile.hashCode()) continue;
@@ -2432,7 +2440,7 @@ public final class BloodSurfaces {
     private static void landFallingShapes(ClientLevel level) {
         if (FALLING.isEmpty()) return;
         SimpleBloodConfig.SurfaceSettings s = settings();
-        int lifetime = s.lifetimeSeconds * 20;
+        int lifetime = lifetimeTicks(s);
         boolean pattern = !"block".equals(s.highlightMode);
         Iterator<FallingShape> it = FALLING.iterator();
         while (it.hasNext()) {
@@ -2484,7 +2492,7 @@ public final class BloodSurfaces {
 
     private static void splashWallsAround(ClientLevel level, List<int[]> pixels, CanvasTile from, double y,
                                           SimpleBloodConfig.SurfaceSettings s) {
-        int lifetime = s.lifetimeSeconds * 20;
+        int lifetime = lifetimeTicks(s);
         boolean pattern = !"block".equals(s.highlightMode);
         for (Direction d : Direction.Plane.HORIZONTAL) {
             int splashes = 0;
@@ -2703,7 +2711,7 @@ public final class BloodSurfaces {
         ClientLevel level = mc.level;
         if (level == null) {
             if (!TILES.isEmpty() || trackedLevel != null) {
-                clear();
+                unloadAll();
                 PreviewScene.forgetWorld();
                 trackedLevel = null;
             }
@@ -2729,13 +2737,15 @@ public final class BloodSurfaces {
             return;
         }
         now++;
-        if (TILES.isEmpty() && FALLING.isEmpty() && RUNS.isEmpty()) return;
-
         SimpleBloodConfig.SurfaceSettings s = settings();
         if (!s.enabled) {
-            clear();
+            if (!TILES.isEmpty() || !FALLING.isEmpty() || !RUNS.isEmpty() || SavedStains.active()) unloadAll();
             return;
         }
+        com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "keeping blood on blocks saved",
+                () -> SavedStains.tick(mc, level, s, now));
+        if (TILES.isEmpty() && FALLING.isEmpty() && RUNS.isEmpty()) return;
+
         followChanges(level);
         advanceRuns(level);
         landFallingShapes(level);
@@ -2750,7 +2760,7 @@ public final class BloodSurfaces {
             if ((i++ & 15) == slice && !checkBlock(level, tile, s, true)) continue;
             if ((now & 1) == 0) tilt(level, tile, s);
             if (spinning) fling(level, tile);
-            if (((i + now) & 7) == 0 && tile.age(now, RNG)) tile.dirty = true;
+            if (((i + now) & 7) == 0 && tile.age(now, RNG, s.foreverFresh)) tile.dirty = true;
             if (tile.hasRipples()) tile.dirty = true;
             if (tile.isEmpty()) {
                 remove(tile);
@@ -2761,8 +2771,12 @@ public final class BloodSurfaces {
 
     private static boolean checkBlock(ClientLevel level, CanvasTile tile, SimpleBloodConfig.SurfaceSettings s, boolean timed) {
         boolean riding = ContraptionRides.isPlot(tile.pos);
-        if (riding ? ContraptionRides.at(tile.pos) == null : !level.hasChunkAt(tile.pos)) {
+        if (riding && ContraptionRides.at(tile.pos) == null) {
             remove(tile);
+            return false;
+        }
+        if (!riding && !SavedStains.loaded(level, tile.pos)) {
+            SavedStains.chunkGone(SavedStains.chunkOf(tile.pos), now);
             return false;
         }
         if (tile.spinAsked && tile.spin != null && !tile.spin.alive(spinningEntity(level, tile.pos))) tile.spinAsked = false;
@@ -2829,7 +2843,7 @@ public final class BloodSurfaces {
         if ((now & 3) != 0) return;
         CanvasTile[] all = TILES.values().toArray(new CanvasTile[0]);
         if (all.length == 0) return;
-        int lifetime = s.lifetimeSeconds * 20;
+        int lifetime = lifetimeTicks(s);
         boolean pattern = !"block".equals(s.highlightMode);
         int done = 0;
         for (int k = 0; k < all.length && done < RELAX_BUDGET; k++) {
@@ -2847,7 +2861,7 @@ public final class BloodSurfaces {
 
     private static void syncLevel(ClientLevel level) {
         if (level != trackedLevel) {
-            clear();
+            unloadAll();
             trackedLevel = level;
         }
     }
@@ -2857,7 +2871,9 @@ public final class BloodSurfaces {
         for (CanvasTile t : TILES.values()) {
             if (oldest == null || t.lastTouched < oldest.lastTouched) oldest = t;
         }
-        if (oldest != null) remove(oldest);
+        if (oldest == null) return;
+        SavedStains.park(oldest, now);
+        remove(oldest);
     }
 
     public static void washAround(ClientLevel level, Vec3 at, double radius, int ticks) {
@@ -2875,6 +2891,60 @@ public final class BloodSurfaces {
         unindex(tile);
         if (gone != null && gone != tile) unindex(gone);
         tile.dispose(BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null);
+        SavedStains.changed(tile.pos);
+    }
+
+    enum Restored {
+        RESTORED,
+        KEPT_LIVE,
+        DROPPED
+    }
+
+    static com.simpleblood.surface.store.SavedTile saveTile(CanvasTile t, int now) {
+        if (t.isEmpty()) return null;
+        com.simpleblood.surface.store.SavedTile.Pixels pixels = t.savePixels(now);
+        if (pixels.count() == 0) return null;
+        Vec3 c = t.center();
+        return new com.simpleblood.surface.store.SavedTile(new com.simpleblood.surface.store.SavedTile.Where(
+                t.key.pos(), t.key.face().ordinal(), t.key.box(), askFace(t).ordinal(), blockId(t.state),
+                c.x, c.y, c.z, (float) t.ox, (float) t.oy, (float) t.oz, (float) t.w, (float) t.h, t.pw, t.ph), pixels);
+    }
+
+    private static Direction askFace(CanvasTile t) {
+        if (!t.custom) return t.face;
+        double ax = Math.abs(t.nx), ay = Math.abs(t.ny), az = Math.abs(t.nz);
+        if (ay >= ax && ay >= az) return t.ny >= 0 ? Direction.UP : Direction.DOWN;
+        if (ax >= az) return t.nx >= 0 ? Direction.EAST : Direction.WEST;
+        return t.nz >= 0 ? Direction.SOUTH : Direction.NORTH;
+    }
+
+    private static String blockId(BlockState state) {
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+    }
+
+    private static final double SAME_FACE = 1.0e-3;
+
+    static Restored restore(ClientLevel level, com.simpleblood.surface.store.SavedTile saved, int now) {
+        com.simpleblood.surface.store.SavedTile.Where w = saved.where();
+        BlockPos pos = BlockPos.of(w.pos());
+        if (!blockId(blockState(level, pos)).equals(w.block())) return Restored.DROPPED;
+        Direction[] dirs = Direction.values();
+        CanvasTile.Key key = new CanvasTile.Key(w.pos(), dirs[w.face()], w.box());
+        CanvasTile there = TILES.get(key);
+        if (there != null && !there.isEmpty()) return Restored.KEPT_LIVE;
+        CanvasTile t = tileAt(level, pos, dirs[w.hitFace()], new Vec3(w.cx(), w.cy(), w.cz()), true);
+        if (t == null || !t.key.equals(key) || t.pw != w.pw() || t.ph != w.ph()
+                || Math.abs(t.ox - w.ox()) > SAME_FACE || Math.abs(t.oy - w.oy()) > SAME_FACE || Math.abs(t.oz - w.oz()) > SAME_FACE
+                || Math.abs(t.w - w.w()) > SAME_FACE || Math.abs(t.h - w.h()) > SAME_FACE) {
+            return Restored.DROPPED;
+        }
+        if (!t.isEmpty()) return Restored.KEPT_LIVE;
+        t.loadPixels(saved.pixels(), now);
+        if (t.isEmpty()) {
+            remove(t);
+            return Restored.DROPPED;
+        }
+        return Restored.RESTORED;
     }
 
     static List<CanvasTile> tilesAt(BlockPos pos) {
@@ -2925,6 +2995,24 @@ public final class BloodSurfaces {
             RenderThread.run(BloodSurfaces::clear);
             return;
         }
+        SavedStains.wipe();
+        dropAll();
+    }
+
+    public static void unloadAll() {
+        if (!RenderThread.on()) {
+            RenderThread.run(BloodSurfaces::unloadAll);
+            return;
+        }
+        try {
+            SavedStains.leave(now);
+        } catch (RuntimeException e) {
+            SimpleBlood.LOGGER.error("Simple Blood: could not save the blood on blocks", e);
+        }
+        dropAll();
+    }
+
+    private static void dropAll() {
         clears++;
         PENDING.clear();
         pendingCount.set(0);
@@ -2963,7 +3051,9 @@ public final class BloodSurfaces {
         float opacity = settings().opacity / 100.0f;
         try {
             for (CanvasTile t : UPLOADS) {
-                if (TILES.get(t.key) == t) t.refresh(atlas, now, opacity, FLOW);
+                if (TILES.get(t.key) != t) continue;
+                t.refresh(atlas, now, opacity, FLOW);
+                SavedStains.changed(t.pos);
             }
         } finally {
             UPLOADS.clear();

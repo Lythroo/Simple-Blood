@@ -121,7 +121,7 @@ final class SettingsBackup {
             cfg.fillGaps();
             cfg.vanillaEntities.ensureDefaults();
             SimpleBloodClient.setConfig(cfg);
-            BloodSurfaces.clear();
+            BloodSurfaces.unloadAll();
             return true;
         } catch (RuntimeException e) {
             return false;

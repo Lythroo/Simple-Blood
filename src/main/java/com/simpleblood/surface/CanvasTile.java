@@ -1,6 +1,7 @@
 package com.simpleblood.surface;
 
 import com.simpleblood.BloodColor;
+import com.simpleblood.surface.store.SavedTile;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import net.minecraft.core.BlockPos;
@@ -41,6 +42,12 @@ public final class CanvasTile {
     }
 
     static final int RIPPLE_TICKS = 22;
+
+    static final int FOREVER = Integer.MAX_VALUE;
+    private static final int FOREVER_BIT = SavedTile.Pixels.FOREVER_BIT;
+    private static final int FOREVER_CURVE_TICKS = com.simpleblood.SimpleBloodConfig.SurfaceSettings.LIFETIME_MAX_SECONDS * 20;
+    private static final float FOREVER_HOLD = 0.72f;
+    private static final int HOLD_REDRAW_TICKS = 40;
 
     final Key key;
     final BlockPos pos;
@@ -239,6 +246,22 @@ public final class CanvasTile {
         return n;
     }
 
+    public long[] ageSums(int now) {
+        long ticks = 0, share = 0;
+        for (int i = 0; i < tone.length; i++) {
+            if (tone[i] == EMPTY) continue;
+            ticks += now - born[i];
+            share += 1000L * (now - born[i]) / Math.max(1, span(i));
+        }
+        return new long[] {ticks, share};
+    }
+
+    public int wetCount(int now) {
+        int n = 0;
+        for (int py = 0; py < ph; py++) for (int px = 0; px < pw; px++) if (wetDepthAt(px, py, now) > 0) n++;
+        return n;
+    }
+
     public int units() {
         int n = 0;
         for (byte d : depth) n += d;
@@ -278,14 +301,27 @@ public final class CanvasTile {
     float ageAt(int px, int py, int now) {
         if (!inside(px, py)) return 0f;
         int i = py * pw + px;
-        return (now - born[i]) / (float) Math.max(1, life[i]);
+        return (now - born[i]) / (float) Math.max(1, span(i));
+    }
+
+    private int span(int i) {
+        return life[i] & ~FOREVER_BIT;
+    }
+
+    private boolean forever(int i) {
+        return (life[i] & FOREVER_BIT) != 0;
+    }
+
+    private static int lifeFor(int lifetime, RandomSource rng) {
+        float jitter = 0.8f + rng.nextFloat() * 0.4f;
+        return lifetime == FOREVER ? FOREVER_BIT | (int) (FOREVER_CURVE_TICKS * jitter) : (int) (lifetime * jitter);
     }
 
     int wetDepthAt(int px, int py, int now) {
         if (!inside(px, py)) return 0;
         int i = py * pw + px;
         if (tone[i] == EMPTY || thin[i] != 0) return 0;
-        if (now - born[i] > life[i] * 0.55f) return 0;
+        if (now - born[i] > span(i) * 0.55f) return 0;
         return depth[i];
     }
 
@@ -314,13 +350,13 @@ public final class CanvasTile {
     int tread(int px, int py, int now, float trample, int[] src) {
         if (!inside(px, py)) return -1;
         int i = py * pw + px;
-        if (tone[i] == EMPTY || powder[i] || now - born[i] > life[i] * 0.55f) return -1;
+        if (tone[i] == EMPTY || powder[i] || now - born[i] > span(i) * 0.55f) return -1;
         src[0] = rgb[i];
         src[1] = born[i];
         src[2] = life[i];
         int out = Math.max(0, depth[i] - 1);
         depth[i] = 1;
-        born[i] -= Math.round(life[i] * trample);
+        born[i] -= Math.round(span(i) * trample);
         dirty = true;
         active = true;
         lastTouched = now;
@@ -437,7 +473,7 @@ public final class CanvasTile {
             powder[i] = l.powder();
         } else {
             rgb[i] = com.simpleblood.BloodMix.join(rgb[i], depth[i], l.rgb(), l.depth(),
-                    com.simpleblood.BloodMix.wetness(now, born[i], life[i]), spot(px, py), spot(py, px));
+                    com.simpleblood.BloodMix.wetness(now, born[i], span(i)), spot(px, py), spot(py, px));
             int total = depth[i] + l.depth();
             depth[i] = (byte) Math.min(MAX_DEPTH, total);
             born[i] = Math.max(born[i], l.born());
@@ -500,7 +536,7 @@ public final class CanvasTile {
         }
         int x = to % pw, y = to / pw;
         rgb[to] = com.simpleblood.BloodMix.join(rgb[to], depth[to], rgb[from], 1,
-                com.simpleblood.BloodMix.wetness(now, born[to], life[to]), spot(x, y), spot(y, x));
+                com.simpleblood.BloodMix.wetness(now, born[to], span(to)), spot(x, y), spot(y, x));
         depth[to]++;
         born[to] = Math.max(born[to], born[from]);
     }
@@ -667,12 +703,13 @@ public final class CanvasTile {
             count++;
             depth[i] = 1;
             born[i] = now;
-            life[i] = (int) (lifetime * (0.8f + rng.nextFloat() * 0.4f));
+            life[i] = lifeFor(lifetime, rng);
         } else {
             mixed = com.simpleblood.BloodMix.join(rgb[i], depth[i], colour, 1,
-                    com.simpleblood.BloodMix.wetness(now, born[i], life[i]), spot(px, py), rng.nextFloat());
+                    com.simpleblood.BloodMix.wetness(now, born[i], span(i)), spot(px, py), rng.nextFloat());
             depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + 1);
-            born[i] = Math.max(born[i], now - life[i] / 4);
+            if (lifetime == FOREVER && !forever(i)) life[i] = lifeFor(FOREVER, rng);
+            born[i] = Math.max(born[i], now - span(i) / 4);
         }
         thin[i] = (byte) Math.max(0, Math.min(3, thinLevel));
         powder[i] = false;
@@ -752,7 +789,7 @@ public final class CanvasTile {
     private static final float WET_WHILE = 0.5f;
 
     private boolean wetPool(int i, int now) {
-        return tone[i] != EMPTY && !powder[i] && thin[i] == 0 && now - born[i] <= life[i] * WET_WHILE;
+        return tone[i] != EMPTY && !powder[i] && thin[i] == 0 && now - born[i] <= span(i) * WET_WHILE;
     }
 
     private static double downhill(Slope slope, int x, int y, RandomSource rng) {
@@ -1056,13 +1093,30 @@ public final class CanvasTile {
         dirty = true;
     }
 
-    boolean age(int now, RandomSource rng) {
+    boolean age(int now, RandomSource rng, boolean foreverFresh) {
         boolean changed = dirty;
         int alive = 0;
         for (int i = 0; i < tone.length; i++) {
             if (tone[i] == EMPTY) continue;
             alive++;
-            int agePct = (int) (100L * (now - born[i]) / Math.max(1, life[i]));
+            boolean held = false;
+            if (forever(i)) {
+                int hold = foreverFresh ? 0 : (int) (span(i) * FOREVER_HOLD);
+                int over = now - born[i] - hold;
+                if (over > 0) {
+                    born[i] += over;
+                    held = true;
+                    if (over > HOLD_REDRAW_TICKS) changed = true;
+                }
+            }
+            int agePct = (int) (100L * (now - born[i]) / Math.max(1, span(i)));
+            if (held) {
+                if (depth[i] > 1 && agePct > (depth[i] > 2 ? 50 : 70)) {
+                    depth[i]--;
+                    changed = true;
+                }
+                continue;
+            }
             if (agePct >= 100) {
                 depth[i] = 0;
                 tone[i] = EMPTY;
@@ -1071,7 +1125,7 @@ public final class CanvasTile {
             } else if (depth[i] > 1 && agePct > (depth[i] > 2 ? 50 : 70)) {
                 depth[i]--;
                 changed = true;
-            } else if (agePct > 60 && depth[i] == 1 && isEdge(i) && rng.nextInt(100) < (agePct - 60) / 2) {
+            } else if (agePct > 60 && depth[i] == 1 && !forever(i) && isEdge(i) && rng.nextInt(100) < (agePct - 60) / 2) {
                 depth[i] = 0;
                 tone[i] = EMPTY;
                 alive--;
@@ -1187,7 +1241,7 @@ public final class CanvasTile {
 
         float[] ages = new float[tone.length];
         for (int i = 0; i < tone.length; i++) {
-            ages[i] = tone[i] == EMPTY || powder[i] ? -1 : (now - born[i]) / (float) Math.max(1, life[i]);
+            ages[i] = tone[i] == EMPTY || powder[i] ? -1 : (now - born[i]) / (float) Math.max(1, span(i));
         }
 
         float glowSum = 0f;
@@ -1200,7 +1254,7 @@ public final class CanvasTile {
                 continue;
             }
             int age = now - born[i];
-            float agePct = age / (float) Math.max(1, life[i]);
+            float agePct = age / (float) Math.max(1, span(i));
             if (powder[i]) {
                 int c = rgb[i];
                 float alpha = opacity;
@@ -1275,7 +1329,7 @@ public final class CanvasTile {
         double lowest = Double.MAX_VALUE;
         for (int i = 0; i < tone.length; i++) {
             if (tone[i] == EMPTY || powder[i] || depth[i] <= 1) continue;
-            if (com.simpleblood.BloodMix.wetness(now, born[i], life[i]) < 0.5f) continue;
+            if (com.simpleblood.BloodMix.wetness(now, born[i], span(i)) < 0.5f) continue;
             excess += depth[i] - 1;
             depth[i] = 1;
             double y = pixelCenter(i % pw, i / pw).y;
@@ -1301,6 +1355,50 @@ public final class CanvasTile {
     }
 
     private static int clamp(int v) { return v < 0 ? 0 : Math.min(255, v); }
+
+    SavedTile.Pixels savePixels(int now) {
+        int n = 0;
+        for (int i = 0; i < tone.length; i++) if (keeps(i, now)) n++;
+        short[] index = new short[n];
+        byte[] tones = new byte[n], depths = new byte[n], thins = new byte[n], flags = new byte[n];
+        int[] colours = new int[n], elapsed = new int[n], lives = new int[n];
+        int k = 0;
+        for (int i = 0; i < tone.length; i++) {
+            if (!keeps(i, now)) continue;
+            index[k] = (short) i;
+            tones[k] = tone[i];
+            depths[k] = depth[i];
+            thins[k] = thin[i];
+            flags[k] = powder[i] ? SavedTile.Pixels.POWDER : 0;
+            colours[k] = rgb[i];
+            elapsed[k] = Math.max(0, now - born[i]);
+            lives[k] = life[i];
+            k++;
+        }
+        return new SavedTile.Pixels(index, tones, depths, thins, flags, colours, elapsed, lives);
+    }
+
+    private boolean keeps(int i, int now) {
+        return tone[i] != EMPTY && (forever(i) || now - born[i] < span(i));
+    }
+
+    void loadPixels(SavedTile.Pixels p, int now) {
+        for (int k = 0; k < p.count(); k++) {
+            int i = p.index()[k];
+            if (i < 0 || i >= tone.length || (mask != null && !mask[i])) continue;
+            if (tone[i] == EMPTY) count++;
+            tone[i] = p.tone()[k];
+            depth[i] = (byte) Math.min(MAX_DEPTH, p.depth()[k]);
+            thin[i] = p.thin()[k];
+            powder[i] = (p.flags()[k] & SavedTile.Pixels.POWDER) != 0;
+            rgb[i] = p.rgb()[k];
+            born[i] = now - p.elapsed()[k];
+            life[i] = p.life()[k];
+        }
+        dirty = true;
+        active = false;
+        lastTouched = now;
+    }
 
     void dispose(BloodCanvasAtlas atlas) {
         if (atlas != null) atlas.releaseSlot(slot);

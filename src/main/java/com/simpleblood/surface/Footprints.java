@@ -171,7 +171,7 @@ public final class Footprints {
         List<int[]> rim = null;
         RandomSource rng = level.getRandom();
         Wading.Ground ground = (p, create) -> topTile(level, p, cache, create);
-        Wading.Look look = new Wading.Look(Math.max(40, cfg.surfaces.lifetimeSeconds * 20),
+        Wading.Look look = new Wading.Look(BloodSurfaces.lifetimeTicks(cfg.surfaces, 40),
                 !"block".equals(cfg.surfaces.highlightMode), cfg.surfaces.wadeSplash, cfg.surfaces.wakes, cfg.surfaces.trample);
 
         for (Vec3 foot : down) {
@@ -218,7 +218,7 @@ public final class Footprints {
             float max = cfg.surfaces.footprintSteps;
             float strength = Math.min(1f, feet.wet / max);
             feet.wet -= gait.quadruped() ? 0.5f : 1f;
-            int lifetime = Math.max(40, cfg.surfaces.lifetimeSeconds * 20 / 2);
+            int lifetime = cfg.surfaces.lastsForever() ? CanvasTile.FOREVER : Math.max(40, cfg.surfaces.lifetimeSeconds * 20 / 2);
             boolean pattern = !"block".equals(cfg.surfaces.highlightMode);
             for (int[] c : fade(cells, strength, rng)) {
                 Vec3 p = foot.add(c[0] * ps, 0, c[1] * ps);
@@ -285,7 +285,7 @@ public final class Footprints {
         int now = BloodSurfaces.now();
         Map<BlockPos, CanvasTile> cache = new HashMap<>(4);
         RandomSource rng = level.getRandom();
-        int lifetime = Math.max(40, cfg.surfaces.lifetimeSeconds * 20);
+        int lifetime = BloodSurfaces.lifetimeTicks(cfg.surfaces, 40);
         boolean pattern = !"block".equals(cfg.surfaces.highlightMode);
         Iterator<Landing> it = LANDINGS.iterator();
         while (it.hasNext()) {

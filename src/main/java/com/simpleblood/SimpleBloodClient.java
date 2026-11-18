@@ -53,7 +53,7 @@ public final class SimpleBloodClient {
             if (Guard.ok(Guard.Part.SURFACES)) {
                 Guard.run(Guard.Part.SURFACES, "blood on blocks moving and drying", () -> com.simpleblood.surface.BloodSurfaces.tick(client));
             } else if (com.simpleblood.surface.BloodSurfaces.tileCount() > 0) {
-                Guard.run(Guard.Part.OTHER, "clearing blood on blocks", com.simpleblood.surface.BloodSurfaces::clear);
+                Guard.run(Guard.Part.OTHER, "letting go of blood on blocks", com.simpleblood.surface.BloodSurfaces::unloadAll);
             }
         }
         if (config != null) {

@@ -289,7 +289,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         cancel.x = done.x - gap - bw; cancel.y = y0; cancel.w = bw; cancel.h = bh;
         Widgets.Button undo = new Widgets.Button(Lang.t("simpleblood.screen.undo"), () -> {
             restore();
-            BloodSurfaces.clear();
+            BloodSurfaces.unloadAll();
             toast(Lang.t("simpleblood.screen.undone"));
             buildPage(true);
         });

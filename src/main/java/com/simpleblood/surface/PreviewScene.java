@@ -847,7 +847,7 @@ public final class PreviewScene {
             case WIND -> Lang.t("simpleblood.preview.wind_like_a_breeze");
             case GLOW -> c.kinds.glow ? Lang.t("simpleblood.preview.glow_squid_ink_in_the") : Lang.t("simpleblood.preview.in_the_dark_glow_is");
             case RAIN -> c.surfaces.rainWashes ? Lang.t("simpleblood.preview.rain_washing_it_away") : Lang.t("simpleblood.preview.rain_washing_is_off");
-            case DRYING -> lasted(Lang.t("simpleblood.preview.drying"), lifetime(), c.surfaces.lifetimeSeconds);
+            case DRYING -> lasted(Lang.t("simpleblood.preview.drying"), lifetime(), c.surfaces.dryingSeconds());
             case COAT_DRYING -> lasted(Lang.t("simpleblood.preview.drying_on_the_body"), coatLifetime(), c.mobCoat.lifetimeSeconds);
             case COAT -> c.mobCoat.enabled ? Lang.t("simpleblood.preview.blood_that_stays_on_the") : Lang.t("simpleblood.preview.blood_on_mobs_is_off");
         };
@@ -1691,8 +1691,8 @@ public final class PreviewScene {
     }
 
     private int lifetime() {
-        if (kind == Kind.DRYING) return timeLapse(cfg().surfaces.lifetimeSeconds);
-        return Math.max(60, cfg().surfaces.lifetimeSeconds * 20 / LIFETIME_DIVISOR);
+        if (kind == Kind.DRYING) return timeLapse(cfg().surfaces.dryingSeconds());
+        return Math.max(60, cfg().surfaces.dryingSeconds() * 20 / LIFETIME_DIVISOR);
     }
 
     private boolean pattern() { return !"block".equals(cfg().surfaces.highlightMode); }
@@ -1901,7 +1901,7 @@ public final class PreviewScene {
         BloodCanvasAtlas atlas = BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null;
         while (it.hasNext()) {
             CanvasTile t = it.next();
-            if (t.age(now, rng)) t.dirty = true;
+            if (t.age(now, rng, false)) t.dirty = true;
             if (t.isEmpty()) {
                 t.dispose(atlas);
                 it.remove();

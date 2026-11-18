@@ -273,7 +273,7 @@ public final class SimpleBloodAPI {
         });
     }
 
-    /** Removes all blood from blocks (what {@code /simpleblood clear} does). Any thread. */
+    /** Removes all blood from blocks, the saved blood of this world too (what {@code /simpleblood clear} does). Any thread. */
     public static void clearSurfaceBlood() {
         Guard.run(Guard.Part.API, "clearSurfaceBlood", BloodSurfaces::clear);
     }

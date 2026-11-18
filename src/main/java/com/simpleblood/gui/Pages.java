@@ -246,7 +246,13 @@ public final class Pages {
 
         public void slider(String name, String tip, int min, int max, int step, String unit,
                            IntSupplier get, IntConsumer set, int def) {
-            Widgets.Slider s = new Widgets.Slider(min, max, step, get, set).unit(unit);
+            slider(name, tip, min, max, step, v -> v + unit, get, set, def);
+        }
+
+        public void slider(String name, String tip, int min, int max, int step, java.util.function.Function<Integer, String> format,
+                           IntSupplier get, IntConsumer set, int def) {
+            Widgets.Slider s = new Widgets.Slider(min, max, step, get, set);
+            s.format = format;
             s.w = controlW + valueRoom(s);
             row(name, tip, s, () -> get.getAsInt() == def, () -> set.accept(def));
         }
@@ -651,9 +657,9 @@ public final class Pages {
     private static void puddles(Builder b) {
         SimpleBloodConfig c = b.cfg, d = b.defaults;
         b.preview(PreviewScene.Kind.PUDDLE, mobColour(c));
-        b.bool(Lang.t("simpleblood.gui.puddles.puddles"), Lang.t("simpleblood.gui.puddles.blood_stays_where_drops_land"), () -> c.surfaces.enabled, v -> { c.surfaces.enabled = v; if (!v) BloodSurfaces.clear(); }, d.surfaces.enabled);
+        b.bool(Lang.t("simpleblood.gui.puddles.puddles"), Lang.t("simpleblood.gui.puddles.blood_stays_where_drops_land"), () -> c.surfaces.enabled, v -> { c.surfaces.enabled = v; if (!v) BloodSurfaces.unloadAll(); }, d.surfaces.enabled);
         b.choice(Lang.t("simpleblood.gui.puddles.pixel_size"), Lang.t("simpleblood.gui.puddles.block_sized_pixels_or_double"), new String[]{"16", "8"}, new String[]{Lang.t("simpleblood.gui.puddles.normal"), Lang.t("simpleblood.gui.puddles.chunky")},
-                () -> Integer.toString(c.surfaces.resolution), v -> { c.surfaces.resolution = Integer.parseInt(v); BloodSurfaces.clear(); }, Integer.toString(d.surfaces.resolution));
+                () -> Integer.toString(c.surfaces.resolution), v -> { c.surfaces.resolution = Integer.parseInt(v); BloodSurfaces.unloadAll(); }, Integer.toString(d.surfaces.resolution));
         b.choice(Lang.t("simpleblood.gui.puddles.shading"), Lang.t("simpleblood.gui.puddles.follow_the_block_or_a"), new String[]{"block", "pattern"}, new String[]{Lang.t("simpleblood.gui.puddles.follow_block"), Lang.t("simpleblood.gui.puddles.pattern")},
                 () -> c.surfaces.highlightMode, v -> c.surfaces.highlightMode = v, d.surfaces.highlightMode);
         b.slider(Lang.t("simpleblood.gui.puddles.amount"), Lang.t("simpleblood.gui.puddles.how_much_each_drop_paints"), 25, 300, 5, "%", () -> c.surfaces.amount, v -> c.surfaces.amount = v, d.surfaces.amount);
@@ -661,11 +667,17 @@ public final class Pages {
         b.bool(Lang.t("simpleblood.gui.puddles.walls_and_ceilings"), Lang.t("simpleblood.gui.puddles.blood_on_walls_and_ceilings"), () -> c.surfaces.wallsAndCeilings, v -> c.surfaces.wallsAndCeilings = v, d.surfaces.wallsAndCeilings);
         b.preview(null, null);
         b.bool(Lang.t("simpleblood.gui.puddles.detailed_shapes"), Lang.t("simpleblood.gui.puddles.blood_follows_the_real_shape"),
-                () -> c.surfaces.detailedShapes, v -> { c.surfaces.detailedShapes = v; BloodSurfaces.clear(); }, d.surfaces.detailedShapes);
+                () -> c.surfaces.detailedShapes, v -> { c.surfaces.detailedShapes = v; BloodSurfaces.unloadAll(); }, d.surfaces.detailedShapes);
         b.heading(Lang.t("simpleblood.gui.puddles.drying"));
         b.preview(PreviewScene.Kind.DRYING, mobColour(c));
         b.slider(Lang.t("simpleblood.gui.puddles.opacity"), Lang.t("simpleblood.gui.puddles.how_see_through_the_blood"), 20, 100, 2, "%", () -> c.surfaces.opacity, v -> c.surfaces.opacity = v, d.surfaces.opacity);
-        b.slider(Lang.t("simpleblood.gui.puddles.lasts"), Lang.t("simpleblood.gui.puddles.seconds_until_it_dries"), 5, 600, 5, Lang.t("simpleblood.unit.seconds"), () -> c.surfaces.lifetimeSeconds, v -> c.surfaces.lifetimeSeconds = v, d.surfaces.lifetimeSeconds);
+        String seconds = Lang.t("simpleblood.unit.seconds");
+        b.slider(Lang.t("simpleblood.gui.puddles.lasts"), Lang.t("simpleblood.gui.puddles.seconds_until_it_dries"),
+                5, SimpleBloodConfig.SurfaceSettings.LIFETIME_FOREVER, 5,
+                v -> v >= SimpleBloodConfig.SurfaceSettings.LIFETIME_FOREVER ? Lang.t("simpleblood.gui.puddles.forever") : v + seconds,
+                () -> c.surfaces.lifetimeSeconds, v -> c.surfaces.lifetimeSeconds = v, d.surfaces.lifetimeSeconds);
+        b.bool(Lang.t("simpleblood.gui.puddles.forever_fresh"), Lang.t("simpleblood.gui.puddles.forever_blood_stays_wet"),
+                () -> c.surfaces.foreverFresh, v -> c.surfaces.foreverFresh = v, d.surfaces.foreverFresh);
         b.heading(Lang.t("simpleblood.gui.puddles.mixing"));
         b.preview(PreviewScene.Kind.MIX, mobColour(c));
         b.bool(Lang.t("simpleblood.gui.puddles.colours_mix"), Lang.t("simpleblood.gui.puddles.blood_of_different_colours_blends"),
@@ -922,7 +934,7 @@ public final class Pages {
             SimpleBloodConfig fresh = new SimpleBloodConfig();
             fresh.vanillaEntities.initializeDefaults();
             com.simpleblood.SimpleBloodClient.setConfig(fresh);
-            BloodSurfaces.clear();
+            BloodSurfaces.unloadAll();
             b.host.toast(Lang.t("simpleblood.gui.backup.back_to_defaults"));
             b.host.rebuildPage();
         });
@@ -1422,7 +1434,7 @@ public final class Pages {
             b.previewWith(look);
             b.action(Lang.t(p.name()), Lang.t(p.description()), Lang.t("simpleblood.gui.presets.apply"), () -> {
                 p.apply().accept(b.cfg);
-                BloodSurfaces.clear();
+                BloodSurfaces.unloadAll();
                 b.host.toast(Lang.t("simpleblood.gui.presets.applied", Lang.t(p.name())));
                 b.host.rebuildPage();
             });

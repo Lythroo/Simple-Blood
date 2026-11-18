@@ -285,7 +285,10 @@ public class SimpleBloodConfig {
         public String highlightMode = "block";
         public int amount = 100;
         public int opacity = 92;
+        public static final int LIFETIME_MAX_SECONDS = 600;
+        public static final int LIFETIME_FOREVER = LIFETIME_MAX_SECONDS + 5;
         public int lifetimeSeconds = 60;
+        public boolean foreverFresh = false;
         public int maxTiles = 2048;
         public int renderDistance = 48;
         public boolean rainWashes = true;
@@ -303,6 +306,14 @@ public class SimpleBloodConfig {
         public int trample = 100;
         public boolean viewBobSteps = true;
         public boolean corpsePools = true;
+
+        public boolean lastsForever() {
+            return lifetimeSeconds >= LIFETIME_FOREVER;
+        }
+
+        public int dryingSeconds() {
+            return Math.min(lifetimeSeconds, LIFETIME_MAX_SECONDS);
+        }
     }
 
     public static class HitBurstSettings {
