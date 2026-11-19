@@ -339,7 +339,17 @@ public final class CanvasTile {
 
     private static int lifeFor(int lifetime, RandomSource rng) {
         float jitter = 0.8f + rng.nextFloat() * 0.4f;
-        return lifetime == FOREVER ? FOREVER_BIT | (int) (FOREVER_CURVE_TICKS * jitter) : (int) (lifetime * jitter);
+        if (!lastsForever(lifetime)) return (int) (lifetime * jitter);
+        int curve = lifetime == FOREVER ? FOREVER_CURVE_TICKS : lifetime & ~FOREVER_BIT;
+        return FOREVER_BIT | (int) (curve * jitter);
+    }
+
+    private static boolean lastsForever(int lifetime) {
+        return (lifetime & FOREVER_BIT) != 0;
+    }
+
+    static int foreverOver(int curveTicks) {
+        return FOREVER_BIT | Math.max(1, Math.min(curveTicks, FOREVER_BIT - 1));
     }
 
     int wetDepthAt(int px, int py, int now) {
@@ -817,7 +827,7 @@ public final class CanvasTile {
             mixed = com.simpleblood.BloodMix.join(rgb[i], depth[i], colour, 1,
                     com.simpleblood.BloodMix.wetness(now, born[i], span(i)), spot(px, py, 0), rng.nextFloat());
             depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + 1);
-            if (lifetime == FOREVER && !forever(i)) life[i] = lifeFor(FOREVER, rng);
+            if (lastsForever(lifetime) && !forever(i)) life[i] = lifeFor(lifetime, rng);
             born[i] = Math.max(born[i], now - span(i) / 4);
         }
         thin[i] = (byte) Math.max(0, Math.min(3, thinLevel));

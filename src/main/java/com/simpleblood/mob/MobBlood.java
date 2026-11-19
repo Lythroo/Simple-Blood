@@ -294,6 +294,20 @@ public final class MobBlood {
         return r;
     }
 
+    public static Vec3 drawnFacesCentreForTests(int entityId) {
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null || coat.lastFaces == null || coat.lastFaces.isEmpty()) return null;
+        double x = 0, y = 0, z = 0;
+        for (ModelFacesOfMob.Face f : coat.lastFaces) {
+            Vec3 c = f.at(0.5, 0.5);
+            x += c.x;
+            y += c.y;
+            z += c.z;
+        }
+        int n = coat.lastFaces.size();
+        return new Vec3(x / n, y / n, z / n);
+    }
+
     public static Vec3 ragdollFacesCentreForTests(int entityId) {
         MobCoat coat = COATS.get(entityId);
         if (coat == null || coat.ragdollPieces.isEmpty()) return null;
@@ -663,6 +677,7 @@ public final class MobBlood {
         if (coat == null || f.faces.isEmpty()) return;
         coat.lastFaces = f.faces;
         if (f.ragdollDeaths) drawnAsRagdoll(coat, f.faces);
+        else if (leftTheWorld(f.entityId)) coat.onRagdoll = now;
         List<Quad> quads = prepare(coat, f.faces, f.camera, f.light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
     }
@@ -689,6 +704,7 @@ public final class MobBlood {
         if (ModelFacesOfMob.shaped) coat.noteShapes(posed); // a ragdoll mod's copy of the model finds the blood by them
         coat.lastFaces = posed;
         if (com.simpleblood.compat.RagdollDeaths.isBody(entityId)) drawnAsRagdoll(coat, posed);
+        else if (leftTheWorld(entityId)) coat.onRagdoll = now;
         List<Quad> quads = prepare(coat, posed, camera, light);
         if (quads.isEmpty()) return;
         draw(quads, new PoseStack().last(), buffers.getBuffer((net.minecraft.client.renderer.RenderType) SurfaceRenderer.renderType()));
@@ -724,6 +740,11 @@ public final class MobBlood {
         coat.onRagdoll = now;
         if (com.simpleblood.Tally.ON) coat.ragdollPieces.put(faces.get(0).key, faces);
         RagdollSurfaces.publish(coat.entityId, faces, null, now);
+    }
+
+    private static boolean leftTheWorld(int entityId) {
+        ClientLevel level = Minecraft.getInstance().level;
+        return level != null && level.getEntity(entityId) == null;
     }
 
     record Quad(float[] p, float[] u, float[] v, int light, float nx, float ny, float nz, int alpha) {}

@@ -76,6 +76,17 @@ public final class SettingsBackup {
         }
     }
 
+    public static void resetEverything(Consumer<String> say, Runnable done) {
+        SimpleBloodConfig fresh = new SimpleBloodConfig();
+        fresh.vanillaEntities.initializeDefaults();
+        TileShapeChange.confirm(TileShapeChange.reshapes(SimpleBloodClient.getConfig(), fresh), () -> {
+            SimpleBloodClient.setConfig(fresh);
+            BloodSurfaces.unloadAll();
+            say.accept(Lang.t("simpleblood.gui.backup.back_to_defaults"));
+            done.run();
+        });
+    }
+
     static String copy() {
         Minecraft.getInstance().keyboardHandler.setClipboard(GSON.toJson(SimpleBloodClient.getConfig()));
         return Lang.t("simpleblood.backup.settings_copied_as_text");

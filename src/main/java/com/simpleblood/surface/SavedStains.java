@@ -43,6 +43,7 @@ public final class SavedStains {
     private static final int SWAPS_PER_POLL = 32;
     private static final double SWAP_MARGIN = 8.0;
     private static final int MAX_PARKED = 2048;
+    private static int maxParked = MAX_PARKED;
     private static final int FLUSH_CHUNKS_PER_TICK = 8;
 
     private record Parked(SavedTile tile, int at) {}
@@ -239,8 +240,9 @@ public final class SavedStains {
             dropGoneChunks(level, now);
             claimLoadedChunks(mc, level);
             swap(mc, level, s, now);
-            capParked(mc, now);
         }
+        if (!PARKED.isEmpty()) capParked(mc, level, now);
+        if (com.simpleblood.Tally.ON) parkedPeak = Math.max(parkedPeak, parkedCount());
         if (clock % FLUSH_TICKS == 0 && flushed >= flushing.length && !UNSAVED.isEmpty()) {
             flushing = UNSAVED.toLongArray();
             flushed = 0;
@@ -465,23 +467,53 @@ public final class SavedStains {
         return parked;
     }
 
-    private static void capParked(Minecraft mc, int now) {
-        int over = parkedCount() - MAX_PARKED;
+    private static void capParked(Minecraft mc, ClientLevel level, int now) {
+        int over = parkedCount() - maxParked;
         if (over <= 0) return;
         Entity camera = mc.getCameraEntity();
         if (camera == null) return;
-        List<Near> parked = parkedByDistance(camera.position());
-        List<Near> farthest = parked.subList(parked.size() - over, parked.size());
+        Vec3 eye = camera.position();
+        List<Near> held = parkedByDistance(eye);
+        for (CanvasTile t : BloodSurfaces.tiles()) {
+            if (ContraptionRides.isPlot(t.pos)) continue;
+            Vec3 c = t.center();
+            held.add(new Near(chunkOf(t.pos), null, t, Math.sqrt(distanceSqr(eye, c.x, c.y, c.z))));
+        }
+        held.sort(java.util.Comparator.comparingDouble(Near::distance));
+        List<Near> farthest = held.subList(held.size() - over, held.size());
         LongOpenHashSet chunks = new LongOpenHashSet();
-        for (Near n : farthest) chunks.add(n.chunk());
-        write(chunks, now);
+        List<SavedTile> letGo = new ArrayList<>(over);
+        int freed = 0;
         for (Near n : farthest) {
+            chunks.add(n.chunk());
+            if (n.tile() == null) {
+                letGo.add(n.parked().tile());
+            } else if (park(n.tile(), now)) {
+                Map<CanvasTile.Key, Parked> inChunk = PARKED.get(n.chunk());
+                Parked p = inChunk == null ? null : inChunk.get(n.tile().key);
+                if (p != null) letGo.add(p.tile());
+                BloodSurfaces.removeTile(n.tile());
+                freed++;
+            }
+        }
+        write(chunks, now);
+        for (SavedTile t : letGo) {
+            long chunk = chunkOf(BlockPos.of(t.where().pos()));
+            Map<CanvasTile.Key, Parked> inChunk = PARKED.get(chunk);
+            if (inChunk == null) continue;
+            inChunk.remove(keyOf(t));
+            if (inChunk.isEmpty()) PARKED.remove(chunk);
+            AWAY.computeIfAbsent(chunk, k -> new HashSet<>()).add(faceKeyOf(t));
+        }
+        List<Near> nearest = parkedByDistance(eye);
+        for (int i = 0; i < freed && i < nearest.size(); i++) {
+            Near n = nearest.get(i);
             Map<CanvasTile.Key, Parked> inChunk = PARKED.get(n.chunk());
             inChunk.remove(keyOf(n.parked().tile()));
             if (inChunk.isEmpty()) PARKED.remove(n.chunk());
-            AWAY.computeIfAbsent(n.chunk(), k -> new HashSet<>()).add(faceKeyOf(n.parked().tile()));
+            bringBack(level, n.chunk(), aged(n.parked(), now), now);
         }
-        com.simpleblood.Tally.add("stains.parked.away", over);
+        com.simpleblood.Tally.add("stains.parked.away", letGo.size());
     }
 
     private static String faceKeyOf(SavedTile t) {
@@ -603,6 +635,26 @@ public final class SavedStains {
         } catch (IOException | java.io.UncheckedIOException e) {
             return true;
         }
+    }
+
+    private static int parkedPeak;
+
+    public static int parkedPeakForTests() {
+        int peak = parkedPeak;
+        parkedPeak = 0;
+        return peak;
+    }
+
+    public static List<double[]> parkedCentresForTests() {
+        List<double[]> out = new ArrayList<>();
+        for (Map<CanvasTile.Key, Parked> m : PARKED.values()) {
+            for (Parked p : m.values()) out.add(new double[] {p.tile().where().cx(), p.tile().where().cy(), p.tile().where().cz()});
+        }
+        return out;
+    }
+
+    public static void maxParkedForTests(int cap) {
+        maxParked = cap > 0 ? cap : MAX_PARKED;
     }
 
     public static int parkedCount() {

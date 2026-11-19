@@ -929,16 +929,8 @@ public final class Pages {
         b.action(Lang.t("simpleblood.gui.backup.paste_from_text"), Lang.t("simpleblood.gui.backup.load_settings_someone_copied"), Lang.t("simpleblood.gui.backup.paste"),
                 () -> SettingsBackup.paste(b.host::toast, b.host::rebuildPage));
         b.action(Lang.t("simpleblood.gui.backup.open_folder"), Lang.t("simpleblood.gui.backup.where_saved_settings_go_first"), Lang.t("simpleblood.gui.backup.open"), SettingsBackup::openFolder);
-        b.action(Lang.t("simpleblood.gui.backup.reset_everything"), Lang.t("simpleblood.gui.backup.everything_back_to_default_cancel"), Lang.t("simpleblood.gui.backup.reset"), () -> {
-            SimpleBloodConfig fresh = new SimpleBloodConfig();
-            fresh.vanillaEntities.initializeDefaults();
-            TileShapeChange.confirm(TileShapeChange.reshapes(b.cfg, fresh), () -> {
-                com.simpleblood.SimpleBloodClient.setConfig(fresh);
-                BloodSurfaces.unloadAll();
-                b.host.toast(Lang.t("simpleblood.gui.backup.back_to_defaults"));
-                b.host.rebuildPage();
-            });
-        });
+        b.action(Lang.t("simpleblood.gui.backup.reset_everything"), Lang.t("simpleblood.gui.backup.everything_back_to_default_cancel"), Lang.t("simpleblood.gui.backup.reset"),
+                () -> SettingsBackup.resetEverything(b.host::toast, b.host::rebuildPage));
     }
 
     private static void kinds(Builder b) {

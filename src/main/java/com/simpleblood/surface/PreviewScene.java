@@ -816,7 +816,9 @@ public final class PreviewScene {
 
     private void dryingTick(SimpleBloodConfig c) {
         if (loopTick == 1) layPuddle(c);
-        if (loopTick >= lifetime() + 40) loopTick = 0;
+        if (loopTick < lifetime() + 40) return;
+        if (c.surfaces.lastsForever()) restart();
+        else loopTick = 0;
     }
 
     private void layPuddle(SimpleBloodConfig c) {
@@ -847,7 +849,8 @@ public final class PreviewScene {
             case WIND -> Lang.t("simpleblood.preview.wind_like_a_breeze");
             case GLOW -> c.kinds.glow ? Lang.t("simpleblood.preview.glow_squid_ink_in_the") : Lang.t("simpleblood.preview.in_the_dark_glow_is");
             case RAIN -> c.surfaces.rainWashes ? Lang.t("simpleblood.preview.rain_washing_it_away") : Lang.t("simpleblood.preview.rain_washing_is_off");
-            case DRYING -> lasted(Lang.t("simpleblood.preview.drying"), lifetime(), c.surfaces.dryingSeconds());
+            case DRYING -> !c.surfaces.lastsForever() ? lasted(Lang.t("simpleblood.preview.drying"), lifetime(), c.surfaces.dryingSeconds())
+                    : c.surfaces.foreverFresh ? Lang.t("simpleblood.preview.forever_stays_fresh") : Lang.t("simpleblood.preview.forever_dries_and_stays");
             case COAT_DRYING -> lasted(Lang.t("simpleblood.preview.drying_on_the_body"), coatLifetime(), c.mobCoat.lifetimeSeconds);
             case COAT -> c.mobCoat.enabled ? Lang.t("simpleblood.preview.blood_that_stays_on_the") : Lang.t("simpleblood.preview.blood_on_mobs_is_off");
         };
@@ -1013,7 +1016,7 @@ public final class PreviewScene {
         if (b == null || blockMap.containsKey(b.pos().above())) return;
         CanvasTile tile = tile(b, Direction.UP, true);
         Vec3 p = new Vec3(at.x, 1, at.z);
-        tile.stampPowder(clamp(tile.pixelX(p), tile.pw), clamp(tile.pixelY(p), tile.ph), pixels, colour.getAsInt() & 0xFFFFFF, now, lifetime(), rng, new ArrayList<>());
+        tile.stampPowder(clamp(tile.pixelX(p), tile.pw), clamp(tile.pixelY(p), tile.ph), pixels, colour.getAsInt() & 0xFFFFFF, now, paintLife(), rng, new ArrayList<>());
     }
 
     private void pour(Vec3 at, int pixels) {
@@ -1092,7 +1095,7 @@ public final class PreviewScene {
             if (c.surfaces.wading) {
                 List<int[]> sole = Footprints.rasterise(gait.sole(), fx, fz, 0);
                 Wading.stepIn(ground, this::splashDrops, foot, sole, Footprints.ring(sole, Footprints.rasterise(gait.sole(), fx, fz, 2)),
-                        0, mob.z - pz, 0, ps, new Wading.Look(lifetime(), pattern(), c.surfaces.wadeSplash, c.surfaces.wakes, c.surfaces.trample), now, rng);
+                        0, mob.z - pz, 0, ps, new Wading.Look(paintLife(), pattern(), c.surfaces.wadeSplash, c.surfaces.wakes, c.surfaces.trample), now, rng);
             }
             return;
         }
@@ -1104,7 +1107,7 @@ public final class PreviewScene {
             Block b = blockMap.get(new BlockPos((int) Math.floor(p.x), 0, (int) Math.floor(p.z)));
             if (b == null) continue;
             CanvasTile tt = tile(b, Direction.UP, true);
-            tt.paintPrint(tt.pixelX(p), tt.pixelY(p), colour.getAsInt() & 0xFFFFFF, now, lifetime(), rng, pattern(), false);
+            tt.paintPrint(tt.pixelX(p), tt.pixelY(p), colour.getAsInt() & 0xFFFFFF, now, paintLife(), rng, pattern(), false);
         }
     }
 
@@ -1696,6 +1699,19 @@ public final class PreviewScene {
         return Math.max(60, cfg().surfaces.dryingSeconds() * 20 / LIFETIME_DIVISOR);
     }
 
+    private int paintLife() {
+        return kind == Kind.DRYING && cfg().surfaces.lastsForever() ? CanvasTile.foreverOver(lifetime()) : lifetime();
+    }
+
+    public long[] bloodForTests() {
+        long px = 0, share = 0;
+        for (CanvasTile t : tiles.values()) {
+            px += t.count();
+            share += t.ageSums(now)[1];
+        }
+        return new long[] {loopTick, px, px == 0 ? -1 : share / px};
+    }
+
     private boolean pattern() { return !"block".equals(cfg().surfaces.highlightMode); }
 
     private void land(Block b, Direction face, Vec3 point, Drop d, Vec3 travel, SimpleBloodConfig c) {
@@ -1707,7 +1723,7 @@ public final class PreviewScene {
             float areaScale = c.surfaces.resolution >= 16 ? 3.0f : 1.0f;
             int n = Math.max(1, Math.round((1 + rng.nextInt(2)) * c.surfaceAmount() * areaScale));
             CanvasTile tile = tile(b, face, true);
-            tile.stampPowder(clamp(tile.pixelX(point), tile.pw), clamp(tile.pixelY(point), tile.ph), n, d.colour, now, lifetime(), rng, new ArrayList<>());
+            tile.stampPowder(clamp(tile.pixelX(point), tile.pw), clamp(tile.pixelY(point), tile.ph), n, d.colour, now, paintLife(), rng, new ArrayList<>());
             return;
         }
         if (d.kind == 3 || d.single) {
@@ -1732,7 +1748,7 @@ public final class PreviewScene {
             bv = t.x * tile.vx + t.y * tile.vy + t.z * tile.vz;
         }
         List<int[]> spill = new ArrayList<>();
-        tile.stamp(px, py, pixels, colour, now, lifetime(), rng, pattern(), spill, bu, bv);
+        tile.stamp(px, py, pixels, colour, now, paintLife(), rng, pattern(), spill, bu, bv);
         for (int[] cell : spill) spillCell(tile, cell[0], cell[1], colour);
         if (face == Direction.UP) {
             int started = 0;
@@ -1759,7 +1775,7 @@ public final class PreviewScene {
         if (neighbour != null && tile.face != Direction.UP) return false;
         if (neighbour != null) {
             CanvasTile n = tile(neighbour, tile.face, true);
-            n.paint(clamp(n.pixelX(p), n.pw), clamp(n.pixelY(p), n.ph), colour, now, lifetime(), rng, pattern());
+            n.paint(clamp(n.pixelX(p), n.pw), clamp(n.pixelY(p), n.ph), colour, now, paintLife(), rng, pattern());
             return false;
         }
         if (tile.face == Direction.UP && cfg().surfaces.wallsAndCeilings) {
@@ -1810,7 +1826,7 @@ public final class PreviewScene {
         int budget = runSim.pour(source, sx, sy);
         if (budget == 0) return false;
         runSim.add(new RunSim.Run(side, column, 0, budget, 1, colour, source, sx, sy));
-        side.paintThin(column, 0, colour, now, lifetime(), rng, pattern(), 1);
+        side.paintThin(column, 0, colour, now, paintLife(), rng, pattern(), 1);
         return true;
     }
 
@@ -1824,7 +1840,7 @@ public final class PreviewScene {
             runSim.drink(r, r.row);
             r.row++;
             if (r.row < r.tile.ph) {
-                r.tile.paintThin(r.column, r.row, r.colour, now, lifetime(), rng, pattern(), RunSim.thin(r.row, r.tile.res));
+                r.tile.paintThin(r.column, r.row, r.colour, now, paintLife(), rng, pattern(), RunSim.thin(r.row, r.tile.res));
             } else {
                 Vec3 p = r.tile.pixelCenter(r.column, r.tile.ph - 1);
                 BlockPos below = r.tile.pos.below().relative(r.tile.face);
@@ -1892,7 +1908,7 @@ public final class PreviewScene {
             CanvasTile t = all[(relaxCursor + k) % all.length];
             if (!t.active || t.face != Direction.UP) continue;
             done++;
-            if (!t.relax(flow, rng, now, lifetime(), pattern())) t.active = false;
+            if (!t.relax(flow, rng, now, paintLife(), pattern())) t.active = false;
         }
         relaxCursor = (relaxCursor + Math.max(1, done)) % Math.max(1, all.length);
     }
@@ -1902,7 +1918,7 @@ public final class PreviewScene {
         BloodCanvasAtlas atlas = BloodCanvasAtlas.exists() ? BloodCanvasAtlas.get() : null;
         while (it.hasNext()) {
             CanvasTile t = it.next();
-            if (t.age(now, rng, false)) t.dirty = true;
+            if (t.age(now, rng, cfg().surfaces.foreverFresh)) t.dirty = true;
             if (t.isEmpty()) {
                 t.dispose(atlas);
                 it.remove();

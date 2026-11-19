@@ -287,12 +287,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         Widgets.Button cancel = new Widgets.Button(Lang.t("simpleblood.screen.cancel"), this::cancel);
         cancel.tooltip = List.of(Lang.t("simpleblood.screen.close_and_put_everything_back"));
         cancel.x = done.x - gap - bw; cancel.y = y0; cancel.w = bw; cancel.h = bh;
-        Widgets.Button undo = new Widgets.Button(Lang.t("simpleblood.screen.undo"), () -> TileShapeChange.confirm(restoreReshapes(), () -> {
-            restore();
-            BloodSurfaces.unloadAll();
-            toast(Lang.t("simpleblood.screen.undone"));
-            buildPage(true);
-        }));
+        Widgets.Button undo = new Widgets.Button(Lang.t("simpleblood.screen.undo"), this::undo);
         undo.tooltip = List.of(Lang.t("simpleblood.screen.back_to_how_things_were"));
         int uw = this.font.width(Lang.t("simpleblood.screen.undo")) + 16;
         undo.x = margin + 4 + this.font.width(Lang.t("simpleblood.screen.unsaved_changes", 999)) + 10; undo.y = y0; undo.w = uw; undo.h = bh;
@@ -343,16 +338,7 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
             previewRow = null;
             hoverRow = null;
             if (resetPage != null) top.children().remove(resetPage);
-            resetPage = new Widgets.ResetButton(Lang.t("simpleblood.screen.reset_page"), () -> {
-                String before = GSON.toJson(config());
-                TileShapeChange.reset(() -> resetAll(list), () -> {
-                    putBack(before);
-                    buildPage(true);
-                }, () -> {
-                    toast(Lang.t("simpleblood.screen.page_reset"));
-                    refreshList();
-                });
-            });
+            resetPage = new Widgets.ResetButton(Lang.t("simpleblood.screen.reset_page"), this::resetThisPage);
             resetPage.tooltip = List.of(Lang.t("simpleblood.screen.puts_every_amber_setting_on"));
             resetPage.y = TITLE_H + margin + 10 + (18 - resetPage.h) / 2;
             resetPage.visible = false;
@@ -537,6 +523,26 @@ public final class BloodConfigScreen extends Screen implements Pages.Host {
         if (cfg != null) SimpleBloodConfig.save(cfg);
         saved = true;
         onClose();
+    }
+
+    private void undo() {
+        TileShapeChange.confirm(restoreReshapes(), () -> {
+            restore();
+            BloodSurfaces.unloadAll();
+            toast(Lang.t("simpleblood.screen.undone"));
+            buildPage(true);
+        });
+    }
+
+    private void resetThisPage() {
+        String before = GSON.toJson(config());
+        TileShapeChange.reset(() -> resetAll(list), () -> {
+            putBack(before);
+            buildPage(true);
+        }, () -> {
+            toast(Lang.t("simpleblood.screen.page_reset"));
+            refreshList();
+        });
     }
 
     private void cancel() {

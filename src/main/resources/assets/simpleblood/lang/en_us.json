@@ -235,6 +235,8 @@
   "simpleblood.gui.puddles.lasts": "Lasts",
   "simpleblood.gui.puddles.seconds_until_it_dries": "Seconds until it dries away, or Forever. Kept when you leave the world.",
   "simpleblood.gui.puddles.forever": "Forever",
+  "simpleblood.preview.forever_dries_and_stays": "Forever: dries into a stain that stays",
+  "simpleblood.preview.forever_stays_fresh": "Forever: stays fresh and wet",
   "simpleblood.gui.puddles.forever_fresh": "Forever blood stays fresh",
   "simpleblood.gui.puddles.forever_blood_stays_wet": "Only with Lasts on Forever. On: it stays wet, shiny and sticky. Off: it dries into a dark stain that stays.",
   "simpleblood.gui.puddles.mixing": "Mixing",
