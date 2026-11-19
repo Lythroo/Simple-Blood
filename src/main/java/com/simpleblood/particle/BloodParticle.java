@@ -556,6 +556,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         net.minecraft.world.phys.AABB path = new net.minecraft.world.phys.AABB(from, to).inflate(0.05);
         if (com.simpleblood.RenderThread.on()) {
             for (net.minecraft.world.entity.LivingEntity e : level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class, path)) {
+                if (com.simpleblood.mob.MobBlood.hiddenByRagdoll(e)) continue;
                 if (stains(e, e.getBoundingBox(), from, to)) return true;
             }
             return false;

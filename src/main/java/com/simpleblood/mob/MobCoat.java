@@ -94,8 +94,7 @@ final class MobCoat {
         float size = splat.size();
         int units = splat.units();
         if (splat.drop()) {
-            if (size > 1f) blotch(splat, Vec3.ZERO, faces, units, false, now, lifetime, rng);
-            else stain(splat, Vec3.ZERO, faces, units, false, now, lifetime, rng);
+            dropSplash(splat, faces, now, lifetime, rng);
             return;
         }
         if (splat.weapon() != HitContext.Weapon.ARROW) stain(splat, Vec3.ZERO, faces, units + 3, true, now, lifetime, rng);
@@ -169,6 +168,80 @@ final class MobCoat {
                 }
             }
         }
+    }
+
+    private static final double DROP_SPLASH_RADIUS = 0.12;
+    private static final double DROP_SPLASH_DEPTH = 1.5;
+    private static final int DROP_RING = 8;
+    private static final float DROP_OUTER_CHANCE = 0.6f;
+    private static final int[] DROP_PX = new int[2];
+    private static final double[] DROP_HIT = new double[3];
+    private ModelFacesOfMob.Face struckFace;
+    private double struckT;
+
+    private void dropSplash(Splat splat, List<ModelFacesOfMob.Face> faces, int now, int lifetime, RandomSource rng) {
+        double ax = splat.at().x, ay = splat.at().y, az = splat.at().z;
+        double dx = splat.dir().x, dy = splat.dir().y, dz = splat.dir().z;
+        if (!strikeAt(ax, ay, az, dx, dy, dz, faces, Double.NaN, 0)) return;
+        double struck = struckT;
+        double radius = DROP_SPLASH_RADIUS * Math.max(0.3f, splat.size());
+        double sx = -dz, sz = dx;
+        double sl = Math.sqrt(sx * sx + sz * sz);
+        if (sl < 1e-6) {
+            sx = 1;
+            sz = 0;
+        } else {
+            sx /= sl;
+            sz /= sl;
+        }
+        double ox = -sz * dy, oy = sz * dx - sx * dz, oz = sx * dy;
+        double ol = Math.sqrt(ox * ox + oy * oy + oz * oz);
+        if (ol < 1e-9) return;
+        ox /= ol;
+        oy /= ol;
+        oz /= ol;
+        int colour = tint(splat), units = splat.units();
+        boolean any = face(struckFace).add(DROP_PX[0], DROP_PX[1], units + 1, colour, now, lifetime, rng);
+        double turn = rng.nextDouble() * Math.PI * 2;
+        for (int ring = 1; ring <= 2; ring++) {
+            double r = radius * ring / 2;
+            for (int k = 0; k < DROP_RING; k++) {
+                if (ring == 2 && rng.nextFloat() > DROP_OUTER_CHANCE) continue;
+                double a = turn + (k + (ring == 2 ? 0.5 : 0)) * Math.PI * 2 / DROP_RING;
+                double c = Math.cos(a) * r, w = Math.sin(a) * r;
+                if (!strikeAt(ax + sx * c + ox * w, ay + oy * w, az + sz * c + oz * w, dx, dy, dz, faces,
+                        struck, radius * DROP_SPLASH_DEPTH)) continue;
+                any |= face(struckFace).add(DROP_PX[0], DROP_PX[1], ring == 1 ? units : Math.max(1, units - 1), colour, now, lifetime, rng);
+            }
+        }
+        if (any) strokes++;
+    }
+
+    private boolean strikeAt(double px, double py, double pz, double dx, double dy, double dz,
+                             List<ModelFacesOfMob.Face> faces, double nearT, double within) {
+        double fx = px - dx * 1.2, fy = py - dy * 1.2, fz = pz - dz * 1.2;
+        ModelFacesOfMob.Face best = null;
+        double bestT = Double.MAX_VALUE, bestA = 0, bestB = 0;
+        for (ModelFacesOfMob.Face f : faces) {
+            double facing = f.wnx * dx + f.wny * dy + f.wnz * dz;
+            if (facing > -0.05) continue;
+            double d = (f.wx(0) - fx) * f.wnx + (f.wy(0) - fy) * f.wny + (f.wz(0) - fz) * f.wnz;
+            double tt = d / facing;
+            if (tt <= 0 || tt >= bestT || tt > 4.0) continue;
+            if (!Double.isNaN(nearT) && Math.abs(tt - nearT) > within) continue;
+            if (!f.locate(fx + dx * tt, fy + dy * tt, fz + dz * tt, DROP_HIT) || !f.holds(DROP_HIT[0], DROP_HIT[1])) continue;
+            if (!f.drawnAt(DROP_HIT[0], DROP_HIT[1])) continue;
+            best = f;
+            bestT = tt;
+            bestA = DROP_HIT[0];
+            bestB = DROP_HIT[1];
+        }
+        struckFace = best;
+        if (best == null) return false;
+        struckT = bestT;
+        DROP_PX[0] = (int) Math.max(0, Math.min(best.pw - 1, best.sAt(bestA, bestB) * best.pw));
+        DROP_PX[1] = (int) Math.max(0, Math.min(best.ph - 1, best.tAt(bestA, bestB) * best.ph));
+        return true;
     }
 
     private int tint(Splat splat) {

@@ -95,16 +95,22 @@ public final class ModelFacesOfMob {
         double tAt(double a, double b) { return t[0] + (t[1] - t[0]) * a + (t[3] - t[0]) * b; }
 
         double[] locate(double x, double y, double z) {
+            double[] out = new double[3];
+            return locate(x, y, z, out) ? out : null;
+        }
+
+        boolean locate(double x, double y, double z, double[] out) {
             double e1x = wx(1) - wx(0), e1y = wy(1) - wy(0), e1z = wz(1) - wz(0);
             double e3x = wx(3) - wx(0), e3y = wy(3) - wy(0), e3z = wz(3) - wz(0);
             double qx = x - wx(0), qy = y - wy(0), qz = z - wz(0);
             double a11 = e1x * e1x + e1y * e1y + e1z * e1z, a13 = e1x * e3x + e1y * e3y + e1z * e3z, a33 = e3x * e3x + e3y * e3y + e3z * e3z;
             double det = a11 * a33 - a13 * a13;
-            if (det < 1e-12) return null;
+            if (det < 1e-12) return false;
             double b1 = qx * e1x + qy * e1y + qz * e1z, b3 = qx * e3x + qy * e3y + qz * e3z;
-            double a = (b1 * a33 - b3 * a13) / det, b = (a11 * b3 - a13 * b1) / det;
-            double off = qx * wnx + qy * wny + qz * wnz;
-            return new double[]{a, b, off};
+            out[0] = (b1 * a33 - b3 * a13) / det;
+            out[1] = (a11 * b3 - a13 * b1) / det;
+            out[2] = qx * wnx + qy * wny + qz * wnz;
+            return true;
         }
     }
 

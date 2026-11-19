@@ -58,6 +58,11 @@ public final class RagdollBodies {
         return null;
     }
 
+    public static boolean hasMob(int mobId) {
+        for (Body b : snapshot) if (b.mobId() == mobId) return true;
+        return false;
+    }
+
     public static Body find(Object source) {
         for (Body b : snapshot) if (b.source() == source) return b;
         return null;

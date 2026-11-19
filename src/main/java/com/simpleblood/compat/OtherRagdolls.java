@@ -214,6 +214,7 @@ public final class OtherRagdolls {
             });
         }
         if (saroEntity != null) saroBoxes(level, out);
+        RagdollDeaths.bodies(level, out);
     }
 
     private static void ragdollifiedBoxes(java.util.List<RagdollBodies.Body> out) {
@@ -339,7 +340,8 @@ public final class OtherRagdolls {
             looked = true;
             lookUp();
         }
-        return ragdollIds != null || saroEntity != null || !com.simpleblood.SimpleBloodAPI.ragdollSources().isEmpty();
+        return ragdollIds != null || saroEntity != null || RagdollDeaths.available()
+                || !com.simpleblood.SimpleBloodAPI.ragdollSources().isEmpty();
     }
 
     private static void lookUp() {
@@ -437,6 +439,7 @@ public final class OtherRagdolls {
                 SimpleBlood.LOGGER.warn("Saro's Player Ragdoll blood switched off after an error", t);
             }
         }
+        RagdollDeaths.collect(level, out);
         var sources = com.simpleblood.SimpleBloodAPI.ragdollSources();
         for (var entry : sources.entrySet()) {
             try {

@@ -617,7 +617,8 @@ public final class PhysicsModRagdolls {
                 if (body.owner() != null) death = deathOf(body.owner(), level);
                 else death = bleedingOf(new OtherRagdolls.Key("ragdollified", body.source()));
             } else {
-                death = DEATHS.isEmpty() ? null : closest(centre(present));
+                death = RagdollDeaths.MOD.equals(key.mod()) ? deathById(key.id()) : null;
+                if (death == null) death = DEATHS.isEmpty() ? null : closest(centre(present));
                 if (death != null) DEATHS.remove(death);
                 else if (body.owner() != null) death = deathOf(body.owner(), level);
             }
@@ -1453,6 +1454,11 @@ public final class PhysicsModRagdolls {
         if (best == null) return null;
         SimpleBlood.LOGGER.debug("[decap] a ragdoll had no death told for it: matched to the dying {} lying there", best.getType());
         return deathOf(best, level);
+    }
+
+    private static Death deathById(int entityId) {
+        for (Death d : DEATHS) if (d.entityId() == entityId) return d;
+        return null;
     }
 
     private static Death closest(Vec3 c) {

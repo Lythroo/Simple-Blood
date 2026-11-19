@@ -1017,6 +1017,7 @@ public final class Pages {
         if (com.simpleblood.compat.PhysicsModRagdolls.available()) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.physics_mod"));
         if (ids.contains("ragdollified")) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.ragdollified"));
         if (ids.contains("saros_ragdoll")) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.saro_s_player_ragdoll"));
+        if (com.simpleblood.compat.RagdollDeaths.available()) names.add(Lang.t("simpleblood.gui.ragdoll_mods_found.ragdoll_deaths"));
         return String.join(", ", names);
     }
 

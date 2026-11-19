@@ -269,6 +269,48 @@ public final class MobBlood {
         return r;
     }
 
+    public static long[] ragdollCoverageForTests(int entityId) {
+        long[] r = new long[4];
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null) return r;
+        Map<Object, ModelFacesOfMob.Face> byKey = new java.util.HashMap<>();
+        for (List<ModelFacesOfMob.Face> piece : coat.ragdollPieces.values()) for (ModelFacesOfMob.Face f : piece) byKey.putIfAbsent(f.key, f);
+        for (ModelFacesOfMob.Face f : byKey.values()) {
+            MobFace canvas = coat.faces.get(f.key);
+            boolean up = f.wny > 0.5f;
+            for (int y = 0; y < f.ph; y++) {
+                for (int x = 0; x < f.pw; x++) {
+                    double[] ab = f.edgeWeights((x + 0.5) / f.pw, (y + 0.5) / f.ph);
+                    if (!f.drawnAt(ab[0], ab[1])) continue;
+                    boolean stained = canvas != null && canvas.pw == f.pw && canvas.ph == f.ph && canvas.depthAt(x, y) > 0;
+                    r[2]++;
+                    if (stained) r[3]++;
+                    if (!up) continue;
+                    r[0]++;
+                    if (stained) r[1]++;
+                }
+            }
+        }
+        return r;
+    }
+
+    public static Vec3 ragdollFacesCentreForTests(int entityId) {
+        MobCoat coat = COATS.get(entityId);
+        if (coat == null || coat.ragdollPieces.isEmpty()) return null;
+        double x = 0, y = 0, z = 0;
+        int n = 0;
+        for (List<ModelFacesOfMob.Face> piece : coat.ragdollPieces.values()) {
+            for (ModelFacesOfMob.Face f : piece) {
+                Vec3 c = f.at(0.5, 0.5);
+                x += c.x;
+                y += c.y;
+                z += c.z;
+                n++;
+            }
+        }
+        return n == 0 ? null : new Vec3(x / n, y / n, z / n);
+    }
+
     public static int coatUnits(int entityId) {
         MobCoat coat = COATS.get(entityId);
         if (coat == null) return 0;
@@ -458,6 +500,10 @@ public final class MobBlood {
         }
     }
 
+    public static boolean hiddenByRagdoll(LivingEntity e) {
+        return e.isDeadOrDying() && RagdollBodies.hasMob(e.getId());
+    }
+
     public static boolean catchesDrops() {
         SimpleBloodConfig cfg = SimpleBloodClient.getConfig();
         return cfg != null && cfg.mobCoat.enabled && cfg.mobCoat.amount > 0;
@@ -531,12 +577,14 @@ public final class MobBlood {
         final int light;
         final List<ModelFacesOfMob.Face> faces = new ArrayList<>();
         final int[] cubes = new int[1];
+        final boolean ragdollDeaths;
 
         Frame(int entityId, Object state, Vec3 camera, int light) {
             this.entityId = entityId;
             this.state = state;
             this.camera = camera;
             this.light = light;
+            this.ragdollDeaths = com.simpleblood.compat.RagdollDeaths.isBody(entityId);
         }
     }
 
@@ -549,7 +597,7 @@ public final class MobBlood {
         if (!coated && !shapesWanted && !WoundAnchors.wants(entityId) && !CORPSES.containsKey(entityId)) return;
         if (com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
         Frame f = new Frame(entityId, state, SurfaceRenderer.cameraPos(), light);
-        com.simpleblood.compat.EmfPoses.pose(state, root);
+        if (!f.ragdollDeaths) com.simpleblood.compat.EmfPoses.pose(state, root);
         ModelFacesOfMob.collect(root, pose, f.camera, f.faces, f.cubes);
         textured(f.faces, 0, texture);
         WoundAnchors.posed(entityId, f.faces);
@@ -569,7 +617,8 @@ public final class MobBlood {
         Frame f = frame;
         if (f == null || f.state != state) return;
         ((net.minecraft.client.model.Model) model).setupAnim(state);
-        com.simpleblood.compat.EmfPoses.pose(state, model.root());
+        if (f.ragdollDeaths) com.simpleblood.compat.RagdollDeaths.poseLayer(model, state, pose.last().pose());
+        else com.simpleblood.compat.EmfPoses.pose(state, model.root());
         int from = f.faces.size();
         ModelFacesOfMob.collect(model.root(), pose, f.camera, f.faces, f.cubes);
         textured(f.faces, from, texture);
@@ -613,6 +662,7 @@ public final class MobBlood {
         MobCoat coat = COATS.get(f.entityId);
         if (coat == null || f.faces.isEmpty()) return;
         coat.lastFaces = f.faces;
+        if (f.ragdollDeaths) drawnAsRagdoll(coat, f.faces);
         List<Quad> quads = prepare(coat, f.faces, f.camera, f.light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
     }
@@ -638,6 +688,7 @@ public final class MobBlood {
         if (coat == null || invisible || posed.isEmpty() || com.simpleblood.compat.ShaderPacks.inShadowPass()) return;
         if (ModelFacesOfMob.shaped) coat.noteShapes(posed); // a ragdoll mod's copy of the model finds the blood by them
         coat.lastFaces = posed;
+        if (com.simpleblood.compat.RagdollDeaths.isBody(entityId)) drawnAsRagdoll(coat, posed);
         List<Quad> quads = prepare(coat, posed, camera, light);
         if (quads.isEmpty()) return;
         draw(quads, new PoseStack().last(), buffers.getBuffer((net.minecraft.client.renderer.RenderType) SurfaceRenderer.renderType()));
@@ -667,6 +718,13 @@ public final class MobBlood {
         if (!quads.isEmpty()) draw(quads, pose, vc);
     }
     *///?}
+
+    private static void drawnAsRagdoll(MobCoat coat, List<ModelFacesOfMob.Face> faces) {
+        com.simpleblood.Tally.count("coat.ragdoll");
+        coat.onRagdoll = now;
+        if (com.simpleblood.Tally.ON) coat.ragdollPieces.put(faces.get(0).key, faces);
+        RagdollSurfaces.publish(coat.entityId, faces, null, now);
+    }
 
     record Quad(float[] p, float[] u, float[] v, int light, float nx, float ny, float nz, int alpha) {}
 
@@ -870,7 +928,7 @@ public final class MobBlood {
         }
         List<Body> near = new ArrayList<>();
         for (Entity e : level.entitiesForRendering()) {
-            if (e instanceof LivingEntity living && !e.isRemoved() && e.distanceToSqr(player) < 64 * 64) {
+            if (e instanceof LivingEntity living && !e.isRemoved() && e.distanceToSqr(player) < 64 * 64 && !hiddenByRagdoll(living)) {
                 near.add(new Body(living, e.getBoundingBox()));
             }
         }
