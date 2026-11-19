@@ -108,7 +108,10 @@ public final class MobBlood {
     static void drawPosed(MobCoat coat, List<ModelFacesOfMob.Face> posed, float[] fade, PoseStack.Pose pose, VertexConsumer vc, Vec3 camera, int light) {
         coat.onRagdoll = now;
         com.simpleblood.Tally.count("coat.ragdoll");
-        if (com.simpleblood.Tally.ON) coat.ragdollPieces.put(posed.get(0).key, shown(posed, fade));
+        if (com.simpleblood.Tally.ON) {
+            List<ModelFacesOfMob.Face> shown = shown(posed, fade);
+            if (!shown.isEmpty()) coat.ragdollPieces.put(posed.get(0).key, shown);
+        }
         RagdollSurfaces.publish(coat.entityId, posed, fade, now);
         List<Quad> quads = prepare(coat, posed, fade, camera, light);
         if (!quads.isEmpty()) draw(quads, pose, vc);
@@ -138,10 +141,24 @@ public final class MobBlood {
             coat.model(entity);
             coat.lastPos = entity.position();
             coat.lastSeen = now;
+            coat.texture = textureOf(entity);
             COATS.put(entity.getId(), coat);
             com.simpleblood.Tally.count("coat.ragdoll.empty");
         }
         if (coat != null) coat.onRagdoll = now;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static Object textureOf(LivingEntity e) {
+        //? if >=1.21.11 {
+        try {
+            if (Minecraft.getInstance().getEntityRenderDispatcher().getRenderer(e) instanceof net.minecraft.client.renderer.entity.LivingEntityRenderer r) {
+                return r.getTextureLocation((net.minecraft.client.renderer.entity.state.LivingEntityRenderState) r.createRenderState(e, 1f));
+            }
+        } catch (Throwable t) {
+        }
+        //?}
+        return null;
     }
 
     private static void splat(LivingEntity e, HitContext ctx, boolean death) {

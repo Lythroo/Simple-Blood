@@ -84,7 +84,7 @@ public final class RagdollBodies {
         return best < 0 ? null : hit(body, best, from.x, from.y, from.z, to.x, to.y, to.z, bestT);
     }
 
-    private static final ThreadLocal<double[]> SCRATCH = ThreadLocal.withInitial(() -> new double[7]);
+    private static final ThreadLocal<double[]> SCRATCH = ThreadLocal.withInitial(() -> new double[8]);
 
     public static Hit dropHit(double ax, double ay, double az, double bx, double by, double bz,
                               double bornX, double bornY, double bornZ, boolean young) {
@@ -93,7 +93,7 @@ public final class RagdollBodies {
         double[] out = SCRATCH.get();
         Body bestBody = null;
         double bestT = Double.POSITIVE_INFINITY;
-        double hx = 0, hy = 0, hz = 0, nx = 0, ny = 0, nz = 0;
+        double hx = 0, hy = 0, hz = 0, nx = 0, ny = 0, nz = 0, piece = -1, face = -1;
         for (Body body : bodies) {
             if (!body.near(ax, ay, az, bx, by, bz) || young && bornIn(body, bornX, bornY, bornZ)) continue;
             boolean seen = body.mobId() >= 0 && RagdollSurfaces.drawn(body.mobId());
@@ -113,11 +113,16 @@ public final class RagdollBodies {
                 nx = out[3];
                 ny = out[4];
                 nz = out[5];
+                face = out[6];
+                piece = out[7];
             }
         }
         if (bestBody == null) return null;
         Hit hit = new Hit(bestBody, -1, new Vec3(hx, hy, hz), new Vec3(nx, ny, nz), bestT);
         if (recordStops) {
+            STOP_OFF.put(hit, RagdollSurfaces.distanceToDrawnForTests(bestBody.mobId(), hx, hy, hz));
+            STOP_NOTES.put(hit, String.format(java.util.Locale.ROOT, "stopped on piece %d face %d (segment %.3f %.3f %.3f -> %.3f %.3f %.3f); then: ",
+                    (int) piece, (int) face, ax, ay, az, bx, by, bz) + RagdollSurfaces.describeForTests(bestBody.mobId(), hx, hy, hz));
             STOPS.add(hit);
             while (STOPS.size() > 1024) STOPS.poll();
         }
@@ -136,9 +141,21 @@ public final class RagdollBodies {
 
     private static volatile boolean recordStops;
     private static final java.util.concurrent.ConcurrentLinkedQueue<Hit> STOPS = new java.util.concurrent.ConcurrentLinkedQueue<>();
+    private static final java.util.Map<Hit, String> STOP_NOTES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Hit, Double> STOP_OFF = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static double stopOffForTests(Hit hit) {
+        return STOP_OFF.getOrDefault(hit, Double.POSITIVE_INFINITY);
+    }
+
+    public static String stopNoteForTests(Hit hit) {
+        return STOP_NOTES.getOrDefault(hit, "-");
+    }
 
     public static void recordStopsForTests(boolean on) {
         STOPS.clear();
+        STOP_NOTES.clear();
+        STOP_OFF.clear();
         recordStops = on;
     }
 

@@ -20,6 +20,7 @@ final class MobCoat {
     java.util.List<ModelFacesOfMob.Face> lastFaces;
     final Map<Object, java.util.List<ModelFacesOfMob.Face>> ragdollPieces = new java.util.HashMap<>();
     int onRagdoll = -1000;
+    Object texture;
     net.minecraft.world.phys.Vec3 lastPos;
 
     void model(net.minecraft.world.entity.LivingEntity e) {

@@ -62,7 +62,7 @@ public final class RigidCoats {
         }
         List<Pinned> pinned = new ArrayList<>();
         if (coat.lastFaces == null || coat.lastFaces.isEmpty()) {
-            pinned = fromMeshes(quads);
+            pinned = fromMeshes(quads, coat.texture == null ? null : MobTextures.of(coat.texture));
             com.simpleblood.Tally.add("coat.rigid.fresh", pinned.size());
             if (pinned.isEmpty()) return;
             com.simpleblood.Tally.count("coat.rigid");
@@ -139,7 +139,7 @@ public final class RigidCoats {
         return best;
     }
 
-    private static List<Pinned> fromMeshes(List<List<float[]>> quads) {
+    private static List<Pinned> fromMeshes(List<List<float[]>> quads, MobTextures.Alpha alpha) {
         List<Pinned> out = new ArrayList<>();
         for (int i = 0; i < quads.size(); i++) {
             for (float[] q : quads.get(i)) {
@@ -161,6 +161,7 @@ public final class RigidCoats {
                 float vmin = Math.min(Math.min(q[4], q[9]), Math.min(q[14], q[19])), vmax = Math.max(Math.max(q[4], q[9]), Math.max(q[14], q[19]));
                 if (umax - umin < 1e-6f || vmax - vmin < 1e-6f) continue;
                 ModelFacesOfMob.Face f = new ModelFacesOfMob.Face(new Object(), out.size());
+                f.alpha = alpha;
                 for (int k = 0; k < 4; k++) {
                     f.u[k] = q[k * 5 + 3];
                     f.v[k] = q[k * 5 + 4];
@@ -290,6 +291,10 @@ public final class RigidCoats {
             int light = com.simpleblood.surface.SurfaceRenderer.lightAt(level, BlockPos.containing(sx / posed.size(), sy / posed.size() + 0.2, sz / posed.size()));
             MobBlood.drawPosed(coat, posed, fade, pose, vc, camera, light);
         }
+    }
+
+    public static boolean any() {
+        return !RAGDOLLS.isEmpty();
     }
 
     public static void clear() {

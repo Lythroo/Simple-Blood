@@ -29,7 +29,7 @@ final class NeoForgeSurfaceHook {
     private static void draw(boolean onSeeThrough) {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
-        if (level == null || BloodSurfaces.tileCount() == 0) return;
+        if (level == null || SurfaceRenderer.nothingToDraw()) return;
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
             RenderType type = (RenderType) SurfaceRenderer.renderType();
             MultiBufferSource.BufferSource source = mc.renderBuffers().bufferSource();
@@ -68,7 +68,7 @@ final class NeoForgeSurfaceHook {
     private static void draw(boolean onSeeThrough) {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
-        if (level == null || BloodSurfaces.tileCount() == 0) return;
+        if (level == null || SurfaceRenderer.nothingToDraw()) return;
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
             RenderType type = (RenderType) SurfaceRenderer.renderType();
             MultiBufferSource.BufferSource source = mc.renderBuffers().bufferSource();
@@ -102,7 +102,7 @@ final class NeoForgeSurfaceHook {
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                     () -> com.simpleblood.particle.UnderwaterParticles.submit(e.getSubmitNodeCollector()));
             ClientLevel level = Minecraft.getInstance().level;
-            if (level == null || BloodSurfaces.tileCount() == 0 || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
+            if (level == null || SurfaceRenderer.nothingToDraw() || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
                 Vec3 cam = SurfaceRenderer.cameraPos();
                 RenderType type = (RenderType) SurfaceRenderer.renderType();
@@ -114,7 +114,7 @@ final class NeoForgeSurfaceHook {
         NeoForge.EVENT_BUS.addListener((RenderLevelStageEvent.AfterTranslucentBlocks e) -> {
             Minecraft mc = Minecraft.getInstance();
             ClientLevel level = mc.level;
-            if (level == null || BloodSurfaces.tileCount() == 0) return;
+            if (level == null || SurfaceRenderer.nothingToDraw()) return;
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
                 MultiBufferSource.BufferSource source = mc.renderBuffers().bufferSource();
                 RenderType type = (RenderType) SurfaceRenderer.renderType();
@@ -144,7 +144,7 @@ final class NeoForgeSurfaceHook {
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                     () -> com.simpleblood.particle.UnderwaterParticles.submit(e.getSubmitNodeCollector()));
             ClientLevel level = Minecraft.getInstance().level;
-            if (level == null || BloodSurfaces.tileCount() == 0 || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
+            if (level == null || SurfaceRenderer.nothingToDraw() || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks",
                     () -> SurfaceRenderer.submit(level, e.getSubmitNodeCollector()));
         });
@@ -183,7 +183,7 @@ final class NeoForgeSurfaceHook {
     private static void draw(PoseStack.Pose pose, boolean onSeeThrough) {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
-        if (level == null || BloodSurfaces.tileCount() == 0) return;
+        if (level == null || SurfaceRenderer.nothingToDraw()) return;
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
             RenderType type = (RenderType) SurfaceRenderer.renderType();
             MultiBufferSource.BufferSource source = mc.renderBuffers().bufferSource();

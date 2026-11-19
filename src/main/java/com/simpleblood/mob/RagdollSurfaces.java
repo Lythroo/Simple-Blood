@@ -86,11 +86,14 @@ public final class RagdollSurfaces {
         long now = System.nanoTime();
         double best = -1;
         double x = 0, y = 0, z = 0, nx = 0, ny = 0, nz = 0, face = 0;
-        for (Piece p : pieces) {
+        int piece = -1;
+        for (int i = 0; i < pieces.length; i++) {
+            Piece p = pieces[i];
             if (now - p.nanos() > STALE_NANOS) continue;
             double t = p.faces().firstHit(ax, ay, az, bx, by, bz, out);
             if (t < 0 || best >= 0 && t >= best) continue;
             best = t;
+            piece = i;
             x = out[0];
             y = out[1];
             z = out[2];
@@ -107,6 +110,7 @@ public final class RagdollSurfaces {
             out[4] = ny;
             out[5] = nz;
             out[6] = face;
+            if (out.length > 7) out[7] = piece;
         }
         return best;
     }
@@ -117,6 +121,19 @@ public final class RagdollSurfaces {
         if (pieces == null) return best;
         for (Piece p : pieces) best = Math.min(best, p.faces().distanceToDrawn(x, y, z, 16));
         return best;
+    }
+
+    public static String describeForTests(int mobId, double x, double y, double z) {
+        Piece[] pieces = BY_MOB.get(mobId);
+        if (pieces == null) return "no pieces";
+        long now = System.nanoTime();
+        StringBuilder b = new StringBuilder();
+        for (int i = 0; i < pieces.length; i++) {
+            Piece p = pieces[i];
+            b.append(String.format(java.util.Locale.ROOT, "[piece %d: tick %d, %d ms old, %d faces, %.3f to its drawn texels] ",
+                    i, p.tick(), (now - p.nanos()) / 1_000_000, p.faces().faces(), p.faces().distanceToDrawn(x, y, z, 16)));
+        }
+        return b.toString();
     }
 
     static void prune() {

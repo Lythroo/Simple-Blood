@@ -31,6 +31,10 @@ public final class SurfaceRenderer {
         //?}
     }
 
+    public static boolean nothingToDraw() {
+        return BloodSurfaces.tileCount() == 0 && !com.simpleblood.mob.RigidCoats.any();
+    }
+
     static float partialTick() {
         //? if 1.20.1 {
         /*return net.minecraft.client.Minecraft.getInstance().getFrameTime();

@@ -23,7 +23,7 @@ final class FabricSurfaceHook {
     }
 
     private static void draw(ClientLevel level, PoseStack.Pose pose, MultiBufferSource consumers, boolean onSeeThrough) {
-        if (level == null || consumers == null || BloodSurfaces.tileCount() == 0) return;
+        if (level == null || consumers == null || SurfaceRenderer.nothingToDraw()) return;
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
             RenderType type = (RenderType) SurfaceRenderer.renderType();
             SurfaceRenderer.render(level, SurfaceRenderer.cameraPos(), pose, consumers.getBuffer(type), onSeeThrough);
@@ -58,7 +58,7 @@ final class FabricSurfaceHook {
     }
 
     private static void draw(ClientLevel level, MultiBufferSource consumers, boolean onSeeThrough) {
-        if (level == null || consumers == null || BloodSurfaces.tileCount() == 0) return;
+        if (level == null || consumers == null || SurfaceRenderer.nothingToDraw()) return;
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
             RenderType type = (RenderType) SurfaceRenderer.renderType();
             SurfaceRenderer.render(level, SurfaceRenderer.cameraPos(), new PoseStack().last(), consumers.getBuffer(type), onSeeThrough);
@@ -94,7 +94,7 @@ final class FabricSurfaceHook {
 
     private static void draw(MultiBufferSource consumers, boolean onSeeThrough) {
         ClientLevel level = Minecraft.getInstance().level;
-        if (level == null || consumers == null || BloodSurfaces.tileCount() == 0) return;
+        if (level == null || consumers == null || SurfaceRenderer.nothingToDraw()) return;
         com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
             RenderType type = (RenderType) SurfaceRenderer.renderType();
             SurfaceRenderer.render(level, SurfaceRenderer.cameraPos(), new PoseStack().last(), consumers.getBuffer(type), onSeeThrough);
@@ -125,7 +125,7 @@ final class FabricSurfaceHook {
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                     () -> com.simpleblood.particle.UnderwaterParticles.submit(ctx.submitNodeCollector()));
             ClientLevel level = Minecraft.getInstance().level;
-            if (level == null || BloodSurfaces.tileCount() == 0 || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
+            if (level == null || SurfaceRenderer.nothingToDraw() || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
                 Vec3 cam = SurfaceRenderer.cameraPos();
                 RenderType type = (RenderType) SurfaceRenderer.renderType();
@@ -136,7 +136,7 @@ final class FabricSurfaceHook {
         });
         LevelRenderEvents.AFTER_TRANSLUCENT_TERRAIN.register(ctx -> {
             ClientLevel level = Minecraft.getInstance().level;
-            if (level == null || BloodSurfaces.tileCount() == 0) return;
+            if (level == null || SurfaceRenderer.nothingToDraw()) return;
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks", () -> {
                 MultiBufferSource.BufferSource source = Minecraft.getInstance().renderBuffers().bufferSource();
                 RenderType type = (RenderType) SurfaceRenderer.renderType();
@@ -165,7 +165,7 @@ final class FabricSurfaceHook {
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.PARTICLES, "drawing blood under water",
                     () -> com.simpleblood.particle.UnderwaterParticles.submit(ctx.submitNodeCollector()));
             ClientLevel level = Minecraft.getInstance().level;
-            if (level == null || BloodSurfaces.tileCount() == 0 || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
+            if (level == null || SurfaceRenderer.nothingToDraw() || !com.simpleblood.Guard.ok(com.simpleblood.Guard.Part.SURFACES)) return;
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on blocks",
                     () -> SurfaceRenderer.submit(level, ctx.submitNodeCollector()));
         });
