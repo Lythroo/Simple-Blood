@@ -32,7 +32,7 @@ public abstract class LivingEntityRendererMixin<T extends LivingEntity, S extend
     @Inject(method = "extractRenderState(Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/client/renderer/entity/state/LivingEntityRenderState;F)V",
             at = @At("TAIL"))
     private void simpleblood$rememberEntity(T entity, S state, float partialTicks, CallbackInfo ci) {
-        ((MobRenderState) state).simpleblood$setEntityId(entity.getId());
+        ((MobRenderState) state).simpleblood$setEntityId(com.simpleblood.EntityIds.of(entity));
     }
 }
 //?} else {

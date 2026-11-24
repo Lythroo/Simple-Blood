@@ -9,6 +9,7 @@
     "ClientLevelMixin",
     "PlayerMixin",
     "ModelPartAccessor",
+    "EntityIdAccessor",
     "LivingEntityRendererMixin",
     "SpriteContentsAccessor",
     "BiomeColorsMixin",

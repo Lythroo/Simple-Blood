@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class EntityRenderDispatcherRagdollMixin {
     @Inject(method = "extractEntity", at = @At("RETURN"))
     private void simpleblood$entityOf(net.minecraft.world.entity.Entity entity, float partialTick, CallbackInfoReturnable<EntityRenderState> cir) {
-        if (cir.getReturnValue() instanceof MobRenderState s && s.simpleblood$entityId() < 0) s.simpleblood$setEntityId(entity.getId());
+        if (cir.getReturnValue() instanceof MobRenderState s && s.simpleblood$entityId() < 0) s.simpleblood$setEntityId(com.simpleblood.EntityIds.of(entity));
     }
 
     @Inject(method = "submit", at = @At("HEAD"))
