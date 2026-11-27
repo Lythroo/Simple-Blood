@@ -28,7 +28,7 @@ body:
         - Rendering or shaders
         - Something else
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: now
     attributes:
@@ -39,28 +39,28 @@ body:
         - Both mods add blood and it looks doubled
         - Something else (write it below)
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: ownblood
     attributes:
       label: Does that mod add blood of its own?
       options: ["No", "Yes", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: mc
     attributes:
       label: Minecraft version you play it on
-      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it below)"]
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it below)", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: loader
     attributes:
       label: Mod loader
-      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt"]
+      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: textarea
     id: want
     attributes:

@@ -21,7 +21,7 @@ body:
         - Performance (lag, FPS drops)
         - Something else
     validations:
-      required: true
+      required: false
   - type: textarea
     id: what
     attributes:
@@ -37,49 +37,49 @@ body:
       description: Only Simple Blood (and Fabric API on Fabric) in the mods folder. This tells us if another mod is involved.
       options: ["Yes, it happens with Simple Blood alone", "No, only together with other mods", "I haven't tried"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: where
     attributes:
       label: Where do you play?
-      options: ["Singleplayer", "On a server", "Both"]
+      options: ["Singleplayer", "On a server", "Both", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: shaders
     attributes:
       label: Shaders?
-      options: ["No shaders", "Yes, with Iris or Oculus (shader pack name under Anything else)"]
+      options: ["No shaders", "Yes, with Iris or Oculus (shader pack name under Anything else)", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: again
     attributes:
       label: Does it happen again?
-      options: ["Every time", "Sometimes", "Only once so far"]
+      options: ["Every time", "Sometimes", "Only once so far", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: mc
     attributes:
       label: Minecraft version
-      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it under Anything else)"]
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it under Anything else)", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: loader
     attributes:
       label: Mod loader
-      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt"]
+      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: input
     id: version
     attributes:
       label: Simple Blood version
       description: The file name works too, e.g. simpleblood-fabric-1.4.0+26.3.jar
     validations:
-      required: true
+      required: false
   - type: textarea
     id: log
     attributes:

@@ -18,7 +18,7 @@ body:
         - Modpack or server options
         - Something else
     validations:
-      required: true
+      required: false
   - type: textarea
     id: idea
     attributes:

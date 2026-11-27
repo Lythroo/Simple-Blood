@@ -11,23 +11,23 @@ body:
     id: mc
     attributes:
       label: Minecraft version
-      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it under Anything else)"]
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it under Anything else)", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: loader
     attributes:
       label: Mod loader
-      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt"]
+      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: input
     id: version
     attributes:
       label: Simple Blood version
       description: The file name works too, e.g. simpleblood-fabric-1.4.0+26.3.jar
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: alone
     attributes:
@@ -35,21 +35,21 @@ body:
       description: Only Simple Blood (and Fabric API on Fabric) in the mods folder. This tells us if another mod is involved.
       options: ["Yes, it crashes with Simple Blood alone", "No, only together with other mods", "I haven't tried"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: again
     attributes:
       label: Does it happen again?
-      options: ["Every time", "Sometimes", "Only once so far"]
+      options: ["Every time", "Sometimes", "Only once so far", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: dropdown
     id: when
     attributes:
       label: When does it happen?
-      options: ["When starting the game", "When joining a world or server", "When hitting or killing something", "When dying", "In the settings screen", "Something else (write it under Anything else)"]
+      options: ["When starting the game", "When joining a world or server", "When hitting or killing something", "When dying", "In the settings screen", "Something else (write it under Anything else)", "I don't know"]
     validations:
-      required: true
+      required: false
   - type: textarea
     id: log
     attributes:
