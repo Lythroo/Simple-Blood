@@ -215,6 +215,7 @@ public final class OtherRagdolls {
         }
         if (saroEntity != null) saroBoxes(level, out);
         RagdollDeaths.bodies(level, out);
+        PixelGore.bodies(level, out);
     }
 
     private static void ragdollifiedBoxes(java.util.List<RagdollBodies.Body> out) {
@@ -340,7 +341,7 @@ public final class OtherRagdolls {
             looked = true;
             lookUp();
         }
-        return ragdollIds != null || saroEntity != null || RagdollDeaths.available()
+        return ragdollIds != null || saroEntity != null || RagdollDeaths.available() || PixelGore.available()
                 || !com.simpleblood.SimpleBloodAPI.ragdollSources().isEmpty();
     }
 
@@ -440,6 +441,7 @@ public final class OtherRagdolls {
             }
         }
         RagdollDeaths.collect(level, out);
+        PixelGore.collect(level, out);
         var sources = com.simpleblood.SimpleBloodAPI.ragdollSources();
         for (var entry : sources.entrySet()) {
             try {

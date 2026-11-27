@@ -25,7 +25,21 @@ public final class PendingHits {
         WAITING.clear();
     }
 
+    private static final List<LivingEntity> AWAITING_HEALTH = new ArrayList<>();
+
+    public static boolean awaitHealth(LivingEntity entity) {
+        if (AWAITING_HEALTH.size() >= MAX || AWAITING_HEALTH.contains(entity)) return AWAITING_HEALTH.contains(entity);
+        AWAITING_HEALTH.add(entity);
+        return true;
+    }
+
+    public static void settleEvents() {
+        if (AWAITING_HEALTH.isEmpty()) return;
+        AWAITING_HEALTH.removeIf(e -> !(e instanceof BloodEntityAccess a) || a.simpleblood$settleEventWithoutHealth());
+    }
+
     public static void clear() {
         WAITING.clear();
+        AWAITING_HEALTH.clear();
     }
 }

@@ -6,6 +6,10 @@ public final class QuadSurface {
     public interface Texels {
         boolean drawn(int face, double u, double v);
 
+        default boolean drawnAt(int face, double a, double b, double u, double v) {
+            return drawn(face, u, v);
+        }
+
         Texels SOLID = (face, u, v) -> true;
     }
 
@@ -95,6 +99,6 @@ public final class QuadSurface {
         int u = f * 6;
         double tu = uvs[u] + (uvs[u + 2] - uvs[u]) * a + (uvs[u + 4] - uvs[u]) * b;
         double tv = uvs[u + 1] + (uvs[u + 3] - uvs[u + 1]) * a + (uvs[u + 5] - uvs[u + 1]) * b;
-        return texels.drawn(f, tu, tv);
+        return texels.drawnAt(f, a, b, tu, tv);
     }
 }

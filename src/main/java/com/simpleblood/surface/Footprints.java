@@ -197,7 +197,7 @@ public final class Footprints {
                 feet.wet = Math.min(max, feet.wet + Math.min(max, found * 0.75f));
                 feet.colour = colour;
                 feet.powder = powderCount * 2 > found;
-                if (!feet.powder) com.simpleblood.mob.MobBlood.steppedIn(entity, foot, colour, found);
+                if (!feet.powder) com.simpleblood.mob.MobBlood.steppedIn(entity, foot, colour, taken);
                 int squeezed = 0;
                 if (cfg.surfaces.wading && !feet.powder) {
                     if (rim == null) rim = ring(cells, rasterise(gait.sole(), fx, fz, 2));

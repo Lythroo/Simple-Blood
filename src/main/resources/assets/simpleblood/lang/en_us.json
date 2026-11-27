@@ -459,6 +459,7 @@
   "simpleblood.gui.physics_mod.broken_mobs_bleed": "Broken mobs bleed",
   "simpleblood.gui.physics_mod.mobs_physics_mod_breaks_into": "Mobs Physics Mod breaks into blocks or shards bleed and spurt too.",
   "simpleblood.gui.ragdoll_mods_found.physics_mod": "Physics Mod",
+  "simpleblood.gui.ragdoll_mods_found.pixelgore": "PixelGore",
   "simpleblood.gui.ragdoll_mods_found.ragdollified": "Ragdollified",
   "simpleblood.gui.ragdoll_mods_found.ragdoll_deaths": "Ragdoll Deaths",
   "simpleblood.gui.ragdoll_mods_found.saro_s_player_ragdoll": "Saro's Player Ragdoll",

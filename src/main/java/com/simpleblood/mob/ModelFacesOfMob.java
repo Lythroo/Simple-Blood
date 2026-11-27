@@ -33,6 +33,9 @@ public final class ModelFacesOfMob {
         float nx, ny, nz;
         float wnx, wny, wnz;
         int pw, ph;
+        boolean[] gone;
+        float[] local;
+        Object modelCube;
         boolean holds(double a, double b) {
             return a >= 0 && a <= 1 && b >= 0 && b <= 1;
         }
@@ -50,6 +53,9 @@ public final class ModelFacesOfMob {
             f.pw = pw;
             f.ph = ph;
             f.alpha = alpha;
+            f.gone = gone;
+            f.local = local;
+            f.modelCube = modelCube;
             System.arraycopy(world, 0, f.w, 0, 12);
             for (int k = 0; k < 4; k++) {
                 f.p[k * 3] = (float) (world[k * 3] - camera.x);
@@ -87,8 +93,20 @@ public final class ModelFacesOfMob {
         }
 
         boolean drawnAt(double a, double b) {
+            if (gone != null && goneAt(sAt(a, b), tAt(a, b))) return false;
+            return textureDrawnAt(a, b);
+        }
+
+        boolean textureDrawnAt(double a, double b) {
             if (alpha == null) return true;
             return alpha.at(u[0] + (u[1] - u[0]) * a + (u[3] - u[0]) * b, v[0] + (v[1] - v[0]) * a + (v[3] - v[0]) * b);
+        }
+
+        boolean goneAt(double fs, double ft) {
+            if (gone == null) return false;
+            int x = Math.max(0, Math.min(pw - 1, (int) Math.floor(fs * pw)));
+            int y = Math.max(0, Math.min(ph - 1, (int) Math.floor(ft * ph)));
+            return gone[y * pw + x];
         }
 
         double sAt(double a, double b) { return s[0] + (s[1] - s[0]) * a + (s[3] - s[0]) * b; }
@@ -157,6 +175,10 @@ public final class ModelFacesOfMob {
         f.nx = n.x;
         f.ny = n.y;
         f.nz = n.z;
+        if (keepLocal) {
+            f.local = new float[12];
+            for (int k = 0; k < 4; k++) System.arraycopy(v, k * 5, f.local, k * 3, 3);
+        }
         Vector3f wn = toWorld == null ? n : toWorld.transform(new Vector3f(n));
         f.wnx = wn.x;
         f.wny = wn.y;
@@ -165,6 +187,8 @@ public final class ModelFacesOfMob {
     }
 
     static boolean shaped;
+
+    static boolean keepLocal;
 
     static long formOf(float[] v) {
         return com.simpleblood.geom.PolygonForms.form(v);
@@ -238,6 +262,9 @@ public final class ModelFacesOfMob {
         h = 31 * h + Float.floatToIntBits(rest.z());
         for (float f : v) h = 31 * h + Float.floatToIntBits(f);
         return h == 0 ? 1 : h;
+    }
+
+    static void cubeFaces(Object cube, int id, Matrix4f m, Matrix3f n, Vec3 camera, List<Face> out) {
     }
     //?}
 
@@ -334,7 +361,9 @@ public final class ModelFacesOfMob {
             Matrix3f n = (Matrix3f) c[1];
             int from = out.size();
             for (ModelPart.Cube cube : (List<ModelPart.Cube>) c[2]) {
+                int first = out.size();
                 if (!addPolygons(cube, id, m, n, toWorld, camera, out, (ModelPart) c[3])) addBox(cube, id, m, n, toWorld, camera, out);
+                if (keepLocal) for (int k = first; k < out.size(); k++) out.get(k).modelCube = cube;
                 id++;
             }
             if (i >= baseParts) continue;
@@ -410,6 +439,18 @@ public final class ModelFacesOfMob {
         }
     }
 
+    /^*
+     * The faces of a model cube another mod draws itself (PixelGore's corpses) with pose {@code m}
+     * (camera-relative, the way the game draws model pixels), each knowing its cube.
+     ^/
+    static void cubeFaces(Object cube, int id, Matrix4f m, Matrix3f n, Vec3 camera, List<Face> out) {
+        if (!(cube instanceof ModelPart.Cube c)) return;
+        int first = out.size();
+        if (!addPolygons(c, id, m, n, null, camera, out, null)) addBox(c, id, m, n, null, camera, out);
+        for (int k = first; k < out.size(); k++) out.get(k).modelCube = c;
+    }
+
+    // A polygon's shape: its corners and texture spots on its part, and where the part rests on
     private static long shapeOf(ModelPart part, float[] v) {
         net.minecraft.client.model.geom.PartPose rest = part.getInitialPose();
         long h = 1125899906842597L;

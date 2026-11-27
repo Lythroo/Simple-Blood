@@ -211,7 +211,7 @@ public class DebrisPieceParticle extends SingleQuadParticle implements DrawnBefo
         if (resting) {
             if (age % 10 == 0) {
                 BlockPos below = BlockPos.containing(x, y - lift - 0.05, z);
-                if (level.getBlockState(below).getCollisionShape(level, below).isEmpty()) {
+                if (com.simpleblood.BlockShapes.collision(level.getBlockState(below), level, below).isEmpty()) {
                     resting = false;
                     flat = null;
                     layer = 0;

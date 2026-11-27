@@ -297,7 +297,7 @@ public final class BloodSurfaces {
         if (part == null) return null;
         double a = part.angleNow(SurfaceRenderer.partialTick());
         if (whole) {
-            VoxelShape shape = state.getShape(level, pos);
+            VoxelShape shape = com.simpleblood.BlockShapes.outline(state, level, pos);
             if (shape.isEmpty()) return MISSED;
             Vec3 f = spun(part, from, -a), t = spun(part, to, -a);
             BlockHitResult r = shape.clip(f, t, pos);
@@ -367,7 +367,7 @@ public final class BloodSurfaces {
             if (isHandDrawn(below)) {
                 h = SignFaces.clip(level, below, under, from, to);
             } else if (hasTiltedFaces(below)) {
-                h = modelFaces(below, below.getShape(level, under)).clip(under, from, to);
+                h = modelFaces(below, com.simpleblood.BlockShapes.outline(below, level, under)).clip(under, from, to);
             }
             if (h != null && h.point().y >= pos.getY() - 1.0e-6) return h;
             BlockPos over = pos.above();
@@ -381,7 +381,7 @@ public final class BloodSurfaces {
         if (sways(state)) return null;
         if (isHandDrawn(state)) return SignFaces.clip(level, state, pos, from, to);
         if (!detailed() && (SignFaces.applies(state) || BlockToneSampler.isCrossModel(state))) return null;
-        VoxelShape shape = state.getShape(level, pos);
+        VoxelShape shape = com.simpleblood.BlockShapes.outline(state, level, pos);
         if (shape.isEmpty()) return null;
         ModelFaces faces = modelFaces(state, shape);
         if (faces != null) {
@@ -407,7 +407,7 @@ public final class BloodSurfaces {
         try {
             BlockState state = level.getBlockState(pos);
             if (state.isAir() || sways(state)) return false;
-            VoxelShape shape = state.getShape(level, pos);
+            VoxelShape shape = com.simpleblood.BlockShapes.outline(state, level, pos);
             if (shape.isEmpty()) return false;
             double lx = x - pos.getX(), ly = y - pos.getY(), lz = z - pos.getZ();
             ModelFaces faces = modelFaces(state, shape);
@@ -651,7 +651,7 @@ public final class BloodSurfaces {
     private static boolean exposed(ClientLevel level, BlockPos pos, Direction dir) {
         BlockPos npos = pos.relative(dir);
         BlockState ns = blockState(level, npos);
-        VoxelShape shape = ns.getShape(level, npos);
+        VoxelShape shape = com.simpleblood.BlockShapes.outline(ns, level, npos);
         if (shape.isEmpty() || BlockToneSampler.isCrossModel(ns) || sways(ns) || !Block.isFaceFull(shape, dir.getOpposite())) return true;
         ModelFaces drawn = modelFaces(ns, shape);
         return drawn != null && !drawn.covers(dir.getOpposite());
@@ -1331,7 +1331,7 @@ public final class BloodSurfaces {
         BlockState state = level.getBlockState(pos);
         if (state.isAir()) return false;
         double lx = at.x - pos.getX(), ly = at.y - pos.getY(), lz = at.z - pos.getZ();
-        for (AABB b : state.getCollisionShape(level, pos).toAabbs()) {
+        for (AABB b : com.simpleblood.BlockShapes.collision(state, level, pos).toAabbs()) {
             if (b.contains(lx, ly, lz)) return true;
         }
         return false;
@@ -1977,7 +1977,7 @@ public final class BloodSurfaces {
             if (!create) return null;
             return nearestPlane(crossTiles(level, pos, state), point, null);
         }
-        VoxelShape shape = state.getShape(level, pos);
+        VoxelShape shape = com.simpleblood.BlockShapes.outline(state, level, pos);
         if (shape.isEmpty()) return null;
         ModelFaces faces = modelFaces(state, shape);
         if (faces != null) return modelTile(level, pos, state, faces, face, point, create);
@@ -2037,13 +2037,13 @@ public final class BloodSurfaces {
     private static boolean faceStillExists(ClientLevel level, CanvasTile tile, BlockState state) {
         if (tile.custom) return false;
         if (isQuadTile(tile)) {
-            VoxelShape shape = state.getShape(level, tile.pos);
+            VoxelShape shape = com.simpleblood.BlockShapes.outline(state, level, tile.pos);
             ModelFaces faces = shape.isEmpty() ? null : modelFaces(state, shape);
             if (faces == null) return false;
             AABB have = worldBounds(tile).move(-tile.pos.getX(), -tile.pos.getY(), -tile.pos.getZ());
             return faces.face(tile.face, have) != null;
         }
-        VoxelShape shape = state.getShape(level, tile.pos);
+        VoxelShape shape = com.simpleblood.BlockShapes.outline(state, level, tile.pos);
         if (shape.isEmpty()) return false;
         Vec3 c = tile.center();
         double lx = c.x - tile.pos.getX(), ly = c.y - tile.pos.getY(), lz = c.z - tile.pos.getZ();
@@ -2090,10 +2090,10 @@ public final class BloodSurfaces {
         BlockState state = blockState(level, at);
         if (state.isAir()) return false;
         double lx = x - at.getX(), ly = y - at.getY(), lz = z - at.getZ();
-        VoxelShape outline = state.getShape(level, at);
+        VoxelShape outline = com.simpleblood.BlockShapes.outline(state, level, at);
         ModelFaces drawn = outline.isEmpty() ? null : modelFaces(state, outline);
         if (drawn != null && !drawn.withinOutline) return drawn.insideSolid(lx, ly, lz);
-        for (AABB b : state.getCollisionShape(level, at).toAabbs()) {
+        for (AABB b : com.simpleblood.BlockShapes.collision(state, level, at).toAabbs()) {
             if (b.inflate(0.002).contains(lx, ly, lz)) return true;
         }
         return false;
@@ -2122,7 +2122,9 @@ public final class BloodSurfaces {
         }
         if (flat == null || flatScore[0] > 0.35) return null;
         if (face == Direction.UP && flat.box().maxY <= cauldronWater(state) + 1.0e-3) return null;
-        if (flat.cut() != null) return planeTile(level, pos, state, flat.quad(), create);
+        if (flat.cut() != null && !Block.isShapeFullBlock(com.simpleblood.BlockShapes.collision(state, level, pos))) {
+            return planeTile(level, pos, state, flat.quad(), create);
+        }
         return quadFaceTile(level, pos, state, face, flat.box(), create);
     }
 
@@ -2570,7 +2572,7 @@ public final class BloodSurfaces {
             if (tileAt(level, npos, Direction.UP, p, false) != null) return true;
             BlockState state = blockState(level, npos);
             if (sways(state)) return false;
-            VoxelShape shape = state.getShape(level, npos);
+            VoxelShape shape = com.simpleblood.BlockShapes.outline(state, level, npos);
             if (shape.isEmpty()) return false;
             double lx = p.x - npos.getX(), lz = p.z - npos.getZ(), top = tile.oy - npos.getY();
             for (AABB box : shape.toAabbs()) {
@@ -2705,7 +2707,7 @@ public final class BloodSurfaces {
             return planeStillDrawn(t);
         }
         if (isQuadTile(t)) return faceStillExists(level, t, t.state);
-        VoxelShape shape = t.state.getShape(level, t.pos);
+        VoxelShape shape = com.simpleblood.BlockShapes.outline(t.state, level, t.pos);
         return !shape.isEmpty() && modelFaces(t.state, shape) == null;
     }
 

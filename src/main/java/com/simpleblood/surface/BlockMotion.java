@@ -24,7 +24,7 @@ final class BlockMotion {
     static Motion of(BlockGetter level, BlockPos pos, BlockState from, BlockState to) {
         if (from == to || from.getBlock() != to.getBlock()) return null;
         if (from.getBlock() instanceof FenceGateBlock) return gate(from, to);
-        VoxelShape a = from.getShape(level, pos), b = to.getShape(level, pos);
+        VoxelShape a = com.simpleblood.BlockShapes.outline(from, level, pos), b = com.simpleblood.BlockShapes.outline(to, level, pos);
         if (a.isEmpty() || b.isEmpty()) return null;
         List<AABB> as = a.toAabbs(), bs = b.toAabbs();
         if (as.size() != 1 || bs.size() != 1) return null;

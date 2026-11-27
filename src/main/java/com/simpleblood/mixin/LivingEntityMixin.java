@@ -93,14 +93,48 @@ public class LivingEntityMixin implements BloodEntityAccess {
 
     @Inject(method = "handleDamageEvent", at = @At("HEAD"))
     private void simpleblood$captureDamageSource(DamageSource source, CallbackInfo ci) {
+        LivingEntity self = (LivingEntity) (Object) this;
         simpleblood$recentSource = source;
-        simpleblood$recentSourceTick = ((LivingEntity) (Object) this).tickCount;
-        if (Float.isNaN(simpleblood$pendingDamage) || !com.simpleblood.RenderThread.on()) return;
+        simpleblood$recentSourceTick = self.tickCount;
+        if (!com.simpleblood.RenderThread.on() || !(self.level() instanceof ClientLevel)) return;
         try {
-            simpleblood$flushPendingHit();
+            if (!Float.isNaN(simpleblood$pendingDamage)) {
+                simpleblood$flushPendingHit();
+                return;
+            }
+            if (com.simpleblood.PendingHits.awaitHealth(self)) simpleblood$eventTick = self.tickCount;
         } catch (Throwable t) {
             com.simpleblood.Guard.fail(com.simpleblood.Guard.Part.HITS, "noticing a hit", t);
         }
+    }
+
+    @Unique
+    private static final int HEALTH_WAIT_TICKS = 3;
+    @Unique
+    private static final float EVENT_ONLY_DAMAGE = 4f;
+    @Unique
+    private static final int NO_EVENT = Integer.MIN_VALUE;
+
+    @Unique
+    private int simpleblood$eventTick = NO_EVENT;
+
+    @Override
+    public boolean simpleblood$settleEventWithoutHealth() {
+        if (simpleblood$eventTick == NO_EVENT) return true;
+        LivingEntity self = (LivingEntity) (Object) this;
+        if (self.isRemoved() || !(self.level() instanceof ClientLevel clientWorld)) {
+            simpleblood$eventTick = NO_EVENT;
+            return true;
+        }
+        if (self.tickCount - simpleblood$eventTick <= HEALTH_WAIT_TICKS) return false;
+        simpleblood$eventTick = NO_EVENT;
+        float health = self.getHealth();
+        DamageSource source = simpleblood$recentSource;
+        if (health <= 0f || source == null || !SimpleBlood.shouldBleedFrom(self, source)) return true;
+        com.simpleblood.Tally.count("hit.withoutHealth");
+        simpleblood$recentSourceTick = self.tickCount;
+        simpleblood$hit(clientWorld, self, EVENT_ONLY_DAMAGE, health + EVENT_ONLY_DAMAGE, health);
+        return true;
     }
 
     @Override
@@ -148,6 +182,7 @@ public class LivingEntityMixin implements BloodEntityAccess {
         float damage = previous - currentHealth;
         simpleblood$lastHealth = currentHealth;
         simpleblood$healthBeforeDrop = previous;
+        simpleblood$eventTick = NO_EVENT;
 
         if (entity.tickCount < 10 || currentHealth >= entity.getMaxHealth()) {
             return;

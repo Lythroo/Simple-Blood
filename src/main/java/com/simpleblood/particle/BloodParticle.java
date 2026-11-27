@@ -600,7 +600,9 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
         int colour = dropColour();
         Vec3 point = at.orElse(to);
         float size = splash ? 1.2f : 0.8f;
-        com.simpleblood.RenderThread.run(() -> com.simpleblood.mob.MobBlood.landed(e, point, dir, colour, size));
+        int carried = carriedPixels;
+        if (carried > 0) com.simpleblood.RenderThread.run(() -> com.simpleblood.mob.MobBlood.landedCarried(e, point, dir, colour, carried));
+        else com.simpleblood.RenderThread.run(() -> com.simpleblood.mob.MobBlood.landed(e, point, dir, colour, size));
         return true;
     }
 
@@ -781,7 +783,7 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
                         || BloodSurfaces.isHandDrawn(level.getBlockState(here.above()));
             } else if (BloodSurfaces.isHandDrawn(hereState) || BloodSurfaces.hasTiltedFaces(hereState)) {
                 thin = true;
-            } else if (hereState.getCollisionShape(level, here).isEmpty()) {
+            } else if (com.simpleblood.BlockShapes.collision(hereState, level, here).isEmpty()) {
                 thin = entered && BloodSurfaces.isCrossModel(hereState) && !BloodSurfaces.sways(hereState);
             }
             if (!thin && BloodSurfaces.movingBodiesCross(level, new Vec3(prevX, prevY, prevZ), new Vec3(x, y, z))) {
@@ -907,9 +909,9 @@ public class BloodParticle extends SingleQuadParticle implements com.simpleblood
     private java.util.List<net.minecraft.world.phys.AABB> solidBoxes(BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (state.isAir() || BloodSurfaces.sways(state)) return java.util.List.of();
-        net.minecraft.world.phys.shapes.VoxelShape collision = state.getCollisionShape(level, pos);
+        net.minecraft.world.phys.shapes.VoxelShape collision = com.simpleblood.BlockShapes.collision(state, level, pos);
         if (collision.isEmpty()) return java.util.List.of();
-        net.minecraft.world.phys.shapes.VoxelShape drawn = state.getShape(level, pos);
+        net.minecraft.world.phys.shapes.VoxelShape drawn = com.simpleblood.BlockShapes.outline(state, level, pos);
         double top = drawn.isEmpty() ? Double.MAX_VALUE : drawn.max(net.minecraft.core.Direction.Axis.Y);
         java.util.List<net.minecraft.world.phys.AABB> out = new java.util.ArrayList<>();
         for (net.minecraft.world.phys.AABB b : collision.toAabbs()) {

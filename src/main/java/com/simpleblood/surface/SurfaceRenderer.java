@@ -32,7 +32,7 @@ public final class SurfaceRenderer {
     }
 
     public static boolean nothingToDraw() {
-        return BloodSurfaces.tileCount() == 0 && !com.simpleblood.mob.RigidCoats.any();
+        return BloodSurfaces.tileCount() == 0 && !com.simpleblood.mob.RigidCoats.any() && !com.simpleblood.mob.VoxelBodyCoats.any();
     }
 
     static float partialTick() {
@@ -67,6 +67,8 @@ public final class SurfaceRenderer {
         if (!onSeeThrough && cfg != null) {
             com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on a physics ragdoll",
                     () -> com.simpleblood.mob.RigidCoats.render(level, cam, pose, vc, partialTick()));
+            com.simpleblood.Guard.run(com.simpleblood.Guard.Part.SURFACES, "drawing blood on a PixelGore corpse",
+                    () -> com.simpleblood.mob.VoxelBodyCoats.render(level, cam, pose, vc));
         }
         if (cfg == null || !cfg.surfaces.enabled || BloodSurfaces.tileCount() == 0) return;
 

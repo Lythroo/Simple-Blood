@@ -12,4 +12,6 @@ public interface BloodEntityAccess {
     net.minecraft.world.phys.Vec3 simpleblood$wound();
 
     void simpleblood$flushPendingHit();
+
+    boolean simpleblood$settleEventWithoutHealth();
 }

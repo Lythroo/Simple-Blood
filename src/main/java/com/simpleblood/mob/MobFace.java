@@ -23,6 +23,7 @@ final class MobFace {
     int lastSeen;
     private NativeImage image, spec;
     boolean[] drawn;
+    boolean[] gone;
 
     MobFace(int pw, int ph) {
         this.pw = pw;
@@ -50,6 +51,7 @@ final class MobFace {
     boolean add(int x, int y, int units, int colour, int now, int lifetime, RandomSource rng) {
         int i = y * pw + x;
         if (drawn != null && !drawn[i]) return false;
+        if (gone != null && gone[i]) return false;
         if (depth[i] == 0) {
             count++;
             tone[i] = (byte) rng.nextInt(TONE.length);
@@ -61,6 +63,18 @@ final class MobFace {
         depth[i] = (byte) Math.min(MAX_DEPTH, depth[i] + units);
         dirty = true;
         return true;
+    }
+
+    void cut(boolean[] cut) {
+        if (cut == gone) return;
+        gone = cut != null && cut.length == depth.length ? cut : null;
+        if (gone == null) return;
+        for (int i = 0; i < depth.length; i++) {
+            if (!gone[i] || depth[i] == 0) continue;
+            depth[i] = 0;
+            count--;
+            dirty = true;
+        }
     }
 
     int take(int x, int y) {

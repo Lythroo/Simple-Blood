@@ -40,6 +40,19 @@ repositories {
     }
 }
 
+// Newer 26.x version files ask for Mojang's own LWJGL builds ("3.4.1-mojang-2.15.0.3"), which
+// Loom only looks for on Maven Central, where they do not exist. The matching LWJGL release is
+// there and is all the dev setup needs (the mod jar bundles none of it).
+configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        def v = details.requested.version
+        if (details.requested.group == 'org.lwjgl' && v != null && v.contains('-mojang')) {
+            details.useVersion(v.substring(0, v.indexOf('-mojang')))
+            details.because('Mojang LWJGL builds are not on Maven Central')
+        }
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${mcVersion}"
     implementation "net.fabricmc:fabric-loader:${project.property('deps.fabric_loader')}"

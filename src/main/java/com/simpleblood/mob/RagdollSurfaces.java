@@ -52,6 +52,9 @@ public final class RagdollSurfaces {
         for (int i = 0; i < faces.size(); i++) if (fade == null || fade[i] > 0f) n++;
         double[] corners = new double[n * 9], normals = new double[n * 3], uvs = new double[n * 6];
         MobTextures.Alpha[] alphas = new MobTextures.Alpha[n];
+        boolean[][] gone = null;
+        double[] canvas = null;
+        int[] sizes = null;
         int k = 0;
         for (int i = 0; i < faces.size(); i++) {
             if (fade != null && fade[i] <= 0f) continue;
@@ -67,9 +70,43 @@ public final class RagdollSurfaces {
             normals[k * 3 + 1] = f.wny;
             normals[k * 3 + 2] = f.wnz;
             alphas[k] = f.alpha;
+            if (f.gone != null) {
+                if (gone == null) {
+                    gone = new boolean[n][];
+                    canvas = new double[n * 6];
+                    sizes = new int[n * 2];
+                }
+                gone[k] = f.gone;
+                for (int j = 0; j < 3; j++) {
+                    canvas[k * 6 + j * 2] = f.s[CORNERS[j]];
+                    canvas[k * 6 + j * 2 + 1] = f.t[CORNERS[j]];
+                }
+                sizes[k * 2] = f.pw;
+                sizes[k * 2 + 1] = f.ph;
+            }
             k++;
         }
-        return new QuadSurface(corners, normals, uvs, (face, u, v) -> alphas[face] == null || alphas[face].at(u, v));
+        return new QuadSurface(corners, normals, uvs, new DrawnTexels(alphas, gone, canvas, sizes));
+    }
+
+    private record DrawnTexels(MobTextures.Alpha[] alphas, boolean[][] gone, double[] canvas, int[] sizes) implements QuadSurface.Texels {
+        @Override
+        public boolean drawn(int face, double u, double v) {
+            return alphas[face] == null || alphas[face].at(u, v);
+        }
+
+        @Override
+        public boolean drawnAt(int face, double a, double b, double u, double v) {
+            boolean[] cut = gone == null ? null : gone[face];
+            if (cut != null) {
+                int c = face * 6, w = sizes[face * 2], h = sizes[face * 2 + 1];
+                double s = canvas[c] + (canvas[c + 2] - canvas[c]) * a + (canvas[c + 4] - canvas[c]) * b;
+                double t = canvas[c + 1] + (canvas[c + 3] - canvas[c + 1]) * a + (canvas[c + 5] - canvas[c + 1]) * b;
+                int x = Math.max(0, Math.min(w - 1, (int) Math.floor(s * w))), y = Math.max(0, Math.min(h - 1, (int) Math.floor(t * h)));
+                if (cut[y * w + x]) return false;
+            }
+            return drawn(face, u, v);
+        }
     }
 
     public static boolean drawn(int mobId) {

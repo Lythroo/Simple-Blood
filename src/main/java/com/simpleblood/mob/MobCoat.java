@@ -36,7 +36,13 @@ final class MobCoat {
         }
     }
 
-    record Splat(Vec3 at, Vec3 dir, HitContext.Weapon weapon, float size, int units, int made, int colour, boolean drop) {
+    record Splat(Vec3 at, Vec3 dir, HitContext.Weapon weapon, float size, int units, int made, int colour, boolean drop, int carried) {
+        static final int CARRIED_FILM = -1;
+
+        Splat(Vec3 at, Vec3 dir, HitContext.Weapon weapon, float size, int units, int made, int colour, boolean drop) {
+            this(at, dir, weapon, size, units, made, colour, drop, 0);
+        }
+
         Splat(Vec3 at, Vec3 dir, HitContext.Weapon weapon, float size, int units, int made) {
             this(at, dir, weapon, size, units, made, 0, false);
         }
@@ -77,12 +83,13 @@ final class MobCoat {
                 for (int y = 0; y < f.ph; y++) {
                     for (int x = 0; x < f.pw; x++) {
                         double[] ab = f.edgeWeights((x + 0.5) / f.pw, (y + 0.5) / f.ph);
-                        drawn[y * f.pw + x] = f.drawnAt(ab[0], ab[1]);
+                        drawn[y * f.pw + x] = f.textureDrawnAt(ab[0], ab[1]);
                         any |= !drawn[y * f.pw + x];
                     }
                 }
                 if (any) canvas.drawn = drawn;
             }
+            canvas.cut(f.gone);
             return canvas;
         });
     }
@@ -95,7 +102,8 @@ final class MobCoat {
         float size = splat.size();
         int units = splat.units();
         if (splat.drop()) {
-            dropSplash(splat, faces, now, lifetime, rng);
+            if (splat.carried() != 0) carried(splat, faces, now, lifetime, rng);
+            else dropSplash(splat, faces, now, lifetime, rng);
             return;
         }
         if (splat.weapon() != HitContext.Weapon.ARROW) stain(splat, Vec3.ZERO, faces, units + 3, true, now, lifetime, rng);
@@ -216,6 +224,15 @@ final class MobCoat {
             }
         }
         if (any) strokes++;
+    }
+
+    private void carried(Splat splat, List<ModelFacesOfMob.Face> faces, int now, int lifetime, RandomSource rng) {
+        Vec3 a = splat.at(), d = splat.dir();
+        if (!strikeAt(a.x, a.y, a.z, d.x, d.y, d.z, faces, Double.NaN, 0)) return;
+        MobFace face = face(struckFace);
+        boolean film = splat.carried() == Splat.CARRIED_FILM;
+        if (film && face.depthAt(DROP_PX[0], DROP_PX[1]) > 0) return;
+        if (face.add(DROP_PX[0], DROP_PX[1], film ? 1 : splat.carried(), tint(splat), now, lifetime, rng)) strokes++;
     }
 
     private boolean strikeAt(double px, double py, double pz, double dx, double dy, double dz,

@@ -293,7 +293,7 @@ public final class PhysicsModRagdolls {
         tickLivingStumps(level, now);
     }
 
-    private record Shot(int id, Vec3 from, Vec3 to) {}
+    private record Shot(int id, Vec3 from, Vec3 to, boolean vanished) {}
 
     private record ShotWound(int part, Vec3 offset, Vec3 facing, Spurt spurt) {}
 
@@ -312,6 +312,7 @@ public final class PhysicsModRagdolls {
 
     private static it.unimi.dsi.fastutil.ints.IntOpenHashSet fastNow = new it.unimi.dsi.fastutil.ints.IntOpenHashSet(),
             fastBefore = new it.unimi.dsi.fastutil.ints.IntOpenHashSet();
+    private static Map<Integer, Vec3[]> stepsNow = new HashMap<>(), stepsBefore = new HashMap<>();
 
     private static List<Shot> shots(ClientLevel level, long now) {
         if (shotsSeen != now) {
@@ -321,14 +322,29 @@ public final class PhysicsModRagdolls {
             fastBefore = fastNow;
             fastNow = was;
             fastNow.clear();
+            Map<Integer, Vec3[]> steps = stepsBefore;
+            stepsBefore = stepsNow;
+            stepsNow = steps;
+            stepsNow.clear();
             for (net.minecraft.world.entity.Entity e : level.entitiesForRendering()) {
                 if (!(e instanceof net.minecraft.world.entity.projectile.Projectile) || e.isRemoved()) continue;
+                stepsBefore.remove(e.getId());
                 double moved2 = e.position().distanceToSqr(e.xo, e.yo, e.zo);
                 boolean fast = moved2 >= SHOT_SPEED * SHOT_SPEED;
-                if (fast) fastNow.add(e.getId());
-                else if (!fastBefore.contains(e.getId()) || moved2 < LAST_STEP * LAST_STEP) continue;
-                SHOTS.add(new Shot(e.getId(), new Vec3(e.xo, e.yo, e.zo), e.position()));
+                Vec3 from = new Vec3(e.xo, e.yo, e.zo);
+                Vec3 velocity = e.getDeltaMovement();
+                if (velocity.lengthSqr() >= SHOT_SPEED * SHOT_SPEED) stepsNow.put(e.getId(), new Vec3[]{e.position(), e.position().add(velocity)});
+                if (fast) {
+                    fastNow.add(e.getId());
+                } else if (!fastBefore.contains(e.getId()) || moved2 < LAST_STEP * LAST_STEP) {
+                    continue;
+                }
+                SHOTS.add(new Shot(e.getId(), from, e.position(), false));
                 com.simpleblood.Tally.count(fast ? "ragdoll.shot.flying" : "ragdoll.shot.landing");
+            }
+            for (Map.Entry<Integer, Vec3[]> gone : stepsBefore.entrySet()) {
+                SHOTS.add(new Shot(gone.getKey(), gone.getValue()[0], gone.getValue()[1], true));
+                com.simpleblood.Tally.count("ragdoll.shot.vanished");
             }
         }
         return SHOTS;
@@ -358,6 +374,7 @@ public final class PhysicsModRagdolls {
             }
             for (Shot shot : shots) {
                 if (b.shotBy.contains(shot.id())) continue;
+                if (shot.vanished() && !PixelGore.MOD.equals(body.mod())) continue;
                 RagdollBodies.Hit hit = RagdollBodies.firstEntry(body, shot.from(), shot.to());
                 if (hit == null) continue;
                 b.shotBy.add(shot.id());
@@ -618,7 +635,8 @@ public final class PhysicsModRagdolls {
                 else death = bleedingOf(new OtherRagdolls.Key("ragdollified", body.source()));
             } else {
                 death = RagdollDeaths.MOD.equals(key.mod()) ? deathById(key.id()) : null;
-                if (death == null) death = DEATHS.isEmpty() ? null : closest(centre(present));
+                if (PixelGore.MOD.equals(key.mod())) death = deathById(PixelGore.mobOf(key.id()));
+                else if (death == null) death = DEATHS.isEmpty() ? null : closest(centre(present));
                 if (death != null) DEATHS.remove(death);
                 else if (body.owner() != null) death = deathOf(body.owner(), level);
             }
@@ -1613,7 +1631,7 @@ public final class PhysicsModRagdolls {
 
     private static boolean nearGround(ClientLevel level, Vec3 p) {
         BlockPos below = BlockPos.containing(p.x, p.y - 0.35, p.z);
-        return !level.getBlockState(below).getCollisionShape(level, below).isEmpty();
+        return !com.simpleblood.BlockShapes.collision(level.getBlockState(below), level, below).isEmpty();
     }
 
     private static int colourOf(Death d) {
