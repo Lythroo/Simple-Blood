@@ -1,0 +1,75 @@
+name: Mod support
+description: Ask for Simple Blood to work with another mod (ragdolls, moving blocks, weapons, mobs, shaders...).
+title: "[Mod support] "
+labels: ["suggestion"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Already supported: Physics Mod, Ragdollified (with Amputation), Ragdoll Deaths, PixelGore, Saro's Player Ragdoll, Create, Create Aeronautics, Sable, Epic Fight weapons, TaCZ guns, Fresh Animations / EMF, Iris shaders and AsyncParticles.
+        If the two mods crash together, please use **Crash or error** instead.
+  - type: input
+    id: mod
+    attributes:
+      label: Which mod?
+      description: Its name and a Modrinth or CurseForge link.
+      placeholder: "Example Ragdolls - https://modrinth.com/mod/..."
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of mod is it?
+      options:
+        - Ragdolls or dead bodies
+        - Moving blocks, ships or vehicles
+        - Weapons, guns or combat
+        - New mobs or mob models
+        - Rendering or shaders
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: now
+    attributes:
+      label: What happens now with both installed?
+      options:
+        - Blood doesn't show on it or ignores it
+        - Blood shows in the wrong place or floats
+        - Both mods add blood and it looks doubled
+        - Something else (write it below)
+    validations:
+      required: true
+  - type: dropdown
+    id: ownblood
+    attributes:
+      label: Does that mod add blood of its own?
+      options: ["No", "Yes", "I don't know"]
+    validations:
+      required: true
+  - type: dropdown
+    id: mc
+    attributes:
+      label: Minecraft version you play it on
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it below)"]
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt"]
+    validations:
+      required: true
+  - type: textarea
+    id: want
+    attributes:
+      label: What should happen?
+      description: One or two sentences are enough.
+      placeholder: "Blood stays on the ragdolls and pools under them."
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot or video (optional)

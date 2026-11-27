@@ -1,0 +1,101 @@
+name: Bug or visual glitch
+description: Blood looks or behaves wrong (missing, floating, wrong colour or place, lag) but nothing crashed.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Most of this is picking from lists. A screenshot or short clip and your log help the most.
+  - type: dropdown
+    id: area
+    attributes:
+      label: What is wrong?
+      options:
+        - Blood on blocks (puddles, stains, runs, drips)
+        - Blood on mobs or players
+        - Blood on ragdolls or bodies
+        - Particles, sprays or giblets
+        - Settings screen or previews
+        - Sounds
+        - Performance (lag, FPS drops)
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens?
+      description: One or two sentences are enough.
+      placeholder: "Other players don't bleed when I hit them on a server."
+    validations:
+      required: true
+  - type: dropdown
+    id: alone
+    attributes:
+      label: Does it also happen with only Simple Blood installed?
+      description: Only Simple Blood (and Fabric API on Fabric) in the mods folder. This tells us if another mod is involved.
+      options: ["Yes, it happens with Simple Blood alone", "No, only together with other mods", "I haven't tried"]
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where do you play?
+      options: ["Singleplayer", "On a server", "Both"]
+    validations:
+      required: true
+  - type: dropdown
+    id: shaders
+    attributes:
+      label: Shaders?
+      options: ["No shaders", "Yes, with Iris or Oculus (shader pack name under Anything else)"]
+    validations:
+      required: true
+  - type: dropdown
+    id: again
+    attributes:
+      label: Does it happen again?
+      options: ["Every time", "Sometimes", "Only once so far"]
+    validations:
+      required: true
+  - type: dropdown
+    id: mc
+    attributes:
+      label: Minecraft version
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it under Anything else)"]
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Simple Blood version
+      description: The file name works too, e.g. simpleblood-fabric-1.4.0+26.3.jar
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Your log (drag the file in here)
+      description: |
+        Drag `logs/latest.log` in here, from a game where the bug happened. It also lists your mods, so we don't have to ask.
+        File too big? Upload it to https://mclo.gs and paste the link.
+    validations:
+      required: true
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot or video (optional)
+      description: Drag images or clips in here.
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else? (optional)
+      description: How to make it happen, a modpack name, the shader pack...

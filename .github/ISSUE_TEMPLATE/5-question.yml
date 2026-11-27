@@ -1,0 +1,21 @@
+name: Question
+description: Anything else you want to ask about the mod.
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: dropdown
+    id: mc
+    attributes:
+      label: Minecraft version (if it matters)
+      options: ["Doesn't matter", "26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other"]
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader (if it matters)
+      options: ["Doesn't matter", "Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt"]

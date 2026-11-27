@@ -1,0 +1,66 @@
+name: Crash or error
+description: The game crashed, or Simple Blood said "error in ..." in chat.
+title: "[Crash] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Most of this is picking from lists. The log is the most important part: without it we usually can't find the cause.
+  - type: dropdown
+    id: mc
+    attributes:
+      label: Minecraft version
+      options: ["26.3", "26.2", "26.1.2", "26.1.1", "26.1", "1.21.11", "1.21.1", "1.20.1", "Other (write it under Anything else)"]
+    validations:
+      required: true
+  - type: dropdown
+    id: loader
+    attributes:
+      label: Mod loader
+      options: ["Fabric", "NeoForge", "Forge (1.20.1)", "Forge with Sinytra Connector", "Quilt"]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Simple Blood version
+      description: The file name works too, e.g. simpleblood-fabric-1.4.0+26.3.jar
+    validations:
+      required: true
+  - type: dropdown
+    id: alone
+    attributes:
+      label: Does it also crash with only Simple Blood installed?
+      description: Only Simple Blood (and Fabric API on Fabric) in the mods folder. This tells us if another mod is involved.
+      options: ["Yes, it crashes with Simple Blood alone", "No, only together with other mods", "I haven't tried"]
+    validations:
+      required: true
+  - type: dropdown
+    id: again
+    attributes:
+      label: Does it happen again?
+      options: ["Every time", "Sometimes", "Only once so far"]
+    validations:
+      required: true
+  - type: dropdown
+    id: when
+    attributes:
+      label: When does it happen?
+      options: ["When starting the game", "When joining a world or server", "When hitting or killing something", "When dying", "In the settings screen", "Something else (write it under Anything else)"]
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Crash report or log (drag the file in here)
+      description: |
+        Drag the newest file from the `crash-reports` folder in here. No crash report? Use `logs/latest.log`. If Simple Blood showed an error in chat, `logs/simpleblood-error.txt` too.
+        Files too big? Upload them to https://mclo.gs and paste the link.
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else? (optional)
+      description: What you were doing, a screenshot, a modpack name...
